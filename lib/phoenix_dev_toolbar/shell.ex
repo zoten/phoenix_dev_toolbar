@@ -115,10 +115,12 @@ defmodule PhoenixDevToolbar.Shell do
     }
   end
 
-  defp badge?(%{id: id, text: text, level: level}) when is_binary(id) and is_binary(text),
-    do: level in [:ok, :info, :warn, :error]
+  defp badge?(%{id: id, text: text, level: level} = badge) when is_binary(id) and is_binary(text),
+    do: level in [:ok, :info, :warn, :error] and title?(badge[:title])
 
   defp badge?(_badge), do: false
+
+  defp title?(title), do: is_nil(title) or is_binary(title)
 
   defp guard(shell, plugin, fun) do
     tab_id = Atom.to_string(plugin.id())

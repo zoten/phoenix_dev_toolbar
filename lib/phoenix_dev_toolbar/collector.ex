@@ -196,7 +196,7 @@ defmodule PhoenixDevToolbar.Collector do
     end
   catch
     kind, reason ->
-      quarantine(plugin, kind, reason, __STACKTRACE__)
+      quarantine(plugin, kind, reason, __STACKTRACE__, context.sid)
       :quarantined
   end
 
@@ -208,12 +208,15 @@ defmodule PhoenixDevToolbar.Collector do
 
   # Stores the bounded banner the panel shows; logs the full error once.
   # `:persistent_term.put/2` is expensive, but runs once per quarantine.
-  defp quarantine(plugin, kind, reason, stacktrace) do
+  # The page that triggered it is notified, so its open panel shows the
+  # disabled tab right away (Notify is a non blocking Registry dispatch).
+  defp quarantine(plugin, kind, reason, stacktrace, sid) do
     key = quarantine_key(plugin)
 
     case :persistent_term.get(key, nil) do
       nil ->
         :persistent_term.put(key, Truncate.banner(kind, reason))
+        Notify.event(sid)
 
         Logger.error(
           "[phoenix_dev_toolbar] plugin #{inspect(plugin)} (now disabled) raised:\n" <>

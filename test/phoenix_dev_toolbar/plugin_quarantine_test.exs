@@ -11,6 +11,9 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Store
   alias PhoenixDevToolbar.TestPlugins.Fragile
+  alias PhoenixDevToolbar.TestPlugins.MessageRaisingError
+  alias PhoenixDevToolbar.TestPlugins.MountBoom
+  alias PhoenixDevToolbar.TestPlugins.TablessFragile
 
   @endpoint DemoWeb.Endpoint
 
@@ -39,6 +42,7 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
       |> LazyHTML.attribute("data-pdt-sid")
 
     {:ok, host, _html} = live(conn)
+    Process.put({:pdt_test_sid, host.pid}, sid)
     {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
     %{host: host, panel: panel}
   end
@@ -51,6 +55,8 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
     _ = render(panel)
     _ = render(panel)
   end
+
+  defp sid_of(host), do: Process.get({:pdt_test_sid, host.pid})
 
   defp still_works(host, panel) do
     render_hook(host, "query", %{"sql" => "SELECT still works"})
@@ -68,6 +74,7 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
 
     assert has_element?(panel, "#pdt-disabled-fragile", "collect boom")
     assert has_element?(panel, "#pdt-tab-fragile.pdt-tab--error")
+    refute has_element?(panel, "#fragile .fragile-value", "ignored while disabled")
     still_works(host, panel)
 
     panel |> element("#pdt-reenable-fragile") |> render_click()
@@ -110,5 +117,72 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
     _ = render(panel)
     assert has_element?(panel, "#pdt-disabled-fragile", "click boom")
     still_works(host, panel)
+  end
+
+  test "a render that raised breaks its tab, not the panel", %{host: host, panel: panel} do
+    log = capture_log(fn -> echo(host, panel, "render") end)
+
+    assert log =~ "render boom"
+    _ = render(panel)
+    assert Process.alive?(panel.pid)
+    assert has_element?(panel, "#pdt-disabled-fragile", "render boom")
+    still_works(host, panel)
+  end
+
+  test "an async result that raised breaks its tab", %{host: host, panel: panel} do
+    capture_log(fn ->
+      panel |> element("#fragile-async") |> render_click()
+      _ = render_async(panel)
+      _ = render(panel)
+    end)
+
+    assert has_element?(panel, "#pdt-disabled-fragile", "async boom")
+    still_works(host, panel)
+  end
+
+  test "badges that raise or are malformed never break the summary bar",
+       %{host: host, panel: panel} do
+    echo(host, panel, "bad_title")
+    refute has_element?(panel, "#pdt-badge-fragile")
+    still_works(host, panel)
+
+    capture_log(fn -> echo(host, panel, "badges") end)
+    assert has_element?(panel, "#pdt-disabled-fragile", "badges boom")
+    still_works(host, panel)
+  end
+
+  test "a component mount that raised breaks its tab, not the panel" do
+    Collector.attach(PhoenixDevToolbar.Application.plugins() ++ [MountBoom])
+
+    {_html, log} =
+      with_log(fn -> build_conn() |> get("/__pdt/panel?sid=missing") |> html_response(200) end)
+
+    assert log =~ "mount boom"
+
+    capture_log(fn ->
+      {:ok, view, _html} = live(build_conn(), "/__pdt/panel?sid=missing")
+      _ = render(view)
+      assert has_element?(view, "#pdt-disabled-mount_boom", "mount boom")
+    end)
+  end
+
+  test "a plugin without a tab is shown disabled and re-enabled from its badge",
+       %{host: host, panel: _panel} do
+    Collector.attach(PhoenixDevToolbar.Application.plugins() ++ [TablessFragile])
+    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid_of(host)}")
+
+    capture_log(fn -> echo(host, panel, "tabless") end)
+
+    assert has_element?(panel, "#pdt-badge-disabled-tabless", "Tabless disabled")
+    panel |> element("#pdt-badge-disabled-tabless") |> render_click()
+
+    refute Collector.quarantined?(TablessFragile)
+    refute has_element?(panel, "#pdt-badge-disabled-tabless")
+  end
+
+  test "a banner survives an exception whose message/1 throws" do
+    banner = PhoenixDevToolbar.Truncate.banner(:error, %MessageRaisingError{})
+    assert banner =~ "MessageRaisingError"
+    assert banner =~ "message unavailable"
   end
 end

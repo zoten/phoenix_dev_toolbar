@@ -82,8 +82,18 @@ defmodule PhoenixDevToolbar.Truncate do
 
   """
   @spec banner(:error | :exit | :throw, term()) :: String.t()
-  def banner(:error, reason), do: :error |> Exception.format_banner(reason) |> string()
-  def banner(kind, reason), do: string("** (#{kind}) " <> inspect_value(reason))
+  def banner(kind, reason) do
+    format_banner(kind, reason)
+  catch
+    # A third party exception's message/1 can itself raise, throw or exit.
+    _kind, _reason -> "** (#{inspect_value(error_module(reason))}) <message unavailable>"
+  end
+
+  defp format_banner(:error, reason), do: :error |> Exception.format_banner(reason) |> string()
+  defp format_banner(kind, reason), do: string("** (#{kind}) " <> inspect_value(reason))
+
+  defp error_module(%{__struct__: module}), do: module
+  defp error_module(_reason), do: :error
 
   @doc """
   Formats the first #{@frames} stacktrace frames that do not belong to the

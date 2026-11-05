@@ -308,6 +308,9 @@ body.pdt {
 .pdt-button:focus-visible { outline: 2px solid var(--pdt-accent); outline-offset: 1px; }
 
 /* A plugin disabled after an error (ADR 05). */
+.pdt-badge--button { border: 0; cursor: pointer; }
+.pdt-badge--button:focus-visible { outline: 2px solid var(--pdt-accent); outline-offset: 1px; }
+
 .pdt-disabled {
   margin: 8px 12px;
   padding: 8px 10px;

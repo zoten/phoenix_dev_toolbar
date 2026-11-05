@@ -64,11 +64,12 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   # A disabled plugin's Re-enable button: release the collector's quarantine,
   # forget the panel errors, then reload the page into every tab.
+  # Plugins without a tab are re-enabled from their badge.
   def handle_event("pdt_reenable", %{"tab" => tab}, socket) do
-    case Enum.find(socket.assigns.tabs, &(&1.id == tab)) do
-      %{plugin: plugin, panel: panel} ->
+    case Enum.find(socket.assigns.shell.plugins, &(Atom.to_string(elem(&1, 0).id()) == tab)) do
+      {plugin, _config} ->
         Collector.release(plugin)
-        send_update(panel, id: panel_id(tab), pdt: :recover)
+        recover_tab(socket.assigns.tabs, tab)
 
         socket =
           socket
@@ -224,19 +225,21 @@ defmodule PhoenixDevToolbar.PanelLive do
   end
 
   # A disabled plugin without a tab would vanish silently: say so in the bar.
-  defp disabled_badges(assigns) do
+  defp disabled_without_tab(assigns) do
     tab_ids = MapSet.new(assigns.tabs, & &1.id)
 
     for {plugin, _config} <- assigns.shell.plugins,
         id = Atom.to_string(plugin.id()),
         not MapSet.member?(tab_ids, id),
         banner = assigns.quarantined[id] || Shell.broken(assigns.shell)[id],
-        do: %{
-          id: "disabled-" <> id,
-          text: plugin.name() <> " disabled",
-          level: :error,
-          title: banner
-        }
+        do: {id, plugin.name(), banner}
+  end
+
+  defp recover_tab(tabs, tab) do
+    case Enum.find(tabs, &(&1.id == tab)) do
+      %{panel: panel} -> send_update(panel, id: panel_id(tab), pdt: :recover)
+      nil -> :ok
+    end
   end
 
   # Why a tab is disabled: its collector, its summary or its component raised.
@@ -347,11 +350,18 @@ defmodule PhoenixDevToolbar.PanelLive do
       <div id="pdt-bridge" phx-hook="PdtPanel" hidden></div>
       <header class="pdt-header">
         <span class="pdt-logo">dev toolbar</span>
-        <.summary_bar
-          badges={Shell.badges(@shell) ++ disabled_badges(assigns)}
-          dropped={@gaps.dropped}
-          trimmed={@gaps.trimmed}
-        />
+        <.summary_bar badges={Shell.badges(@shell)} dropped={@gaps.dropped} trimmed={@gaps.trimmed} />
+        <button
+          :for={{id, name, banner} <- disabled_without_tab(assigns)}
+          id={"pdt-badge-disabled-" <> id}
+          type="button"
+          class="pdt-badge pdt-badge--error pdt-badge--button"
+          title={banner}
+          phx-click="pdt_reenable"
+          phx-value-tab={id}
+        >
+          {name} disabled · re-enable
+        </button>
         <nav class="pdt-tabs" role="tablist">
           <button
             :for={tab <- @tabs}

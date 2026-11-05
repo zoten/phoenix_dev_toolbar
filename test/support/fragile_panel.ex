@@ -19,13 +19,23 @@ defmodule PhoenixDevToolbar.TestPlugins.FragilePanel do
   @impl Phoenix.LiveComponent
   def handle_event("explode", _params, _socket), do: raise("click boom")
 
+  def handle_event("async", _params, socket),
+    do: {:noreply, start_async(socket, :boom, fn -> :done end)}
+
+  @impl Phoenix.LiveComponent
+  def handle_async(:boom, _result, _socket), do: raise("async boom")
+
   @impl Phoenix.LiveComponent
   def render(assigns) do
     ~H"""
     <div id="fragile">
       <button id="fragile-explode" phx-click="explode" phx-target={@myself}>explode</button>
-      <span :for={value <- @values} class="fragile-value">{value}</span>
+      <button id="fragile-async" phx-click="async" phx-target={@myself}>async</button>
+      <span :for={value <- @values} class="fragile-value">{render_value(value)}</span>
     </div>
     """
   end
+
+  defp render_value("render"), do: raise("render boom")
+  defp render_value(value), do: value
 end

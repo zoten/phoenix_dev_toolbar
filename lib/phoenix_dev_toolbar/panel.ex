@@ -63,6 +63,7 @@ defmodule PhoenixDevToolbar.Panel do
 
   alias Phoenix.LiveView.Socket
   alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.Panel
   alias PhoenixDevToolbar.Truncate
 
   @doc "The page changed: replace everything shown with `events`."
@@ -87,6 +88,13 @@ defmodule PhoenixDevToolbar.Panel do
   @spec send_after(module(), String.t(), term(), non_neg_integer()) :: reference()
   def send_after(module, id, message, ms),
     do: Phoenix.LiveView.send_update_after(self(), module, %{id: id, pdt: {:info, message}}, ms)
+
+  @doc """
+  Formats a duration in microseconds (`Event.duration`) the way the toolbar
+  does: `"0.04 ms"`, `"12.3 ms"`, `"2.50 s"`, `"n/a"` for nil.
+  """
+  @spec duration(non_neg_integer() | nil) :: String.t()
+  defdelegate duration(us), to: PhoenixDevToolbar.Components
 
   @doc false
   # Used by the toolbar to deliver a message to a panel right away.
@@ -136,10 +144,29 @@ defmodule PhoenixDevToolbar.Panel do
       def render(%{pdt_error: banner} = assigns) when is_binary(banner),
         do: PhoenixDevToolbar.Panel.__broken__(assigns)
 
-      def render(assigns), do: super(assigns)
+      def render(assigns), do: PhoenixDevToolbar.Panel.__checked__(super(assigns), assigns)
 
+      unquote(guarded_mount(env))
       unquote(guarded(env, :handle_event, 3))
       unquote(guarded(env, :handle_async, 3))
+    end
+  end
+
+  # mount/1 runs inside the toolbar's render (LiveView mounts components while
+  # diffing): unguarded, a raise would take the whole panel down.
+  defp guarded_mount(env) do
+    if Module.defines?(env.module, {:mount, 1}) do
+      quote do
+        defoverridable mount: 1
+
+        @impl Phoenix.LiveComponent
+        def mount(socket) do
+          super(socket)
+        catch
+          kind, reason ->
+            {:ok, PhoenixDevToolbar.Panel.__break__(socket, kind, reason, __STACKTRACE__)}
+        end
+      end
     end
   end
 
@@ -157,6 +184,44 @@ defmodule PhoenixDevToolbar.Panel do
         end
       end
     end
+  end
+
+  @doc false
+  # render/1 only builds a %Rendered{}: its expressions run later, while
+  # LiveView diffs it, outside any boundary. So the plugin's template is
+  # evaluated once here (Phoenix.HTML.Safe, a public protocol) to catch an
+  # error before LiveView sees it, at the cost of rendering it twice. A panel
+  # that nests live components cannot be converted to HTML: it is not checked.
+  @spec __checked__(Phoenix.LiveView.Rendered.t(), map()) :: Phoenix.LiveView.Rendered.t()
+  def __checked__(rendered, assigns) do
+    _ = Phoenix.HTML.Safe.to_iodata(rendered)
+    rendered
+  rescue
+    exception in ArgumentError ->
+      case Exception.message(exception) =~ "cannot convert component" do
+        true -> rendered
+        false -> render_failed(assigns, :error, exception, __STACKTRACE__)
+      end
+  catch
+    kind, reason -> render_failed(assigns, kind, reason, __STACKTRACE__)
+  end
+
+  # No socket in render: tell the toolbar (it shows the error), log once per
+  # panel process, and render the broken placeholder.
+  defp render_failed(assigns, kind, reason, stacktrace) do
+    key = {Panel, :render_logged, assigns[:id]}
+
+    if Process.get(key) == nil do
+      Process.put(key, true)
+
+      Logger.error(
+        "[phoenix_dev_toolbar] panel #{inspect(assigns[:id])} raised while rendering:\n" <>
+          Exception.format(kind, reason, stacktrace)
+      )
+    end
+
+    send(self(), {:pdt_panel_error, assigns[:id], Truncate.banner(kind, reason)})
+    __broken__(assigns)
   end
 
   @doc false
@@ -178,9 +243,19 @@ defmodule PhoenixDevToolbar.Panel do
     )
 
     banner = Truncate.banner(kind, reason)
-    send(self(), {:pdt_panel_error, socket.assigns[:id], banner})
-    Phoenix.Component.assign(socket, :pdt_error, banner)
+    socket = Phoenix.Component.assign(socket, pdt_error: banner, pdt_reported?: false)
+    report(socket)
   end
+
+  # The toolbar learns of the error by the component's id, which mount/1 does
+  # not know yet: reported on the first update that has it.
+  defp report(%Socket{assigns: %{pdt_error: banner, pdt_reported?: false, id: id}} = socket)
+       when is_binary(banner) and is_binary(id) do
+    send(self(), {:pdt_panel_error, id, banner})
+    Phoenix.Component.assign(socket, :pdt_reported?, true)
+  end
+
+  defp report(socket), do: socket
 
   @doc false
   # The toolbar delivers events with send_update(module, id: id, pdt: {...});
@@ -188,13 +263,15 @@ defmodule PhoenixDevToolbar.Panel do
   @spec __update__(module(), map(), Socket.t()) :: {:ok, Socket.t()}
   def __update__(module, assigns, socket) do
     {delivery, props} = Map.pop(assigns, :pdt)
-    socket = Phoenix.Component.assign(socket, props)
+    socket = socket |> Phoenix.Component.assign(props) |> report()
     {:ok, deliver(module, delivery, socket)}
   end
 
   # Re-enable: forget the error, the reset that follows refills the tab.
-  defp deliver(_module, :recover, socket),
-    do: Phoenix.Component.assign(socket, pdt_error: nil, pdt_ready?: false)
+  defp deliver(_module, :recover, socket) do
+    Process.delete({Panel, :render_logged, socket.assigns[:id]})
+    Phoenix.Component.assign(socket, pdt_error: nil, pdt_ready?: false)
+  end
 
   defp deliver(_module, _delivery, %Socket{assigns: %{pdt_error: banner}} = socket)
        when is_binary(banner),
