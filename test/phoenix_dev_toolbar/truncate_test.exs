@@ -69,6 +69,15 @@ defmodule PhoenixDevToolbar.TruncateTest do
       assert Enum.all?(tail, &(&1 == %{"password" => "p"}))
     end
 
+    test "keeps every entry of a large map and walks a bounded number of them" do
+      map = Map.new(1..10_000, &{&1, %{"password" => "p"}})
+
+      redacted = Truncate.redact(map)
+
+      assert map_size(redacted) == 10_000
+      assert Enum.count(redacted, fn {_k, v} -> v == %{"password" => "[REDACTED]"} end) == 50
+    end
+
     test "returns improper lists unchanged" do
       assert Truncate.redact([1 | 2]) == [1 | 2]
     end

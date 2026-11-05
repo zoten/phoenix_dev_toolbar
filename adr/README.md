@@ -29,7 +29,7 @@ Next free number: **07**.
 
 | ADR | Title | Status |
 |---|---|---|
-| 03 | [Event Storage: Bounded ETS Ring Buffers](./03-event-storage.md) | Accepted |
+| 03 | [Event Storage: Bounded ETS Ring Buffers](./03-event-storage.md) | Implemented (2026-11-05) |
 
 ## UI
 

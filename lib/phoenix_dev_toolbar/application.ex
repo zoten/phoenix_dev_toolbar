@@ -3,15 +3,36 @@ defmodule PhoenixDevToolbar.Application do
 
   use Application
 
+  alias PhoenixDevToolbar.Collector
+
   @impl true
   def start(_type, _args) do
-    Supervisor.start_link(children(PhoenixDevToolbar.enabled?()),
-      strategy: :one_for_one,
-      name: PhoenixDevToolbar.Supervisor
-    )
+    enabled? = PhoenixDevToolbar.enabled?()
+
+    with {:ok, pid} <-
+           Supervisor.start_link(children(enabled?),
+             strategy: :one_for_one,
+             name: PhoenixDevToolbar.Supervisor
+           ) do
+      maybe_attach(enabled?)
+      {:ok, pid}
+    end
   end
 
-  # Disabled means no processes and no ETS tables at all (ADR 01).
+  @impl true
+  def prep_stop(state) do
+    Collector.detach()
+    state
+  end
+
+  @doc false
+  @spec plugins() :: [module()]
+  def plugins, do: Application.get_env(:phoenix_dev_toolbar, :plugins, [])
+
+  # Disabled means no processes, no ETS tables and no handlers (ADR 01).
   defp children(false), do: []
-  defp children(true), do: [PhoenixDevToolbar.Store]
+  defp children(true), do: [PhoenixDevToolbar.Store, PhoenixDevToolbar.Notify]
+
+  defp maybe_attach(false), do: :ok
+  defp maybe_attach(true), do: Collector.attach(plugins())
 end

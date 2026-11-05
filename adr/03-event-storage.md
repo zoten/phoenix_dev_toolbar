@@ -1,6 +1,6 @@
 # ADR 03: Event Storage: Bounded ETS Ring Buffers
 
-**Status:** Accepted  
+**Status:** Implemented (2026-11-05)  
 **Area:** storage  
 **Related:** [ADR 02](./02-telemetry-collection-and-correlation.md) (writers), [ADR 04](./04-ui-delivery.md) (readers)
 
@@ -27,19 +27,22 @@ serialize every query of the app behind one mailbox.
   | `:pdt_rate` | `set` | `{{sid, second}, n}` (flood guard) |
 
   `seq` comes from a shared `:atomics` counter, so per-session order is insertion order.
-- Writers (host processes) insert directly: flood check (`update_counter` on `:pdt_rate`),
+- Writers (host processes) insert directly (a missing table, while the Store restarts,
+  also means `:no_session`): flood check (`update_counter` on `:pdt_rate`),
   `update_counter` of the session `count` (a missing session means `:no_session` and
   the event is discarded), then the event row. Results: `:ok | :dropped | :no_session`.
 - Per-session cap: when `count` first exceeds `max_events` (and every 64 inserts after
   that) the writer casts `{:trim, sid}`; the Store deletes the oldest events and loops
   until the session is back within the cap, since inserts may race with the trim.
-- Session cap: on every new session the Store evicts the oldest sessions (by `started_at`)
-  beyond `max_sessions`.
+- Session cap: on every new session the Store evicts sessions beyond `max_sessions`,
+  those without a live LiveView owner first, then the oldest by `started_at`, so the
+  open tab survives a burst of page loads.
 - LiveView sessions are monitored; `down_grace_ms` after `:DOWN` the session and its index
-  rows are deleted, unless a reconnecting LiveView claimed it in the meantime (`claim/2`).
+  rows are deleted, unless a rejoining LiveView claimed it in the meantime (`claim/3`).
 - TTL sweep every `sweep_ms`: sessions without a live LiveView owner (requests, orphans)
   are deleted when their last event (or start) is older than `ttl_ms`. An idle open tab
-  keeps its data. The sweep also drops stale rate windows and orphan events.
+  keeps its data. The sweep also drops stale rate windows, orphan events, index rows
+  whose session is gone, and pid and transport rows of processes that exited.
 - Limits, overridable with `config :phoenix_dev_toolbar, limits: [...]` and kept in
   `:persistent_term` for the write path:
 
@@ -57,7 +60,8 @@ serialize every query of the app behind one mailbox.
   8 KB (UTF-8 safe), stacktraces at 10 frames without toolbar and `:telemetry` frames.
   Keys whose name contains an entry of `config :phoenix_dev_toolbar, redact: [...]`
   (default `["password", "token", "secret"]`, case insensitive) become `"[REDACTED]"`;
-  redaction is bounded in depth (6) and list length (50).
+  redaction is bounded in depth (6) and width: only the first 50 items of a list and
+  the first 50 entries of a map (iteration order) are walked.
 - Live updates: our own `Registry` (`PhoenixDevToolbar.Registry`, duplicate keys) keyed
   by sid. Writers `Registry.dispatch/3` a `{:pdt_event, sid}` notification (no payload);
   the panel reads from ETS and throttles re-renders to every 100 ms. No dependency on
@@ -73,3 +77,5 @@ serialize every query of the app behind one mailbox.
 ## Open limits
 
 - Limits are global, not per plugin: a chatty plugin can push others' events out.
+- Redaction walks only the first 50 entries of large maps: a sensitive key further in is
+  hidden by the inspect limit in practice, not by redaction.

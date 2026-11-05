@@ -110,6 +110,22 @@ defmodule PhoenixDevToolbar.StoreTest do
       assert {:ok, _} = Store.session(mid)
       assert {:ok, _} = Store.session(new)
     end
+
+    test "evicts sessions without a live LiveView owner first" do
+      Store.put_limits(max_sessions: 2)
+
+      open_tab =
+        Store.new_session(%{Session.new(:live_view, owner: start_owner()) | started_at: 1}).sid
+
+      [old_request, new_request] =
+        for at <- [2, 3], do: Store.new_session(%{Session.new(:request) | started_at: at}).sid
+
+      sync_store()
+
+      assert {:ok, _} = Store.session(open_tab)
+      assert Store.session(old_request) == :error
+      assert {:ok, _} = Store.session(new_request)
+    end
   end
 
   describe "LiveView owner DOWN" do
@@ -147,11 +163,29 @@ defmodule PhoenixDevToolbar.StoreTest do
       sync_store()
 
       new_owner = start_owner()
-      assert Store.claim(sid, new_owner) == :ok
+      assert {:ok, %Session{owner: ^new_owner}} = Store.claim(sid, new_owner, nil)
 
       stop_owner(old_owner)
 
       assert {:ok, %Session{owner: ^new_owner}} = Store.session(sid)
+    end
+  end
+
+  describe "sweep/1 index cleanup" do
+    test "drops index rows of missing sessions and pid rows of dead processes" do
+      %Session{sid: sid} = Store.new_session(Session.new(:request))
+      dead = start_owner()
+      alive = start_owner()
+      Store.track_pid(dead, sid)
+      Store.track_pid(alive, sid)
+      Store.link_socket_id("phx-gone", "missing-sid")
+      stop_owner(dead)
+
+      Store.sweep()
+
+      assert Store.sid_for_pid(dead) == nil
+      assert Store.sid_for_pid(alive) == sid
+      assert Store.sid_for_socket_id("phx-gone") == nil
     end
   end
 

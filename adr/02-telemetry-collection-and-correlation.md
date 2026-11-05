@@ -25,13 +25,27 @@ host's hot path).
   - in the request process (`connected?` false, sid in pdict) we index `socket.id -> sid`;
   - in the LiveView process we look up `socket.id` and put the sid in the LiveView pdict.
   No help from the loader is needed to correlate the first page.
-- Live navigation starts a new LiveView process with a new `socket.id` and no HTTP
-  request. Its session gets a new sid with `parent` set to the previous sid of the same
-  `socket.transport_pid` (one transport per browser tab, also stored by LiveView in the
-  `:"$phx_transport_pid"` pdict key). The panel follows the tab: it shows the newest sid
-  of its transport.
-- Nested LiveViews (`live_render`) run in their own process: they inherit the sid of
-  `socket.parent_pid` / `socket.root_pid`.
+- The `socket.id` survives live navigation: the client clones the main element (same
+  `id`) and rejoins with its session token, and `Session.authorize_root_redirect/2` only
+  swaps the view. So a connected mount whose `socket.id` maps to an existing LiveView
+  session is either:
+  - a **rejoin** (reconnect on a new transport, or crash rejoin on the same one): same
+    view and path, previous owner no longer alive. It claims the session, re-indexing
+    owner and transport (ADR 03);
+  - otherwise **live navigation** (or a duplicated tab): a new LiveView session with
+    `parent` set to the existing one. Re-mounting the same view and path after the old
+    process died is indistinguishable from a rejoin and continues the same session.
+- A connected mount with an unknown `socket.id` (its dead render was not tracked) gets a
+  session whose `parent` is the newest sid of its `socket.transport_pid` (one transport
+  per browser tab). The panel follows the tab through `{:pdt_session, sid}` notifications.
+- Nested LiveViews (`live_render`, non sticky) run in their own process and share the
+  sid of `socket.parent_pid`. Sticky LiveViews get their own session that is never
+  indexed as the tab's latest, since they survive navigation.
+- The toolbar's own LiveViews (any view under `PhoenixDevToolbar.`) are never tracked.
+- `PhoenixDevToolbar.Tracker` implements these rules; it runs inside the collector's
+  mount `:start` handler before any plugin sees the event, so plugins always find the
+  sid already set. New LiveView sessions are announced with `{:pdt_session, sid}` to
+  the subscribers of the parent sid and of the transport (`PhoenixDevToolbar.Notify`).
 
 **Attribution** (inside the handler, in this order):
 
@@ -72,9 +86,17 @@ host's hot path).
   calls them from its own process, never from a handler). Process metrics via
   `Process.info/2`. Both polled by the panel only while it is open.
 
-**Handler rules**: the body is wrapped in `try/rescue` (a raising handler is detached
-by `:telemetry`); errors are logged once per handler; no synchronous GenServer calls,
-no I/O; payloads are truncated before leaving the handler.
+**Handler rules**: `PhoenixDevToolbar.Collector` attaches one handler per event name
+(id `{PhoenixDevToolbar.Collector, event}`, an external function capture) that fans out
+to the plugins declaring that event. The body is wrapped in `rescue` (a raising handler
+is detached by `:telemetry`) and each plugin call in `catch`: a plugin that raises,
+throws, exits or returns something other than `{:record, %Event{}}` or `:skip` is
+quarantined (skipped until the next `attach/1`) and logged once. Only the plugin's
+own call can quarantine it: Store and Notify failures are caught by the handler level
+`catch` (every class, logged once per error type). No synchronous
+GenServer calls, no I/O on the normal path; payloads are truncated before leaving the
+plugin. Plugins come from `config :phoenix_dev_toolbar, plugins: [...]`; handlers are
+attached when the application starts and detached in `prep_stop/1`.
 
 ## Consequences
 

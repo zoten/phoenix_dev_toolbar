@@ -89,15 +89,18 @@ defmodule PhoenixDevToolbar.Store do
   end
 
   @doc """
-  Moves a session to a new owner process (a LiveView reconnecting with the same
-  socket id), so the previous owner's DOWN does not expire it.
+  Moves a session to a new owner process and transport (a LiveView rejoining
+  with the same socket id), so the previous owner's DOWN does not expire it.
   """
-  @spec claim(Session.sid(), pid()) :: :ok | :error
-  def claim(sid, owner) when is_pid(owner) do
+  @spec claim(Session.sid(), pid(), pid() | nil) :: {:ok, Session.t()} | :error
+  def claim(sid, owner, transport) when is_pid(owner) do
     case :ets.lookup(@sessions, sid) do
       [{^sid, session, _count, _dropped}] ->
-        :ets.update_element(@sessions, sid, {2, %{session | owner: owner}})
+        claimed = %{session | owner: owner, transport: transport}
+        :ets.update_element(@sessions, sid, {2, claimed})
+        maybe_index_transport(claimed)
         GenServer.cast(Store, {:monitor, sid, owner})
+        {:ok, claimed}
 
       [] ->
         :error
@@ -109,6 +112,9 @@ defmodule PhoenixDevToolbar.Store do
   @doc "Attributes a process to a session (used for `$callers` lookups)."
   @spec track_pid(pid(), Session.sid()) :: true
   def track_pid(pid, sid) when is_pid(pid), do: :ets.insert(@pids, {pid, sid})
+
+  @spec untrack_pid(pid()) :: true
+  def untrack_pid(pid) when is_pid(pid), do: :ets.delete(@pids, pid)
 
   @spec sid_for_pid(pid()) :: Session.sid() | nil
   def sid_for_pid(pid), do: lookup(@pids, pid)
@@ -145,6 +151,9 @@ defmodule PhoenixDevToolbar.Store do
       true -> do_insert(sid, event, limits.max_events)
       false -> count_dropped(sid)
     end
+  rescue
+    # Tables missing while the Store restarts: the event is lost, nothing else.
+    ArgumentError -> :no_session
   end
 
   @doc "Returns the events of `sid` with a seq greater than `after_seq`, oldest first."
@@ -238,6 +247,9 @@ defmodule PhoenixDevToolbar.Store do
     {:noreply, state}
   end
 
+  # A crash here would wipe every session: ignore anything unexpected.
+  def handle_info(_message, state), do: {:noreply, state}
+
   ## Write path helpers (run in the caller)
 
   defp within_rate?(sid, second, max) do
@@ -313,12 +325,14 @@ defmodule PhoenixDevToolbar.Store do
     ArgumentError -> nil
   end
 
-  # Strictly by age: casts may lag behind inserts, so the session that
-  # triggered the check is not necessarily the newest one.
+  # Sessions without a live LiveView owner go first (the tab the developer is
+  # looking at is usually the oldest one), then by age. Never "the session that
+  # triggered the check": casts may lag behind inserts.
   defp evict_oldest do
     excess = max(:ets.info(@sessions, :size) - limits().max_sessions, 0)
 
     sessions()
+    |> Enum.sort_by(&{live_owner?(&1), &1.started_at})
     |> Enum.take(excess)
     |> Enum.each(&delete_session(&1.sid))
   end
@@ -361,8 +375,22 @@ defmodule PhoenixDevToolbar.Store do
     cutoff = System.monotonic_time(:second) - 1
     :ets.select_delete(@rate, [{{{:_, :"$1"}, :_}, [{:<, :"$1", cutoff}], [true]}])
     delete_orphan_events()
+    delete_orphan_index_rows()
     :ok
   end
+
+  # Index rows written after their session was deleted, and pid rows of
+  # processes that exited (nested LiveViews, finished requests).
+  defp delete_orphan_index_rows do
+    for table <- [@pids, @socket_ids, @transports], {key, sid} <- :ets.tab2list(table) do
+      _ = orphan_row?(table, key, sid) && :ets.delete(table, key)
+    end
+  end
+
+  defp orphan_row?(table, key, sid) when table in [@pids, @transports],
+    do: not :ets.member(@sessions, sid) or not Process.alive?(key)
+
+  defp orphan_row?(_table, _key, sid), do: not :ets.member(@sessions, sid)
 
   # LiveView sessions with a running owner are cleaned up by DOWN, not by TTL:
   # an idle open tab keeps its data.

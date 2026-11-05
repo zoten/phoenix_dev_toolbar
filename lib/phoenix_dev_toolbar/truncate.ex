@@ -86,16 +86,17 @@ defmodule PhoenixDevToolbar.Truncate do
 
   defp do_redact(value, _keys, depth) when depth > @max_depth, do: value
 
-  defp do_redact(%{__struct__: _} = struct, keys, depth) do
-    struct
-    |> Map.from_struct()
-    |> Enum.reduce(struct, fn {key, value}, acc ->
-      Map.put(acc, key, redact_pair(key, value, keys, depth))
-    end)
-  end
-
+  # Maps and structs: only the first @list_items entries (iteration order) are
+  # walked and written back, so cost does not grow with the map size. The rest
+  # is left to the inspect limit, which shows at most 50 entries.
   defp do_redact(%{} = map, keys, depth) do
-    Map.new(map, fn {key, value} -> {key, redact_pair(key, value, keys, depth)} end)
+    redacted =
+      for {key, value} <- first_entries(map, @list_items),
+          key != :__struct__,
+          into: %{},
+          do: {key, redact_pair(key, value, keys, depth)}
+
+    Map.merge(map, redacted)
   end
 
   defp do_redact(list, keys, depth) when is_list(list) do
@@ -106,6 +107,17 @@ defmodule PhoenixDevToolbar.Truncate do
   end
 
   defp do_redact(value, _keys, _depth), do: value
+
+  defp first_entries(map, n), do: map |> :maps.iterator() |> take_entries(n, [])
+
+  defp take_entries(_iterator, 0, acc), do: acc
+
+  defp take_entries(iterator, n, acc) do
+    case :maps.next(iterator) do
+      {key, value, next} -> take_entries(next, n - 1, [{key, value} | acc])
+      :none -> acc
+    end
+  end
 
   defp redact_item({key, value}, keys, depth) when is_atom(key) or is_binary(key),
     do: {key, redact_pair(key, value, keys, depth)}
