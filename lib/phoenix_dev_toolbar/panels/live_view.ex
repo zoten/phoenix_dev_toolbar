@@ -27,6 +27,8 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
   attr :snapshot, :any, required: true, doc: "nil, a Truncate.snapshot/1 or {:missing, why}"
   attr :snapshot_pending?, :boolean, required: true
   attr :last_changed, :list, required: true, doc: "keys changed by the last callback"
+  attr :tree, :any, required: true, doc: "nil, a ComponentTree.t() or {:missing, why}"
+  attr :polling?, :boolean, required: true
   attr :events, :any, required: true, doc: "the :lv_events stream"
   attr :root, :string, required: true
 
@@ -90,8 +92,9 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
       role="tabpanel"
       aria-labelledby="pdt-lv-tab-components"
       hidden={@tab != "components"}
+      data-pdt-polling={if(@polling?, do: "on", else: "off")}
     >
-      <p class="pdt-empty">No components yet.</p>
+      <.tree tree={@tree} />
     </div>
     """
   end
@@ -135,6 +138,51 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
       <% nil -> %>
         <p class="pdt-empty">No snapshot yet.</p>
     <% end %>
+    """
+  end
+
+  attr :tree, :any, required: true
+
+  defp tree(%{tree: {:missing, :no_live_view}} = assigns) do
+    ~H"""
+    <p id="pdt-tree-missing" class="pdt-empty">No LiveView on this page.</p>
+    """
+  end
+
+  defp tree(%{tree: %{views: _}} = assigns) do
+    ~H"""
+    <ul id="pdt-tree" class="pdt-tree">
+      <li :for={{view, index} <- Enum.with_index(@tree.views)} id={"pdt-tree-#{index}"}>
+        <code class="pdt-tree__view">{short(view.view)}</code>
+        <span :if={view.nested?} class="pdt-tag">nested</span>
+        <span :if={view.components == []} class="pdt-hint">no components</span>
+        <.tree_nodes nodes={view.components} prefix={"pdt-tree-#{index}"} />
+      </li>
+    </ul>
+    <p :if={@tree.truncated?} class="pdt-hint pdt-snapshot__more">
+      Only the first 500 components are shown.
+    </p>
+    """
+  end
+
+  defp tree(assigns) do
+    ~H"""
+    <p class="pdt-empty">Reading the component tree…</p>
+    """
+  end
+
+  attr :nodes, :list, required: true
+  attr :prefix, :string, required: true
+
+  defp tree_nodes(assigns) do
+    ~H"""
+    <ul :if={@nodes != []}>
+      <li :for={node <- @nodes} id={"#{@prefix}-#{node.cid}"}>
+        <code>{short(node.module)}</code>
+        <span class="pdt-hint">id {node.id} · cid {node.cid}</span>
+        <.tree_nodes nodes={node.children} prefix={@prefix} />
+      </li>
+    </ul>
     """
   end
 

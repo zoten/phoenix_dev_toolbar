@@ -36,6 +36,22 @@ defmodule PhoenixDevToolbar.LiveViewCompat do
     }
   end
 
+  @doc """
+  The view of a LiveView process, from the `{Phoenix.LiveView, view, topic}`
+  process label LiveView sets (what `Phoenix.LiveView.Debug.list_liveviews/0`
+  reads, without scanning every process). Panel only: reads another process.
+  """
+  @spec live_view_label(pid()) :: {:ok, module()} | :error
+  def live_view_label(pid) when is_pid(pid) do
+    with [dictionary: dictionary] <- Process.info(pid, [:dictionary]),
+         {_key, {Phoenix.LiveView, view, _topic}} when is_atom(view) <-
+           List.keyfind(dictionary, :"$process_label", 0) do
+      {:ok, view}
+    else
+      _ -> :error
+    end
+  end
+
   @doc "True for a LiveView rendered inside another with `live_render/3`."
   @spec nested?(Socket.t()) :: boolean()
   def nested?(%Socket{parent_pid: parent}), do: is_pid(parent)

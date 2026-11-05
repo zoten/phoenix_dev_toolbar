@@ -13,6 +13,7 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   import PhoenixDevToolbar.Components
 
+  alias PhoenixDevToolbar.ComponentTree
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.Page
@@ -26,6 +27,8 @@ defmodule PhoenixDevToolbar.PanelLive do
   @flush_ms 100
   # At most one assigns snapshot per second while the Assigns sub-tab is shown.
   @snapshot_ms 1000
+  # Component tree poll interval, only while shown, open and visible.
+  @tree_ms 2000
   @tabs ~w(ecto request live_view)
   @tab_labels [{"ecto", "Ecto"}, {"request", "Request"}, {"live_view", "LiveView"}]
   # Rows kept in the DOM per list; the Store keeps 500 events per session.
@@ -46,7 +49,8 @@ defmodule PhoenixDevToolbar.PanelLive do
       socket
       |> assign(root: root, tab: "ecto", lv_tab: "profiler", flush: nil, subscribed: [])
       |> assign(snapshot: nil, snapshot_pending?: false, snapshot_at: nil, snapshot_timer: nil)
-      |> assign(last_changed: [])
+      |> assign(last_changed: [], visible?: false)
+      |> assign(tree: nil, tree_pending?: false, tree_timer: nil)
       |> stream_configure(:queries, dom_id: &"pdt-query-#{&1.seq}")
       |> stream_configure(:requests, dom_id: &"pdt-request-#{&1.seq}")
       |> stream_configure(:lv_events, dom_id: &"pdt-lv-#{&1.seq}")
@@ -59,18 +63,30 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   @impl true
   def handle_event("tab", %{"tab" => tab}, socket) when tab in @tabs,
-    do: {:noreply, socket |> assign(:tab, tab) |> snapshot_if_shown()}
+    do: {:noreply, socket |> assign(:tab, tab) |> snapshot_if_shown() |> tree_if_shown()}
 
   def handle_event("tab", _params, socket), do: {:noreply, socket}
 
   def handle_event("lv_tab", %{"tab" => tab}, socket) do
     case tab in Panels.LiveView.sub_tabs() do
-      true -> {:noreply, socket |> assign(:lv_tab, tab) |> snapshot_if_shown()}
+      true -> {:noreply, socket |> assign(:lv_tab, tab) |> snapshot_if_shown() |> tree_if_shown()}
       false -> {:noreply, socket}
     end
   end
 
   def handle_event("lv_snapshot", _params, socket), do: {:noreply, start_snapshot(socket)}
+
+  # From the PdtPanel hook: the loader's open state and the browser tab's visibility.
+  def handle_event("pdt:visibility", params, socket) do
+    visible? = params["open"] == true and params["visible"] == true
+
+    socket = assign(socket, :visible?, visible?)
+
+    case visible? do
+      true -> {:noreply, tree_if_shown(socket)}
+      false -> {:noreply, socket}
+    end
+  end
 
   @impl true
   def handle_info({:pdt_event, _sid}, %{assigns: %{flush: nil}} = socket),
@@ -92,6 +108,9 @@ defmodule PhoenixDevToolbar.PanelLive do
   def handle_info(:pdt_snapshot, socket),
     do: {:noreply, socket |> assign(:snapshot_timer, nil) |> snapshot_if_shown()}
 
+  def handle_info(:pdt_tree_poll, socket),
+    do: {:noreply, socket |> assign(:tree_timer, nil) |> poll_tree()}
+
   def handle_info(_message, socket), do: {:noreply, socket}
 
   @impl true
@@ -100,6 +119,12 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   def handle_async(:snapshot, {:exit, _reason}, socket),
     do: {:noreply, assign(socket, snapshot: {:missing, :gone}, snapshot_pending?: false)}
+
+  def handle_async(:tree, {:ok, tree}, socket),
+    do: {:noreply, socket |> assign(tree: tree, tree_pending?: false) |> schedule_tree()}
+
+  def handle_async(:tree, {:exit, _reason}, socket),
+    do: {:noreply, socket |> assign(tree_pending?: false) |> schedule_tree()}
 
   ## Loading
 
@@ -128,6 +153,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     |> remember(events)
     |> insert_all(events)
     |> snapshot_if_shown()
+    |> tree_if_shown()
   end
 
   # Live navigation: a new page in the same tab replaces everything.
@@ -137,6 +163,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     |> subscribe(sids)
     |> show(page, read_all(sids))
     |> snapshot_if_shown()
+    |> tree_if_shown()
   end
 
   defp apply_change(socket, :rejoined, %Page{} = page),
@@ -151,6 +178,7 @@ defmodule PhoenixDevToolbar.PanelLive do
       profile: Profile.new(events),
       last_changed: Enum.reduce(events, [], &last_changed/2),
       snapshot: nil,
+      tree: nil,
       dropped: dropped(sids)
     )
     |> assign(seqs: %{}, seen: MapSet.new())
@@ -203,7 +231,10 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   # New callbacks refresh a shown snapshot, at most once per @snapshot_ms; a
   # throttled refresh is scheduled, so the last callback is never missed.
-  defp snapshot_after(%{assigns: %{tab: "live_view", lv_tab: "assigns"}} = socket, events) do
+  defp snapshot_after(
+         %{assigns: %{tab: "live_view", lv_tab: "assigns", visible?: true}} = socket,
+         events
+       ) do
     case Enum.any?(events, &match?(%Event{plugin: :live_view, kind: :callback}, &1)) do
       true -> throttled_snapshot(socket, wait_ms(socket.assigns.snapshot_at))
       false -> socket
@@ -243,6 +274,55 @@ defmodule PhoenixDevToolbar.PanelLive do
       {:error, _reason} -> {:missing, :gone}
     end
   end
+
+  ## Component tree
+  #
+  # Polled every @tree_ms through Phoenix.LiveView.Debug, in a task, only while
+  # the Components sub-tab is shown and the panel is open and visible. Opening
+  # the sub-tab reads it once even before the hook reports visibility.
+
+  defp tree_if_shown(%{assigns: %{tab: "live_view", lv_tab: "components"}} = socket),
+    do: start_tree(socket)
+
+  defp tree_if_shown(socket), do: socket
+
+  defp polling?(%{assigns: %{tab: "live_view", lv_tab: "components", visible?: true}}), do: true
+  defp polling?(_socket), do: false
+
+  defp poll_tree(socket) do
+    case polling?(socket) do
+      true -> start_tree(socket)
+      false -> socket
+    end
+  end
+
+  defp schedule_tree(%{assigns: %{tree_timer: nil}} = socket) do
+    case polling?(socket) do
+      true -> assign(socket, :tree_timer, Process.send_after(self(), :pdt_tree_poll, @tree_ms))
+      false -> socket
+    end
+  end
+
+  defp schedule_tree(socket), do: socket
+
+  defp start_tree(%{assigns: %{tree_pending?: true}} = socket), do: socket
+
+  defp start_tree(socket) do
+    case live_view_owner(socket.assigns.page) do
+      nil ->
+        assign(socket, :tree, {:missing, :no_live_view})
+
+      owner ->
+        pids = live_view_pids(socket.assigns.page)
+
+        socket
+        |> assign(:tree_pending?, true)
+        |> start_async(:tree, fn -> ComponentTree.read(owner, pids) end)
+    end
+  end
+
+  defp live_view_pids(%Page{sids: sids}),
+    do: Enum.flat_map(sids, fn sid -> safe(fn -> Store.pids_for(sid) end, []) end)
 
   # The page's newest LiveView (read now: a rejoin changes the owner).
   defp live_view_owner(%Page{sids: sids}) do
@@ -357,7 +437,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     assigns = assign(assigns, :tab_labels, @tab_labels)
 
     ~H"""
-    <div id="pdt-panel" class="pdt-panel">
+    <div id="pdt-panel" class="pdt-panel" phx-hook="PdtPanel">
       <header class="pdt-header">
         <span class="pdt-logo">dev toolbar</span>
         <.summary_bar summary={@summary} dropped={@dropped} />
@@ -441,6 +521,8 @@ defmodule PhoenixDevToolbar.PanelLive do
           snapshot={@snapshot}
           snapshot_pending?={@snapshot_pending?}
           last_changed={@last_changed}
+          tree={@tree}
+          polling?={@tab == "live_view" and @lv_tab == "components" and @visible?}
           events={@streams.lv_events}
           root={@page.root}
         />

@@ -35,12 +35,43 @@ const toParent = (type) => {
   }
 }
 
-const setOpen = (open) => document.documentElement.classList.toggle("pdt-open", open)
+// Whether the panel is worth refreshing: expanded by the loader and the browser
+// tab visible. PanelLive polls the component tree only then (ADR 07).
+let open = false
+let panelHook = null
+
+const pushVisibility = () => {
+  if (panelHook) {
+    panelHook.pushEvent("pdt:visibility", {open, visible: document.visibilityState === "visible"})
+  }
+}
+
+const setOpen = (next) => {
+  open = next
+  document.documentElement.classList.toggle("pdt-open", open)
+  pushVisibility()
+}
 
 window.addEventListener("message", (event) => {
   if (event.origin !== window.location.origin || event.source !== window.parent) return
   if (event.data && event.data.type === "pdt:state") setOpen(Boolean(event.data.open))
 })
+
+document.addEventListener("visibilitychange", pushVisibility)
+
+// On #pdt-panel: reports visibility on join and after reconnects.
+const PdtPanel = {
+  mounted() {
+    panelHook = this
+    pushVisibility()
+  },
+  reconnected() {
+    pushVisibility()
+  },
+  destroyed() {
+    if (panelHook === this) panelHook = null
+  },
+}
 
 // The toggle button collapses or expands, hide shrinks the toolbar to a corner
 // pill, and picking a tab always expands.
@@ -66,6 +97,7 @@ document.addEventListener("keydown", (event) => {
 // A function, so reconnects pick up the host's current token.
 const liveSocket = new LiveSocket(script.dataset.socketPath, Socket, {
   params: () => ({_csrf_token: csrfToken()}),
+  hooks: {PdtPanel},
 })
 
 liveSocket.connect()

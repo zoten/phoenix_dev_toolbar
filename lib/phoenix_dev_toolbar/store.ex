@@ -119,6 +119,14 @@ defmodule PhoenixDevToolbar.Store do
   @spec sid_for_pid(pid()) :: Session.sid() | nil
   def sid_for_pid(pid), do: lookup(@pids, pid)
 
+  @doc """
+  The processes tracked as `sid`: its LiveView and nested LiveViews (request
+  processes leave the index when they respond). Scans the pid index, which only
+  holds tracked processes; called by the panel, never by a handler.
+  """
+  @spec pids_for(Session.sid()) :: [pid()]
+  def pids_for(sid), do: @pids |> :ets.match({:"$1", sid}) |> List.flatten()
+
   @doc "Links a LiveView socket id (created during the dead render) to its sid."
   @spec link_socket_id(String.t(), Session.sid()) :: true
   def link_socket_id(socket_id, sid) when is_binary(socket_id),

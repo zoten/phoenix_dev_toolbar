@@ -171,6 +171,19 @@ defmodule PhoenixDevToolbar.StoreTest do
     end
   end
 
+  describe "pids_for/1" do
+    test "lists the processes tracked as a session" do
+      %Session{sid: sid} = Store.new_session(Session.new(:live_view))
+      %Session{sid: other} = Store.new_session(Session.new(:live_view))
+      [a, b, c] = for _ <- 1..3, do: start_owner()
+      Store.track_pid(a, sid)
+      Store.track_pid(b, sid)
+      Store.track_pid(c, other)
+
+      assert Enum.sort(Store.pids_for(sid)) == Enum.sort([a, b])
+    end
+  end
+
   describe "sweep/1 index cleanup" do
     test "drops index rows of missing sessions and pid rows of dead processes" do
       %Session{sid: sid} = Store.new_session(Session.new(:request))

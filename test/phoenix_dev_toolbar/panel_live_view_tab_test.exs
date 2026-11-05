@@ -193,6 +193,17 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
     end
   end
 
+  describe "component tree" do
+    test "explains when the page has no LiveView" do
+      Store.reset()
+      dead = Store.new_session(Session.new(:request, path: "/plain"))
+
+      view = open(dead.sid) |> open_tab("components")
+
+      assert has_element?(view, "#pdt-tree-missing", "No LiveView")
+    end
+  end
+
   describe "end to end with a real host LiveView" do
     setup do
       PhoenixDevToolbar.Collector.attach(PhoenixDevToolbar.Application.plugins())
@@ -249,6 +260,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       assert has_element?(panel, "#pdt-snapshot-api_token", "[REDACTED]")
       refute render(panel) =~ "s3cret"
 
+      render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
       host |> render_hook("click", %{})
       flush(panel)
       # Within a second of the first snapshot the refresh is scheduled, not run:
@@ -258,6 +270,38 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
       assert has_element?(panel, "#pdt-snapshot-clicks", "1")
       assert has_element?(panel, "#pdt-snapshot-clicks.pdt-snapshot--changed")
+    end
+
+    test "shows the component tree, polling only while open and visible" do
+      {_host, sid} = visit("/demo/components")
+      panel = open(sid) |> open_tab("components")
+      _ = render_async(panel)
+
+      assert has_element?(panel, "#pdt-tree-0", "DemoWeb.ComponentsLive")
+      assert has_element?(panel, "#pdt-tree-0 li", "DemoWeb.CounterComponent")
+      assert has_element?(panel, ~s(#pdt-lv-components[data-pdt-polling="off"]))
+
+      render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
+      assert has_element?(panel, ~s(#pdt-lv-components[data-pdt-polling="on"]))
+
+      render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => false})
+      assert has_element?(panel, ~s(#pdt-lv-components[data-pdt-polling="off"]))
+    end
+
+    test "the tree follows live navigation" do
+      {host, sid} = visit("/demo")
+      panel = open(sid) |> open_tab("components")
+      _ = render_async(panel)
+
+      assert has_element?(panel, "#pdt-tree-0", "DemoWeb.PageLive")
+      refute has_element?(panel, "#pdt-tree", "CounterComponent")
+
+      {:ok, _next, _html} = live_redirect(host, to: "/demo/components")
+      _ = render(panel)
+      _ = render_async(panel)
+
+      assert has_element?(panel, "#pdt-tree-0", "DemoWeb.ComponentsLive")
+      assert has_element?(panel, "#pdt-tree-0 li", "DemoWeb.CounterComponent")
     end
   end
 end
