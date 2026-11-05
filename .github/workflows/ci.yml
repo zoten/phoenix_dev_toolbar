@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }}
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Minimum supported (ADR 01)
+          - elixir: "1.17"
+            otp: "26"
+          # Latest, also runs the strict checks
+          - elixir: "1.20"
+            otp: "29"
+            lint: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+            priv/plts
+          key: ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('mix.lock') }}
+      - run: mix deps.get
+      - run: mix compile --warnings-as-errors
+      - run: mix test --warnings-as-errors
+      - if: matrix.lint
+        run: mix format --check-formatted
+      - if: matrix.lint
+        run: mix deps.unlock --check-unused
+      - if: matrix.lint
+        run: mix credo --strict
+      - if: matrix.lint
+        run: mix dialyzer
+      - if: matrix.lint
+        run: mix docs --warnings-as-errors
