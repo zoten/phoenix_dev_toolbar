@@ -74,7 +74,7 @@ defmodule PhoenixDevToolbar.TrackerTest do
   test "live navigation keeps the socket id but starts a child session",
        %{transport: transport} do
     {_pid, first} = connected_mount(socket("phx-1", transport_pid: transport))
-    Notify.subscribe({:transport, transport})
+    Notify.subscribe(first)
 
     {_pid, second} = connected_mount(socket("phx-1", transport_pid: transport), @settings)
 

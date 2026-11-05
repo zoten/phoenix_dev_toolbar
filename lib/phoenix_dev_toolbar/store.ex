@@ -295,11 +295,15 @@ defmodule PhoenixDevToolbar.Store do
 
   defp maybe_index_transport(_session), do: true
 
+  # Index lookups run on the host's hot path (attribution): while the Store
+  # restarts its tables are missing, which simply means "not tracked".
   defp lookup(table, key) do
     case :ets.lookup(table, key) do
       [{^key, sid}] -> sid
       [] -> nil
     end
+  rescue
+    ArgumentError -> nil
   end
 
   ## Housekeeping (run in the Store)

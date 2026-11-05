@@ -20,3 +20,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Loader (shadow DOM iframe, collapse state), panel JS and CSS, esbuild bundles (ADR 04)
 - `mix dev` harness: SQLite demo app with N+1, events, Task.async and dead pages (ADR 06)
 - Prod compile check of a fixture host app installing the toolbar (ADR 01)
+- Panel keeps following a tab after older sessions expire; no missed or out of order events (ADR 04)

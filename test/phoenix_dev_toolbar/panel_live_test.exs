@@ -69,6 +69,13 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     view
   end
 
+  # What a browser sends when it loads a page.
+  defp page_headers(conn) do
+    conn
+    |> Plug.Conn.put_req_header("accept", "text/html")
+    |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
+  end
+
   # Delivers a pending update now instead of waiting for the 100 ms throttle.
   defp flush(view) do
     send(view.pid, :pdt_flush)
@@ -171,9 +178,89 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
   test "is never tracked as a page itself", %{conn: conn, request: request} do
     before = Store.sessions()
 
-    open(conn, request)
+    conn |> page_headers() |> open(request)
 
     assert Store.sessions() == before
+  end
+
+  test "keeps following navigation after older sessions expired",
+       %{conn: conn, request: request, transport: transport} do
+    Store.put_limits(down_grace_ms: 0, ttl_ms: 0)
+    first = live_view_session(request, transport)
+    view = open(conn, request)
+
+    second = live_view_session(first.sid, transport)
+    Notify.session(second)
+    _ = render(view)
+    stop(first.owner)
+    Store.sweep(System.system_time(:microsecond) + 1_000_000)
+    assert Store.session(request) == :error
+
+    third = live_view_session(second.sid, transport)
+    event = query(third.sid, "SELECT third page")
+    Notify.session(third)
+    _ = render(view)
+
+    assert has_element?(view, "#pdt-query-#{event.seq}")
+    refute has_element?(view, "#pdt-empty")
+  end
+
+  test "shows the empty state instead of crashing while the Store restarts",
+       %{conn: conn, request: request} do
+    :ok = Supervisor.terminate_child(PhoenixDevToolbar.Supervisor, Store)
+    on_exit(fn -> Supervisor.restart_child(PhoenixDevToolbar.Supervisor, Store) end)
+
+    view = open(conn, request)
+
+    assert has_element?(view, "#pdt-empty")
+  end
+
+  describe "end to end with a real host LiveView" do
+    setup do
+      Application.put_env(:phoenix_dev_toolbar, :repos, [DemoWeb.FakeRepo])
+      PhoenixDevToolbar.Collector.attach(PhoenixDevToolbar.Application.plugins())
+
+      on_exit(fn ->
+        Application.delete_env(:phoenix_dev_toolbar, :repos)
+        PhoenixDevToolbar.Collector.attach(PhoenixDevToolbar.Application.plugins())
+      end)
+    end
+
+    # Loads a host page as a browser would and returns its LiveView and the
+    # sid from the injected loader tag.
+    defp visit(conn, path) do
+      conn = conn |> page_headers() |> get(path)
+
+      [sid] =
+        conn
+        |> html_response(200)
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("script[data-pdt-sid]")
+        |> LazyHTML.attribute("data-pdt-sid")
+
+      {:ok, host, _html} = live(conn)
+      {host, sid}
+    end
+
+    test "follows the page from dead render through live events and navigation",
+         %{conn: conn} do
+      {host, sid} = visit(conn, "/demo")
+      panel = open(build_conn(), sid)
+
+      host |> render_hook("query", %{"sql" => "SELECT from mount page"})
+      flush(panel)
+
+      assert has_element?(panel, "#pdt-queries", "SELECT from mount page")
+      assert has_element?(panel, "#pdt-badge-response", "200")
+
+      {:ok, next, _html} = live_redirect(host, to: "/demo/other")
+      _ = render(panel)
+      next |> render_hook("query", %{"sql" => "SELECT after navigation"})
+      flush(panel)
+
+      assert has_element?(panel, "#pdt-queries", "SELECT after navigation")
+      refute has_element?(panel, "#pdt-queries", "SELECT from mount page")
+    end
   end
 
   test "loads only toolbar assets, relative to the mount path", %{conn: conn, request: request} do

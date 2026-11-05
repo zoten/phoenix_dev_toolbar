@@ -23,20 +23,28 @@ defmodule PhoenixDevToolbar.PanelLive do
   @tabs ~w(ecto request)
   # Rows kept in the DOM per list; the Store keeps 500 events per session.
   @dom_limit 500
+  # Seqs are allocated before their row is written, so concurrent writers on one
+  # session can land out of order: each flush re-reads this many seqs below the
+  # last one seen and skips the ones already shown.
+  @reread_window 64
   @sid_format ~r/^[A-Za-z0-9_-]{1,64}$/
 
   @impl true
   # Rendered by PhoenixDevToolbar.Plug without a router: the sid comes from the
   # signed LiveView session, there are no route params.
   def mount(_params, session, socket) do
+    root = valid_sid(session["pdt_sid"])
+
     socket =
       socket
-      |> assign(root: valid_sid(session["pdt_sid"]), tab: "ecto", flush: nil)
-      |> assign(sids: [], seqs: %{}, subscribed: [])
+      |> assign(root: root, tab: "ecto", flush: nil, subscribed: [])
       |> stream_configure(:queries, dom_id: &"pdt-query-#{&1.seq}")
       |> stream_configure(:requests, dom_id: &"pdt-request-#{&1.seq}")
+      # Subscribe before reading: a LiveView announced between the read and the
+      # subscription would otherwise never reach the panel.
+      |> subscribe(List.wrap(root))
 
-    {:ok, load(socket)}
+    {:ok, load(socket, root)}
   end
 
   @impl true
@@ -53,40 +61,86 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   def handle_info(:pdt_flush, socket), do: {:noreply, socket |> cancel_flush() |> flush()}
 
-  def handle_info({:pdt_session, _sid}, socket), do: {:noreply, load(socket)}
+  def handle_info({:pdt_session, sid}, %{assigns: %{page: %Page{} = page}} = socket) do
+    with {:ok, child} <- safe(fn -> Store.session(sid) end, :error),
+         {change, next} <- Page.follow(page, child) do
+      {:noreply, apply_change(socket, change, next)}
+    else
+      _ -> {:noreply, socket}
+    end
+  end
 
   def handle_info(_message, socket), do: {:noreply, socket}
 
   ## Loading
 
-  # (Re)builds the page from the Store: on mount and whenever the page changes.
-  defp load(%{assigns: %{root: nil}} = socket), do: reset(socket, [], [])
+  # Derives the page once, at mount. Later changes arrive as notifications.
+  defp load(socket, nil), do: show(socket, %Page{}, [])
 
-  defp load(%{assigns: %{root: root}} = socket) do
-    sids = Page.sids(root)
-    socket = resubscribe(socket, sids)
-    events = sids |> Enum.flat_map(&Store.events/1) |> Enum.sort_by(& &1.seq)
-    reset(socket, sids, events)
+  defp load(socket, root) do
+    case safe(fn -> Page.initial(root) end, nil) do
+      %Page{sids: sids} = page ->
+        socket |> subscribe(sids) |> show(page, read_all(sids))
+
+      nil ->
+        show(socket, %Page{root: root}, [])
+    end
   end
 
-  defp reset(socket, sids, events) do
+  # The first LiveView joined: add it, keep what the request already showed.
+  defp apply_change(socket, :connected, %Page{} = page) do
+    [_root, live] = page.sids
+    events = read_all([live])
+
     socket
-    |> assign(sids: sids, seqs: last_seqs(sids, events), summary: Summary.new(events))
-    |> assign(:missing?, sids == [])
+    |> subscribe([live])
+    |> assign(page: page)
+    |> remember(events)
+    |> insert_all(events)
+  end
+
+  # Live navigation: a new page in the same tab replaces everything.
+  defp apply_change(socket, :navigated, %Page{sids: sids} = page) do
+    socket
+    |> unsubscribe(socket.assigns.page.sids -- [socket.assigns.root])
+    |> subscribe(sids)
+    |> show(page, read_all(sids))
+  end
+
+  defp apply_change(socket, :rejoined, %Page{} = page), do: assign(socket, :page, page)
+
+  defp show(socket, %Page{sids: sids} = page, events) do
+    socket
+    |> assign(page: page, missing?: sids == [], summary: Summary.new(events))
+    |> assign(seqs: %{}, seen: MapSet.new())
+    |> remember(events)
     |> stream(:queries, Enum.filter(events, &query?/1), reset: true, limit: -@dom_limit)
     |> stream(:requests, Enum.filter(events, &request?/1), reset: true, limit: -@dom_limit)
   end
 
-  defp flush(%{assigns: %{sids: sids, seqs: seqs}} = socket) do
+  defp flush(%{assigns: %{page: %Page{sids: sids}, seqs: seqs, seen: seen}} = socket) do
+    lows = Map.new(sids, &{&1, max(Map.get(seqs, &1, 0) - @reread_window, 0)})
+
     events =
       sids
-      |> Enum.flat_map(&Store.events(&1, Map.get(seqs, &1, 0)))
+      |> Enum.flat_map(fn sid -> safe(fn -> Store.events(sid, lows[sid]) end, []) end)
+      |> Enum.reject(&MapSet.member?(seen, &1.seq))
       |> Enum.sort_by(& &1.seq)
 
-    Enum.reduce(events, socket, &insert/2)
-    |> assign(:seqs, last_seqs(sids, events, seqs))
+    socket
     |> assign(:summary, Enum.reduce(events, socket.assigns.summary, &Summary.add(&2, &1)))
+    |> remember(events)
+    |> forget_below(lows)
+    |> insert_all(events)
   end
+
+  defp read_all(sids) do
+    sids
+    |> Enum.flat_map(fn sid -> safe(fn -> Store.events(sid) end, []) end)
+    |> Enum.sort_by(& &1.seq)
+  end
+
+  defp insert_all(socket, events), do: Enum.reduce(events, socket, &insert/2)
 
   defp insert(%Event{} = event, socket) do
     cond do
@@ -96,26 +150,45 @@ defmodule PhoenixDevToolbar.PanelLive do
     end
   end
 
-  defp last_seqs(sids, events, initial \\ %{}) do
-    Enum.reduce(events, Map.take(initial, sids), fn %Event{sid: sid, seq: seq}, acc ->
-      Map.update(acc, sid, seq, &max(&1, seq))
-    end)
+  # Tracks the highest seq per sid and the seqs already shown (for the re-read
+  # window); `forget_below/2` keeps `seen` bounded to that window.
+  defp remember(socket, events) do
+    seqs =
+      Enum.reduce(events, socket.assigns.seqs, fn %Event{sid: sid, seq: seq}, acc ->
+        Map.update(acc, sid, seq, &max(&1, seq))
+      end)
+
+    assign(socket, seqs: seqs, seen: Enum.into(events, socket.assigns.seen, & &1.seq))
   end
 
-  # Subscriptions follow the page: the sids shown plus the root, whose
-  # `{:pdt_session, _}` announces the first LiveView connection.
-  defp resubscribe(socket, sids) do
-    case connected?(socket) do
-      true ->
-        wanted = Enum.uniq([socket.assigns.root | sids])
-        subscribed = socket.assigns.subscribed
-        Enum.each(subscribed -- wanted, &Notify.unsubscribe/1)
-        Enum.each(wanted -- subscribed, &Notify.subscribe/1)
-        assign(socket, :subscribed, wanted)
+  defp forget_below(socket, lows) do
+    floor = lows |> Map.values() |> Enum.min(fn -> 0 end)
+    update(socket, :seen, &MapSet.filter(&1, fn seq -> seq >= floor end))
+  end
 
-      false ->
-        socket
+  defp subscribe(socket, sids) do
+    new = Enum.reject(sids, &(&1 in socket.assigns.subscribed))
+    maybe_connected(socket, fn -> Enum.each(new, &Notify.subscribe/1) end)
+    assign(socket, :subscribed, socket.assigns.subscribed ++ new)
+  end
+
+  defp unsubscribe(socket, sids) do
+    maybe_connected(socket, fn -> Enum.each(sids, &Notify.unsubscribe/1) end)
+    assign(socket, :subscribed, socket.assigns.subscribed -- sids)
+  end
+
+  defp maybe_connected(socket, fun) do
+    case connected?(socket) do
+      true -> fun.()
+      false -> :ok
     end
+  end
+
+  # The Store's tables vanish while it restarts: the panel shows what it can.
+  defp safe(fun, fallback) do
+    fun.()
+  rescue
+    ArgumentError -> fallback
   end
 
   defp cancel_flush(%{assigns: %{flush: nil}} = socket), do: socket

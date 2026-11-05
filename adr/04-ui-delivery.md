@@ -67,13 +67,22 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   layout never can. `panel.js` therefore sends the host page's CSRF meta token (the
   iframe is same origin; read only), falling back to its own for hosts without one.
 - **Panel**: `PhoenixDevToolbar.PanelLive` (`<path>/panel?sid=<request sid>`) shows one
-  page: the request and its LiveView, or only the newest LiveView after live navigation
-  in the same tab (`PhoenixDevToolbar.Page`; a duplicated tab never takes over). It reads
-  the Store, subscribes through the Registry to the root sid and the sids shown, re-reads
-  new events at most every 100 ms, and rebuilds on `{:pdt_session, _}`. Lists are LiveView
-  streams capped at 500 rows; the summary bar (status and duration, query count and
-  database time, router errors) is folded incrementally (`PhoenixDevToolbar.Summary`).
-  Tabs: Ecto, Request. An invalid or expired sid shows an explanation, not an error.
+  page: the request and its LiveView, or only the newest LiveView after live navigation.
+  `PhoenixDevToolbar.Page` derives the page once at mount (catching up with navigation
+  that happened before the panel opened) and then only moves forward on
+  `{:pdt_session, sid}` notifications: `:connected` (first LiveView of the request),
+  `:navigated` (a child of the current LiveView on the same transport, or at another
+  path: a duplicated tab rejoins at the same path and is ignored), `:rejoined` (the
+  current LiveView reconnected). It never re-derives the page from the root, so the
+  root expiring (TTL, eviction) or an older LiveView expiring does not affect it.
+  The panel subscribes to the root before reading, so a LiveView connecting during
+  mount is not missed, and to every sid shown. It re-reads new events at most every
+  100 ms, including a window of 64 seqs below the last one seen (seqs are allocated
+  before their row is written, so concurrent writers can land out of order), skipping
+  seqs already shown. Lists are LiveView streams capped at 500 rows; the summary bar
+  (status and duration, query count and database time, router errors) is folded
+  incrementally (`PhoenixDevToolbar.Summary`). Tabs: Ecto, Request. An invalid or
+  expired sid, or the Store restarting, shows an explanation, not an error.
 - Collapsed by default to the header bar (status, query count and time, errors);
   the open state persists in `localStorage` of the host origin.
 

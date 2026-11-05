@@ -8,12 +8,12 @@ defmodule PhoenixDevToolbar.Notify do
 
   @registry PhoenixDevToolbar.Registry
 
-  @type key :: Session.sid() | {:transport, pid()}
+  @type key :: Session.sid()
 
   @spec child_spec(term()) :: Supervisor.child_spec()
   def child_spec(_arg), do: Registry.child_spec(keys: :duplicate, name: @registry)
 
-  @doc "Subscribes the caller to a session's events or to a transport's new sessions."
+  @doc "Subscribes the caller to a session's events and to its child sessions."
   @spec subscribe(key()) :: :ok
   def subscribe(key) do
     {:ok, _owner} = Registry.register(@registry, key, nil)
@@ -28,15 +28,15 @@ defmodule PhoenixDevToolbar.Notify do
   def event(sid), do: dispatch(sid, {:pdt_event, sid})
 
   @doc """
-  Announces a new LiveView session with `{:pdt_session, sid}` to the subscribers
-  of its parent sid (dead render to LiveView) and of its transport (live
-  navigation in the same tab).
+  Announces a LiveView session with `{:pdt_session, sid}` to the subscribers of
+  its parent sid (a new LiveView: first connection or live navigation) and of
+  its own sid (a rejoin of a session someone already shows).
   """
   @spec session(Session.t()) :: :ok
-  def session(%Session{sid: sid, parent: parent, transport: transport}) do
+  def session(%Session{sid: sid, parent: parent}) do
     message = {:pdt_session, sid}
     maybe_dispatch(parent, message)
-    maybe_dispatch(transport && {:transport, transport}, message)
+    dispatch(sid, message)
   end
 
   defp maybe_dispatch(nil, _message), do: :ok

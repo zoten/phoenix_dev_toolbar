@@ -37,15 +37,16 @@ host's hot path).
     process died is indistinguishable from a rejoin and continues the same session.
 - A connected mount with an unknown `socket.id` (its dead render was not tracked) gets a
   session whose `parent` is the newest sid of its `socket.transport_pid` (one transport
-  per browser tab). The panel follows the tab through `{:pdt_session, sid}` notifications.
+  per browser tab).
 - Nested LiveViews (`live_render`, non sticky) run in their own process and share the
   sid of `socket.parent_pid`. Sticky LiveViews get their own session that is never
   indexed as the tab's latest, since they survive navigation.
 - The toolbar's own LiveViews (any view under `PhoenixDevToolbar.`) are never tracked.
 - `PhoenixDevToolbar.Tracker` implements these rules; it runs inside the collector's
   mount `:start` handler before any plugin sees the event, so plugins always find the
-  sid already set. New LiveView sessions are announced with `{:pdt_session, sid}` to
-  the subscribers of the parent sid and of the transport (`PhoenixDevToolbar.Notify`).
+  sid already set. Every new or claimed LiveView session is announced with
+  `{:pdt_session, sid}` to the subscribers of its parent sid and of its own sid
+  (`PhoenixDevToolbar.Notify`); the panel decides what that means for its page (ADR 04).
 
 **Attribution** (inside the handler, in this order):
 
