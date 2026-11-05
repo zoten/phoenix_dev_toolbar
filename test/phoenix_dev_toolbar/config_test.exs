@@ -7,6 +7,7 @@ defmodule PhoenixDevToolbar.ConfigTest do
   alias PhoenixDevToolbar.Plugins
   alias PhoenixDevToolbar.TestPlugins.Echo
   alias PhoenixDevToolbar.TestPlugins.SameId
+  alias PhoenixDevToolbar.TestPlugins.ThrowingId
 
   @defaults [{Plugins.Request, []}, {Plugins.Ecto, []}, {Plugins.LiveView, []}]
 
@@ -45,6 +46,21 @@ defmodule PhoenixDevToolbar.ConfigTest do
     assert log =~ "ignoring plugin Missing.Plugin: module not available"
     assert log =~ "DemoWeb.HelloPlug: it does not implement"
     assert log =~ "SameId: id :echo is taken by PhoenixDevToolbar.TestPlugins.Echo"
+  end
+
+  test "a plugin whose id/0 throws is skipped, never crashes the boot" do
+    log = capture_log(fn -> assert Config.expand([ThrowingId, Echo]) == [{Echo, []}] end)
+    assert log =~ "ignoring plugin PhoenixDevToolbar.TestPlugins.ThrowingId: ** (throw) :nope"
+  end
+
+  test "{:exclude, _} needs a module, and excludes an explicitly listed one too" do
+    log =
+      capture_log(fn ->
+        assert Config.expand([Echo, {:exclude, [Echo]}]) == [{Echo, []}]
+        assert Config.expand([Echo, {:exclude, Echo}]) == []
+      end)
+
+    assert log =~ "expected {:exclude, Module}"
   end
 
   test "a value that is not a list falls back to :defaults" do

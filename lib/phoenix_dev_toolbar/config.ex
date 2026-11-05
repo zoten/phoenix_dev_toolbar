@@ -6,11 +6,10 @@ defmodule PhoenixDevToolbar.Config do
 
   require Logger
 
+  alias PhoenixDevToolbar.Plugin
   alias PhoenixDevToolbar.Plugins
 
   @defaults [Plugins.Request, Plugins.Ecto, Plugins.LiveView]
-  # Event plugin ids the toolbar uses itself (client events of the LiveView tab).
-  @reserved_ids [:client]
 
   @type entry :: {module(), keyword()}
 
@@ -35,7 +34,7 @@ defmodule PhoenixDevToolbar.Config do
     |> Enum.flat_map(&entry/1)
     |> Enum.reject(fn {module, _opts} -> module in excluded end)
     |> merge_duplicates()
-    |> Enum.filter(&valid?/1)
+    |> Enum.flat_map(&identify/1)
     |> unique_ids()
   end
 
@@ -46,6 +45,12 @@ defmodule PhoenixDevToolbar.Config do
 
   defp entry(:defaults), do: Enum.map(@defaults, &{&1, []})
   defp entry({:exclude, module}) when is_atom(module), do: []
+
+  defp entry({:exclude, other}) do
+    warn("ignoring #{inspect({:exclude, other}, limit: 5)}: expected {:exclude, Module}")
+    []
+  end
+
   defp entry({module, opts}) when is_atom(module) and is_list(opts), do: [{module, opts}]
   defp entry(module) when is_atom(module), do: [{module, []}]
 
@@ -62,26 +67,37 @@ defmodule PhoenixDevToolbar.Config do
     |> Enum.map(fn {module, _} -> {module, last_opts[module]} end)
   end
 
-  defp valid?({module, _opts}) do
-    check(module)
-  rescue
-    exception -> warn("ignoring plugin #{inspect(module)}: #{Exception.message(exception)}")
+  # Plugin code runs here, during the host's application start: `id/0` is
+  # called once, and any raise, throw or exit only skips that plugin.
+  defp identify({module, opts}) do
+    case check(module) do
+      {:ok, id} -> [{module, opts, id}]
+      {:error, why} -> skip(module, why)
+    end
+  catch
+    kind, reason -> skip(module, Exception.format_banner(kind, reason))
   end
 
   defp check(module) do
     cond do
-      not Code.ensure_loaded?(module) ->
-        warn("ignoring plugin #{inspect(module)}: module not available")
-
-      not plugin?(module) ->
-        warn("ignoring plugin #{inspect(module)}: it does not implement PhoenixDevToolbar.Plugin")
-
-      not is_atom(module.id()) or module.id() in @reserved_ids ->
-        warn("ignoring plugin #{inspect(module)}: id #{inspect(module.id())} is reserved")
-
-      true ->
-        true
+      not Code.ensure_loaded?(module) -> {:error, "module not available"}
+      not plugin?(module) -> {:error, "it does not implement PhoenixDevToolbar.Plugin"}
+      true -> check_id(module.id())
     end
+  end
+
+  defp check_id(id) when is_atom(id) do
+    case id in Plugin.reserved_ids() do
+      true -> {:error, "id #{inspect(id)} is reserved"}
+      false -> {:ok, id}
+    end
+  end
+
+  defp check_id(id), do: {:error, "id/0 must return an atom, got: #{inspect(id, limit: 5)}"}
+
+  defp skip(module, why) do
+    warn("ignoring plugin #{inspect(module)}: #{why}")
+    []
   end
 
   defp plugin?(module) do
@@ -92,9 +108,7 @@ defmodule PhoenixDevToolbar.Config do
 
   defp unique_ids(entries) do
     {kept, _seen} =
-      Enum.flat_map_reduce(entries, %{}, fn {module, _opts} = entry, seen ->
-        id = module.id()
-
+      Enum.flat_map_reduce(entries, %{}, fn {module, opts, id}, seen ->
         case seen do
           %{^id => first} ->
             warn(
@@ -104,7 +118,7 @@ defmodule PhoenixDevToolbar.Config do
             {[], seen}
 
           _ ->
-            {[entry], Map.put(seen, id, module)}
+            {[{module, opts}], Map.put(seen, id, module)}
         end
       end)
 

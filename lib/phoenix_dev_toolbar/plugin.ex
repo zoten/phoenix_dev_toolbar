@@ -91,12 +91,8 @@ defmodule PhoenixDevToolbar.Plugin do
   the id).
   """
   defmacro __using__(opts) do
-    id = Keyword.fetch!(opts, :id)
-    name = Keyword.get(opts, :name, to_string(id))
-
-    unless is_atom(id) and is_binary(name) do
-      raise ArgumentError, "use PhoenixDevToolbar.Plugin expects id: atom and name: string"
-    end
+    id = opts |> Keyword.get(:id) |> id!()
+    name = opts |> Keyword.get(:name, Atom.to_string(id)) |> name!()
 
     quote do
       @behaviour PhoenixDevToolbar.Plugin
@@ -113,4 +109,36 @@ defmodule PhoenixDevToolbar.Plugin do
       defoverridable init: 1
     end
   end
+
+  # `:client` tags the LiveView tab's own client events.
+  @reserved_ids [:client]
+
+  @doc false
+  @spec id!(term()) :: atom()
+  def id!(id) when id in @reserved_ids,
+    do: raise(ArgumentError, "use PhoenixDevToolbar.Plugin: id #{inspect(id)} is reserved")
+
+  def id!(id) when is_atom(id) and not is_nil(id) and not is_boolean(id), do: id
+
+  def id!(id),
+    do:
+      raise(
+        ArgumentError,
+        "use PhoenixDevToolbar.Plugin expects id: an atom, got: #{Macro.to_string(id)}"
+      )
+
+  @doc false
+  @spec name!(term()) :: String.t()
+  def name!(name) when is_binary(name), do: name
+
+  def name!(name),
+    do:
+      raise(
+        ArgumentError,
+        "use PhoenixDevToolbar.Plugin expects name: a string, got: #{Macro.to_string(name)}"
+      )
+
+  @doc false
+  @spec reserved_ids() :: [atom()]
+  def reserved_ids, do: @reserved_ids
 end

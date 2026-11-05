@@ -21,6 +21,7 @@ defmodule PhoenixDevToolbar.Collector do
   @mount_start [:phoenix, :live_view, :mount, :start]
 
   @plugins_key {Collector, :plugins}
+  @configs_key {Collector, :configs}
 
   @doc """
   Attaches handlers for `plugins` (`Config.plugins/0` entries, or bare modules),
@@ -34,9 +35,13 @@ defmodule PhoenixDevToolbar.Collector do
     attached = Enum.flat_map(plugins, &attachable/1)
     configs = Enum.map(attached, fn {plugin, config, _events} -> {plugin, config} end)
     :persistent_term.put(@plugins_key, configs)
+    :persistent_term.put(@configs_key, Map.new(configs))
 
+    # The handler config holds module names only: `:telemetry` copies it into
+    # every emitting process, tracked or not. Configs are read from
+    # persistent_term (no copy) once a process is known to be tracked.
     attached
-    |> Enum.flat_map(fn {plugin, config, events} -> Enum.map(events, &{&1, {plugin, config}}) end)
+    |> Enum.flat_map(fn {plugin, _config, events} -> Enum.map(events, &{&1, plugin}) end)
     |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
     # Session tracking needs the mount event even when no plugin asks for it.
     |> Map.put_new(@mount_start, [])
@@ -61,18 +66,34 @@ defmodule PhoenixDevToolbar.Collector do
 
   defp normalize({plugin, opts}) when is_atom(plugin) and is_list(opts), do: {plugin, opts}
   defp normalize(plugin) when is_atom(plugin), do: {plugin, []}
+  defp normalize(other), do: {other, nil}
+
+  # A bad event name would make :telemetry.attach/4 raise in the host's
+  # application start: checked here, the plugin is skipped instead.
+  defp start(plugin, opts) when not is_atom(plugin) or not is_list(opts),
+    do: skip(plugin, "expected Module or {Module, opts}")
 
   defp start(plugin, opts) do
     with {:ok, config} <- init(plugin, opts),
-         events when is_list(events) <- plugin.telemetry_events(config) do
-      {:ok, config, events}
+         events when is_list(events) <- plugin.telemetry_events(config),
+         true <- Enum.all?(events, &event_name?/1) do
+      {:ok, config, Enum.uniq(events)}
     else
-      {:error, reason} -> skip(plugin, "init/1 returned an error: #{reason}")
-      other -> skip(plugin, "unexpected return: #{inspect(other, limit: 5)}")
+      {:error, reason} when is_binary(reason) ->
+        skip(plugin, "init/1 returned an error: #{reason}")
+
+      false ->
+        skip(plugin, "telemetry_events/1 must return lists of atoms")
+
+      other ->
+        skip(plugin, "unexpected return: #{inspect(other, limit: 5)}")
     end
   catch
     kind, reason -> skip(plugin, Exception.format(kind, reason, __STACKTRACE__))
   end
+
+  defp event_name?([_ | _] = name), do: Enum.all?(name, &is_atom/1)
+  defp event_name?(_name), do: false
 
   defp init(plugin, opts) do
     # function_exported?/3 does not load the module: a plugin not loaded yet
@@ -96,7 +117,7 @@ defmodule PhoenixDevToolbar.Collector do
   end
 
   @doc false
-  @spec handle_event(:telemetry.event_name(), map(), map(), [{module(), term()}]) :: :ok
+  @spec handle_event(:telemetry.event_name(), map(), map(), [module()]) :: :ok
   def handle_event(event, measurements, metadata, plugins) do
     maybe_track(event, metadata)
 
@@ -127,8 +148,11 @@ defmodule PhoenixDevToolbar.Collector do
   defp maybe_track(_event, _metadata), do: :ok
 
   defp collect(plugins, event, payload, %Context{} = context) do
-    for {plugin, config} <- plugins,
+    configs = :persistent_term.get(@configs_key, %{})
+
+    for plugin <- plugins,
         not quarantined?(plugin),
+        {:ok, config} <- [Map.fetch(configs, plugin)],
         do: collect_one(plugin, event, payload, %{context | config: config})
 
     :ok
