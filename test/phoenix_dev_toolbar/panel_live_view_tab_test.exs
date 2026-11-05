@@ -281,6 +281,14 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       end)
     end
 
+    # The LiveView session of the page whose request sid is `sid`.
+    defp sid_of_live(sid) do
+      Enum.find_value(Store.sessions(), fn
+        %Session{kind: :live_view, parent: ^sid, sid: live} -> live
+        _other -> nil
+      end)
+    end
+
     # Loads a host page as a browser would: its LiveView and the injected sid.
     defp visit(path) do
       conn =
@@ -354,6 +362,40 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
       render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => false})
       assert has_element?(panel, ~s(#pdt-lv-components[data-pdt-polling="off"]))
+    end
+
+    test "a read of the previous LiveView that lands after a rejoin is dropped" do
+      {host, sid} = visit("/demo/components")
+      panel = open(sid) |> open_tab("assigns")
+      _ = render_async(panel)
+      assert has_element?(panel, "#pdt-snapshot-clicks", "0")
+
+      # The next read sees clicks: 1, and is held by the suspended host.
+      host |> render_hook("click", %{})
+      :ok = :sys.suspend(host.pid)
+      {:links, before} = Process.info(panel.pid, :links)
+      panel |> element("#pdt-snapshot-refresh") |> render_click()
+      {:links, now} = Process.info(panel.pid, :links)
+      [task] = now -- before
+      ref = Process.monitor(task)
+
+      # With the tab hidden no new read replaces the pending one on rejoin.
+      panel |> element("#pdt-tab-ecto") |> render_click()
+
+      # The rejoin is queued first, the read's result after it.
+      :ok = :sys.suspend(panel.pid)
+      {:ok, session} = Store.session(sid_of_live(sid))
+      {:ok, rejoined} = Store.claim(session.sid, idle_process(), session.transport)
+      Notify.session(rejoined)
+      :ok = :sys.resume(host.pid)
+      assert_receive {:DOWN, ^ref, :process, ^task, _reason}
+      :ok = :sys.resume(panel.pid)
+      _ = render(panel)
+
+      # Back on the tab a fresh read starts (the new owner never answers): the
+      # old LiveView's clicks: 1 must not show as the new page's.
+      panel |> element("#pdt-tab-live_view") |> render_click()
+      refute has_element?(panel, "#pdt-snapshot-clicks", "1")
     end
 
     test "a poll reads the host only while visible" do

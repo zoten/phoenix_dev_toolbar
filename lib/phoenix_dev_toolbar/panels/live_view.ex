@@ -128,8 +128,19 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
 
   def handle_event("lv_snapshot", _params, socket), do: {:noreply, start_snapshot(socket)}
 
+  # Reads return the owner they read: a read of the previous LiveView that
+  # finished just before the page change was handled is dropped, never shown
+  # as the new page's.
   @impl Phoenix.LiveComponent
-  def handle_async(:snapshot, {:ok, snapshot}, socket),
+  def handle_async(
+        key,
+        {:ok, {owner, _result}},
+        %{assigns: %{page: %Page{owner: current}}} = socket
+      )
+      when key in [:snapshot, :tree] and is_pid(current) and owner != current,
+      do: {:noreply, socket}
+
+  def handle_async(:snapshot, {:ok, {_owner, snapshot}}, socket),
     do: {:noreply, assign(socket, snapshot: snapshot, snapshot_pending?: false)}
 
   def handle_async(_key, {:exit, {:shutdown, :page_changed}}, socket), do: {:noreply, socket}
@@ -137,7 +148,7 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
   def handle_async(:snapshot, {:exit, _reason}, socket),
     do: {:noreply, assign(socket, snapshot: {:missing, :gone}, snapshot_pending?: false)}
 
-  def handle_async(:tree, {:ok, tree}, socket),
+  def handle_async(:tree, {:ok, {_owner, tree}}, socket),
     do: {:noreply, socket |> assign(tree: tree, tree_pending?: false) |> schedule_tree()}
 
   def handle_async(:tree, {:exit, _reason}, socket),
@@ -224,7 +235,7 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
       owner ->
         socket
         |> assign(snapshot_pending?: true, snapshot_at: System.monotonic_time(:millisecond))
-        |> start_async(:snapshot, fn -> take_snapshot(owner) end)
+        |> start_async(:snapshot, fn -> {owner, take_snapshot(owner)} end)
     end
   end
 
@@ -284,7 +295,7 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
 
         socket
         |> assign(:tree_pending?, true)
-        |> start_async(:tree, fn -> ComponentTree.read(owner, pids) end)
+        |> start_async(:tree, fn -> {owner, ComponentTree.read(owner, pids)} end)
     end
   end
 
