@@ -135,6 +135,8 @@ defmodule Demo.Layouts do
           <.link navigate="/posts">Posts (N+1)</.link>
           <.link navigate="/counter">Events</.link>
           <.link navigate="/tasks">Task.async</.link>
+          <.link navigate="/components">Components</.link>
+          <.link navigate="/assigns">Assigns</.link>
           <a href="/plain">Dead page</a>
         </nav>
         {@inner_content}
@@ -277,6 +279,123 @@ defmodule Demo.TasksLive do
   end
 end
 
+defmodule Demo.UserCard do
+  @moduledoc false
+  # A stateful LiveComponent: its update, handle_event and render show up in the
+  # LiveView tab, folded into the parent render.
+  use Phoenix.LiveComponent
+
+  def mount(socket), do: {:ok, assign(socket, likes: 0, refreshed: 0)}
+
+  def update(%{refresh: true}, socket), do: {:ok, update(socket, :refreshed, &(&1 + 1))}
+  def update(assigns, socket), do: {:ok, assign(socket, user: assigns.user)}
+
+  def handle_event("like", _params, socket), do: {:noreply, update(socket, :likes, &(&1 + 1))}
+
+  def render(assigns) do
+    ~H"""
+    <li id={"card-#{@user.id}"}>
+      {@user.name}
+      <button id={"like-#{@user.id}"} phx-click="like" phx-target={@myself}>Like ({@likes})</button>
+      <small>refreshed {@refreshed}x</small>
+    </li>
+    """
+  end
+end
+
+defmodule Demo.NestedLive do
+  @moduledoc false
+  # A nested LiveView (`live_render/3`): its own process, same toolbar session.
+  use Phoenix.LiveView
+
+  def mount(_params, _session, socket), do: {:ok, assign(socket, pings: 0)}
+
+  def handle_event("ping", _params, socket), do: {:noreply, update(socket, :pings, &(&1 + 1))}
+
+  def render(assigns) do
+    ~H"""
+    <p>Nested LiveView: <button id="ping" phx-click="ping">Ping ({@pings})</button></p>
+    """
+  end
+end
+
+defmodule Demo.ComponentsLive do
+  @moduledoc false
+  use Phoenix.LiveView
+
+  import Ecto.Query
+
+  alias Demo.Repo
+  alias Demo.User
+
+  def mount(_params, _session, socket),
+    do: {:ok, assign(socket, users: Repo.all(from(u in User, order_by: u.name)))}
+
+  # send_update/3 renders the components outside a LiveView render.
+  def handle_event("refresh", _params, socket) do
+    for user <- socket.assigns.users, do: send_update(Demo.UserCard, id: user.id, refresh: true)
+    {:noreply, socket}
+  end
+
+  def handle_event("highlight", _params, socket),
+    do: {:noreply, push_event(socket, "highlight", %{id: "cards"})}
+
+  def render(assigns) do
+    ~H"""
+    <h1>Components</h1>
+    <p>LiveComponents, a nested LiveView and a <code>push_event</code>: see the LiveView tab.</p>
+    <button id="refresh" phx-click="refresh">send_update all</button>
+    <button id="highlight" phx-click="highlight">push_event "highlight"</button>
+    <ul id="cards">
+      <.live_component :for={user <- @users} module={Demo.UserCard} id={user.id} user={user} />
+    </ul>
+    {live_render(@socket, Demo.NestedLive, id: "nested")}
+    """
+  end
+end
+
+defmodule Demo.AssignsLive do
+  @moduledoc false
+  # Large and sensitive assigns, a per keystroke diff and a slow handle_params.
+  use Phoenix.LiveView
+
+  def mount(_params, _session, socket) do
+    {:ok,
+     assign(socket,
+       query: "",
+       api_token: "demo-token-never-shown",
+       rows: Enum.map(1..2_000, &%{id: &1, label: "row #{&1}"}),
+       settings: %{theme: "light", password: "hunter2", nested: %{deep: %{deeper: [1, 2, 3]}}}
+     )}
+  end
+
+  def handle_params(params, _uri, socket) do
+    slow? = params["slow"] == "1"
+    maybe_sleep(slow?)
+    {:noreply, assign(socket, slow?: slow?)}
+  end
+
+  defp maybe_sleep(true), do: Process.sleep(250)
+  defp maybe_sleep(false), do: :ok
+
+  def handle_event("search", %{"q" => q}, socket), do: {:noreply, assign(socket, query: q)}
+
+  def render(assigns) do
+    ~H"""
+    <h1>Assigns</h1>
+    <p>
+      2000 rows, a nested map and redacted keys (<code>api_token</code>, <code>password</code>).
+      <.link :if={!@slow?} patch="/assigns?slow=1">Slow handle_params (250 ms)</.link>
+      <.link :if={@slow?} patch="/assigns">Back</.link>
+    </p>
+    <form id="search" phx-change="search">
+      <input name="q" value={@query} placeholder="Type to change one assign" autocomplete="off" />
+    </form>
+    <p>Query: <code>{@query}</code>, {length(@rows)} rows.</p>
+    """
+  end
+end
+
 defmodule Demo.PlainPage do
   @moduledoc false
   @behaviour Plug
@@ -322,6 +441,8 @@ defmodule Demo.Router do
       live "/posts", Demo.PostsLive
       live "/counter", Demo.CounterLive
       live "/tasks", Demo.TasksLive
+      live "/components", Demo.ComponentsLive
+      live "/assigns", Demo.AssignsLive
     end
 
     get "/plain", Demo.PlainPage, []
