@@ -12,5 +12,9 @@ defmodule PhoenixDevToolbar.TestPlugins.MountBoomPanel do
   def handle_events(_events, socket), do: socket
 
   @impl Phoenix.LiveComponent
-  def render(assigns), do: ~H"<div id=\"mount-boom\"></div>"
+  def render(assigns) do
+    ~H"""
+    <div id="mount-boom"></div>
+    """
+  end
 end
