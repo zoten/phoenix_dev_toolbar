@@ -57,8 +57,13 @@ defmodule PhoenixDevToolbar.Panel do
   This behaviour is unstable before 1.0: changes are listed in the CHANGELOG.
   """
 
+  require Logger
+
+  import Phoenix.Component, only: [sigil_H: 2]
+
   alias Phoenix.LiveView.Socket
   alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.Truncate
 
   @doc "The page changed: replace everything shown with `events`."
   @callback handle_reset(events :: [Event.t()], Socket.t()) :: Socket.t()
@@ -121,7 +126,60 @@ defmodule PhoenixDevToolbar.Panel do
           "#{inspect(env.module)}: a PhoenixDevToolbar.Panel cannot define update_many/1"
     end
 
-    :ok
+    # The plugin's own callbacks run behind a boundary: an exception breaks
+    # this tab only (the toolbar shows it with a Re-enable button), never the
+    # whole panel. A broken tab renders nothing of the plugin's.
+    quote do
+      defoverridable render: 1
+
+      @impl Phoenix.LiveComponent
+      def render(%{pdt_error: banner} = assigns) when is_binary(banner),
+        do: PhoenixDevToolbar.Panel.__broken__(assigns)
+
+      def render(assigns), do: super(assigns)
+
+      unquote(guarded(env, :handle_event, 3))
+      unquote(guarded(env, :handle_async, 3))
+    end
+  end
+
+  defp guarded(env, name, 3) do
+    if Module.defines?(env.module, {name, 3}) do
+      quote do
+        defoverridable [{unquote(name), 3}]
+
+        @impl Phoenix.LiveComponent
+        def unquote(name)(a, b, socket) do
+          super(a, b, socket)
+        catch
+          kind, reason ->
+            {:noreply, PhoenixDevToolbar.Panel.__break__(socket, kind, reason, __STACKTRACE__)}
+        end
+      end
+    end
+  end
+
+  @doc false
+  @spec __broken__(map()) :: Phoenix.LiveView.Rendered.t()
+  def __broken__(assigns) do
+    ~H"""
+    <div id={@id} hidden></div>
+    """
+  end
+
+  @doc false
+  # Marks the tab broken and tells the toolbar (this component runs in the
+  # panel LiveView's process), which shows the error and a Re-enable button.
+  @spec __break__(Socket.t(), atom(), term(), Exception.stacktrace()) :: Socket.t()
+  def __break__(socket, kind, reason, stacktrace) do
+    Logger.error(
+      "[phoenix_dev_toolbar] panel #{inspect(socket.assigns[:id])} raised:\n" <>
+        Exception.format(kind, reason, stacktrace)
+    )
+
+    banner = Truncate.banner(kind, reason)
+    send(self(), {:pdt_panel_error, socket.assigns[:id], banner})
+    Phoenix.Component.assign(socket, :pdt_error, banner)
   end
 
   @doc false
@@ -130,17 +188,29 @@ defmodule PhoenixDevToolbar.Panel do
   @spec __update__(module(), map(), Socket.t()) :: {:ok, Socket.t()}
   def __update__(module, assigns, socket) do
     {delivery, props} = Map.pop(assigns, :pdt)
-    socket = socket |> Phoenix.Component.assign(props) |> first_reset(module)
+    socket = Phoenix.Component.assign(socket, props)
+    {:ok, deliver(module, delivery, socket)}
+  end
 
-    socket =
-      case delivery do
-        {:reset, events} -> module.handle_reset(events, socket)
-        {:events, events} -> module.handle_events(events, socket)
-        {:info, message} -> module.handle_info(message, socket)
-        nil -> maybe_handle_props(module, socket)
-      end
+  # Re-enable: forget the error, the reset that follows refills the tab.
+  defp deliver(_module, :recover, socket),
+    do: Phoenix.Component.assign(socket, pdt_error: nil, pdt_ready?: false)
 
-    {:ok, socket}
+  defp deliver(_module, _delivery, %Socket{assigns: %{pdt_error: banner}} = socket)
+       when is_binary(banner),
+       do: socket
+
+  defp deliver(module, delivery, socket) do
+    socket = first_reset(socket, module)
+
+    case delivery do
+      {:reset, events} -> module.handle_reset(events, socket)
+      {:events, events} -> module.handle_events(events, socket)
+      {:info, message} -> module.handle_info(message, socket)
+      nil -> maybe_handle_props(module, socket)
+    end
+  catch
+    kind, reason -> __break__(socket, kind, reason, __STACKTRACE__)
   end
 
   # LiveView calls update/2 whenever the parent re-renders the component, even

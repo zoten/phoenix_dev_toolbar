@@ -17,6 +17,7 @@ defmodule PhoenixDevToolbar.Collector do
   alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.Store
   alias PhoenixDevToolbar.Tracker
+  alias PhoenixDevToolbar.Truncate
 
   @mount_start [:phoenix, :live_view, :mount, :start]
 
@@ -140,7 +141,21 @@ defmodule PhoenixDevToolbar.Collector do
 
   @doc false
   @spec quarantined?(module()) :: boolean()
-  def quarantined?(plugin), do: :persistent_term.get(quarantine_key(plugin), false)
+  def quarantined?(plugin), do: :persistent_term.get(quarantine_key(plugin), nil) != nil
+
+  @doc "Why `plugin` was disabled (a bounded error banner), or nil."
+  @spec quarantine_reason(module()) :: String.t() | nil
+  def quarantine_reason(plugin), do: :persistent_term.get(quarantine_key(plugin), nil)
+
+  @doc """
+  Re-enables a quarantined plugin (the panel's Re-enable button). Erasing a
+  persistent_term is expensive: only on an explicit user action.
+  """
+  @spec release(module()) :: :ok
+  def release(plugin) do
+    _ = :persistent_term.erase(quarantine_key(plugin))
+    :ok
+  end
 
   defp maybe_track(@mount_start, %{socket: socket} = metadata),
     do: Tracker.live_view_mount(socket, metadata[:uri])
@@ -176,11 +191,12 @@ defmodule PhoenixDevToolbar.Collector do
         :skip
 
       other ->
-        raise ArgumentError, "expected {:record, %Event{}} or :skip, got: #{inspect(other)}"
+        raise ArgumentError,
+              "expected {:record, %Event{}} or :skip, got: #{inspect(other, limit: 5)}"
     end
   catch
     kind, reason ->
-      quarantine(plugin, Exception.format(kind, reason, __STACKTRACE__))
+      quarantine(plugin, kind, reason, __STACKTRACE__)
       :quarantined
   end
 
@@ -190,13 +206,23 @@ defmodule PhoenixDevToolbar.Collector do
   defp maybe_notify(:ok, sid), do: Notify.event(sid)
   defp maybe_notify(_result, _sid), do: :ok
 
-  defp quarantine(plugin, formatted) do
-    log_once(quarantine_key(plugin), "plugin #{inspect(plugin)} (now disabled)", formatted)
-  end
+  # Stores the bounded banner the panel shows; logs the full error once.
+  # `:persistent_term.put/2` is expensive, but runs once per quarantine.
+  defp quarantine(plugin, kind, reason, stacktrace) do
+    key = quarantine_key(plugin)
 
-  defp release(plugin) do
-    _ = :persistent_term.erase(quarantine_key(plugin))
-    :ok
+    case :persistent_term.get(key, nil) do
+      nil ->
+        :persistent_term.put(key, Truncate.banner(kind, reason))
+
+        Logger.error(
+          "[phoenix_dev_toolbar] plugin #{inspect(plugin)} (now disabled) raised:\n" <>
+            Exception.format(kind, reason, stacktrace)
+        )
+
+      _banner ->
+        :ok
+    end
   end
 
   defp quarantine_key(plugin), do: {Collector, :quarantined, plugin}

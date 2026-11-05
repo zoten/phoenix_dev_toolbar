@@ -103,6 +103,8 @@ body.pdt {
 
 .pdt-tab:hover { opacity: 1; background: rgba(255, 255, 255, .08); }
 .pdt-tab--active { opacity: 1; background: rgba(255, 255, 255, .14); }
+.pdt-tab--error { color: var(--pdt-error); opacity: 1; }
+.pdt-tab--error::after { content: " !"; font-weight: 700; }
 
 .pdt-toggle {
   display: grid;
@@ -304,6 +306,18 @@ body.pdt {
 
 .pdt-button:hover { background: var(--pdt-bg-alt); }
 .pdt-button:focus-visible { outline: 2px solid var(--pdt-accent); outline-offset: 1px; }
+
+/* A plugin disabled after an error (ADR 05). */
+.pdt-disabled {
+  margin: 8px 12px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--pdt-error) 40%, transparent);
+  border-radius: 4px;
+  background: var(--pdt-error-bg);
+}
+
+.pdt-disabled p { margin: 0 0 4px; }
+.pdt-disabled .pdt-button { margin-top: 6px; }
 
 .pdt-snapshot { margin: 0; }
 

@@ -44,6 +44,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     socket =
       socket
       |> assign(shell: shell, tabs: tabs, tab: default_tab(tabs), visible?: false)
+      |> assign(panel_errors: %{}, quarantined: quarantined(shell))
       |> assign(root: root, flush: nil, subscribed: [])
       # Subscribe before reading: a LiveView announced between the read and the
       # subscription would otherwise never reach the panel.
@@ -58,6 +59,26 @@ defmodule PhoenixDevToolbar.PanelLive do
     case Enum.any?(socket.assigns.tabs, &(&1.id == tab)) do
       true -> {:noreply, assign(socket, :tab, tab)}
       false -> {:noreply, socket}
+    end
+  end
+
+  # A disabled plugin's Re-enable button: release the collector's quarantine,
+  # forget the panel errors, then reload the page into every tab.
+  def handle_event("pdt_reenable", %{"tab" => tab}, socket) do
+    case Enum.find(socket.assigns.tabs, &(&1.id == tab)) do
+      %{plugin: plugin, panel: panel} ->
+        Collector.release(plugin)
+        send_update(panel, id: panel_id(tab), pdt: :recover)
+
+        socket =
+          socket
+          |> assign(shell: Shell.mend(socket.assigns.shell, tab))
+          |> update(:panel_errors, &Map.delete(&1, tab))
+
+        {:noreply, show(socket, socket.assigns.page, read_all(socket.assigns.page.sids))}
+
+      nil ->
+        {:noreply, socket}
     end
   end
 
@@ -93,6 +114,10 @@ defmodule PhoenixDevToolbar.PanelLive do
       _ -> {:noreply, socket}
     end
   end
+
+  # A tab's component raised (PhoenixDevToolbar.Panel boundary).
+  def handle_info({:pdt_panel_error, "pdt-panel-" <> tab, banner}, socket) when is_binary(banner),
+    do: {:noreply, update(socket, :panel_errors, &Map.put(&1, tab, banner))}
 
   def handle_info(_message, socket), do: {:noreply, socket}
 
@@ -141,7 +166,8 @@ defmodule PhoenixDevToolbar.PanelLive do
       page: page,
       missing?: sids == [],
       shell: Shell.reset(socket.assigns.shell, events),
-      gaps: gaps(sids)
+      gaps: gaps(sids),
+      quarantined: quarantined(socket.assigns.shell)
     )
     |> assign(seqs: %{}, seen: MapSet.new())
     |> remember(events)
@@ -159,7 +185,7 @@ defmodule PhoenixDevToolbar.PanelLive do
 
     socket
     |> fold(events)
-    |> assign(:gaps, gaps(sids))
+    |> assign(gaps: gaps(sids), quarantined: quarantined(socket.assigns.shell))
     |> remember(events)
     |> forget_below(lows)
     |> deliver(:events, events)
@@ -187,6 +213,37 @@ defmodule PhoenixDevToolbar.PanelLive do
   end
 
   defp panel_id(tab_id), do: "pdt-panel-" <> tab_id
+
+  # Plugins the collector disabled after their collect/3 raised, by tab id
+  # (a persistent_term read each: no copy).
+  defp quarantined(%Shell{plugins: plugins}) do
+    for {plugin, _config} <- plugins,
+        banner = Collector.quarantine_reason(plugin),
+        into: %{},
+        do: {Atom.to_string(plugin.id()), banner}
+  end
+
+  # A disabled plugin without a tab would vanish silently: say so in the bar.
+  defp disabled_badges(assigns) do
+    tab_ids = MapSet.new(assigns.tabs, & &1.id)
+
+    for {plugin, _config} <- assigns.shell.plugins,
+        id = Atom.to_string(plugin.id()),
+        not MapSet.member?(tab_ids, id),
+        banner = assigns.quarantined[id] || Shell.broken(assigns.shell)[id],
+        do: %{
+          id: "disabled-" <> id,
+          text: plugin.name() <> " disabled",
+          level: :error,
+          title: banner
+        }
+  end
+
+  # Why a tab is disabled: its collector, its summary or its component raised.
+  defp tab_error(assigns, tab_id) do
+    assigns.quarantined[tab_id] || Shell.broken(assigns.shell)[tab_id] ||
+      assigns.panel_errors[tab_id]
+  end
 
   defp default_tab([%{id: id} | _tabs]), do: id
   defp default_tab([]), do: nil
@@ -290,7 +347,11 @@ defmodule PhoenixDevToolbar.PanelLive do
       <div id="pdt-bridge" phx-hook="PdtPanel" hidden></div>
       <header class="pdt-header">
         <span class="pdt-logo">dev toolbar</span>
-        <.summary_bar badges={Shell.badges(@shell)} dropped={@gaps.dropped} trimmed={@gaps.trimmed} />
+        <.summary_bar
+          badges={Shell.badges(@shell) ++ disabled_badges(assigns)}
+          dropped={@gaps.dropped}
+          trimmed={@gaps.trimmed}
+        />
         <nav class="pdt-tabs" role="tablist">
           <button
             :for={tab <- @tabs}
@@ -300,7 +361,11 @@ defmodule PhoenixDevToolbar.PanelLive do
             aria-selected={to_string(@tab == tab.id)}
             aria-controls={"pdt-section-" <> tab.id}
             tabindex={if(@tab == tab.id, do: "0", else: "-1")}
-            class={["pdt-tab", @tab == tab.id && "pdt-tab--active"]}
+            class={[
+              "pdt-tab",
+              @tab == tab.id && "pdt-tab--active",
+              tab_error(assigns, tab.id) && "pdt-tab--error"
+            ]}
             phx-click="tab"
             phx-value-tab={tab.id}
           >
@@ -347,6 +412,24 @@ defmodule PhoenixDevToolbar.PanelLive do
         >
           {Map.get(@gaps.by_plugin, tab.id)} older events trimmed: the list starts later than the page.
         </p>
+        <div
+          :if={tab_error(assigns, tab.id)}
+          id={"pdt-disabled-" <> tab.id}
+          class="pdt-disabled"
+          role="alert"
+        >
+          <p>{tab.name} is disabled after an error. The rest of the toolbar keeps working.</p>
+          <pre class="pdt-error">{tab_error(assigns, tab.id)}</pre>
+          <button
+            id={"pdt-reenable-" <> tab.id}
+            type="button"
+            class="pdt-button"
+            phx-click="pdt_reenable"
+            phx-value-tab={tab.id}
+          >
+            Re-enable
+          </button>
+        </div>
         <.live_component
           module={tab.panel}
           id={panel_id(tab.id)}
