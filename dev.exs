@@ -24,6 +24,17 @@ Application.put_env(:phoenix_dev_toolbar, Demo.Endpoint,
 Application.put_env(:phoenix_dev_toolbar, Demo.Repo, database: database, stacktrace: true)
 Application.put_env(:phoenix_dev_toolbar, :repos, [Demo.Repo])
 
+# Plugins (ADR 05): the example Oban plugin and a demo plugin that fails on
+# demand, next to the built-ins.
+Code.require_file("examples/oban/oban_plugin.ex", __DIR__)
+Code.require_file("examples/oban/oban_panel.ex", __DIR__)
+
+Application.put_env(:phoenix_dev_toolbar, :plugins, [
+  :defaults,
+  {PdtExamples.Oban, queues: :all},
+  Demo.FlakyPlugin
+])
+
 defmodule Demo.Repo do
   @moduledoc false
   use Ecto.Repo, otp_app: :phoenix_dev_toolbar, adapter: Ecto.Adapters.SQLite3
@@ -77,6 +88,22 @@ defmodule Demo.Click do
   schema "clicks" do
     field(:label, :string)
   end
+end
+
+defmodule Demo.ObanMigration do
+  @moduledoc false
+  use Ecto.Migration
+
+  def up, do: Oban.Migration.up()
+  def down, do: Oban.Migration.down()
+end
+
+defmodule Demo.WelcomeWorker do
+  @moduledoc false
+  use Oban.Worker, queue: :default, unique: [period: 5]
+
+  @impl Oban.Worker
+  def perform(%Oban.Job{}), do: :ok
 end
 
 defmodule Demo.Seeds do
@@ -137,6 +164,8 @@ defmodule Demo.Layouts do
           <.link navigate="/tasks">Task.async</.link>
           <.link navigate="/components">Components</.link>
           <.link navigate="/assigns">Assigns</.link>
+          <.link navigate="/jobs">Oban jobs</.link>
+          <.link navigate="/plugins">Plugin errors</.link>
           <a href="/plain">Dead page</a>
         </nav>
         {@inner_content}
@@ -354,6 +383,118 @@ defmodule Demo.ComponentsLive do
   end
 end
 
+defmodule Demo.JobsLive do
+  @moduledoc false
+  # The example Oban plugin: jobs inserted from LiveView events show in the
+  # Oban tab; their execution (in Oban's processes) does not.
+  use Phoenix.LiveView
+
+  def mount(_params, _session, socket), do: {:ok, socket}
+
+  def handle_event("one", _params, socket) do
+    {:ok, _job} = Oban.insert(Demo.WelcomeWorker.new(%{user_id: 1, password: "hunter2"}))
+    {:noreply, socket}
+  end
+
+  def handle_event("many", _params, socket) do
+    _jobs = Oban.insert_all(for n <- 1..5, do: Demo.WelcomeWorker.new(%{user_id: n}))
+    {:noreply, socket}
+  end
+
+  def handle_event("invalid", _params, socket) do
+    {:error, _changeset} = Oban.insert(Demo.WelcomeWorker.new(%{}, priority: 99))
+    {:noreply, socket}
+  end
+
+  def render(assigns) do
+    ~H"""
+    <h1>Oban jobs</h1>
+    <p>Each button inserts from this LiveView's process: look at the Oban tab.</p>
+    <button id="job-one" phx-click="one">Insert one (unique for 5 s)</button>
+    <button id="job-many" phx-click="many">insert_all 5</button>
+    <button id="job-invalid" phx-click="invalid">Invalid insert</button>
+    """
+  end
+end
+
+defmodule Demo.FlakyPlugin do
+  @moduledoc false
+  # Fails on demand, to check quarantine by hand (ADR 05): "collect" raises in
+  # the host process, "panel" in the tab's handle_events, "render" in its
+  # template, "summary" in the summary.
+  use PhoenixDevToolbar.Plugin, id: :flaky, name: "Flaky"
+
+  alias PhoenixDevToolbar.Event
+
+  def telemetry_events(_config), do: [[:demo, :flaky]]
+
+  def collect(_event, {_measurements, %{mode: "collect"}}, _context), do: raise("collect failed")
+
+  def collect(_event, {_m, %{mode: mode}}, _context),
+    do: {:record, Event.new(:flaky, :ping, %{mode: mode})}
+
+  def panel, do: Demo.FlakyPanel
+
+  def summary_init(_config), do: 0
+  def summary_add(_count, %Event{data: %{mode: "summary"}}), do: raise("summary failed")
+  def summary_add(count, _event), do: count + 1
+  def badges(count), do: [%{id: "flaky", text: "#{count} flaky", level: :info}]
+end
+
+defmodule Demo.FlakyPanel do
+  @moduledoc false
+  use PhoenixDevToolbar.Panel
+
+  def mount(socket), do: {:ok, assign(socket, :modes, [])}
+
+  def handle_reset(events, socket), do: assign(socket, :modes, Enum.map(events, & &1.data.mode))
+
+  def handle_events(events, socket) do
+    case Enum.any?(events, &(&1.data.mode == "panel")) do
+      true -> raise "panel failed"
+      false -> update(socket, :modes, &(&1 ++ Enum.map(events, fn event -> event.data.mode end)))
+    end
+  end
+
+  def render(assigns) do
+    ~H"""
+    <ul class="pdt-list">
+      <li :for={mode <- @modes} class="pdt-row">{shown(mode)}</li>
+    </ul>
+    """
+  end
+
+  defp shown("render"), do: raise("render failed")
+  defp shown(mode), do: mode
+end
+
+defmodule Demo.PluginsLive do
+  @moduledoc false
+  use Phoenix.LiveView
+
+  def mount(_params, _session, socket), do: {:ok, socket}
+
+  def handle_event("emit", %{"mode" => mode}, socket) do
+    :telemetry.execute([:demo, :flaky], %{}, %{mode: mode})
+    {:noreply, socket}
+  end
+
+  def render(assigns) do
+    ~H"""
+    <h1>Plugin errors</h1>
+    <p>Break the Flaky plugin where its code runs, then re-enable it from its tab.</p>
+    <button
+      :for={mode <- ~w(ok collect summary panel render)}
+      id={"flaky-" <> mode}
+      phx-click="emit"
+      phx-value-mode={mode}
+    >
+      {mode}
+    </button>
+    """
+  end
+end
+
 defmodule Demo.AssignsLive do
   @moduledoc false
   # Large and sensitive assigns, a per keystroke diff and a slow handle_params.
@@ -443,6 +584,8 @@ defmodule Demo.Router do
       live "/tasks", Demo.TasksLive
       live "/components", Demo.ComponentsLive
       live "/assigns", Demo.AssignsLive
+      live "/jobs", Demo.JobsLive
+      live "/plugins", Demo.PluginsLive
     end
 
     get "/plain", Demo.PlainPage, []
@@ -483,8 +626,20 @@ for file <- Path.wildcard(database <> "*"), do: File.rm!(file)
     strategy: :one_for_one
   )
 
-Ecto.Migrator.run(Demo.Repo, [{1, Demo.Migration}], :up, all: true, log: false)
+Ecto.Migrator.run(Demo.Repo, [{1, Demo.Migration}, {2, Demo.ObanMigration}], :up,
+  all: true,
+  log: false
+)
+
 Demo.Seeds.run()
+
+{:ok, _} =
+  Oban.start_link(
+    repo: Demo.Repo,
+    engine: Oban.Engines.Lite,
+    queues: [default: 2],
+    plugins: false
+  )
 
 # The toolbar started before Demo.Repo existed: attach again to pick up its queries.
 PhoenixDevToolbar.Collector.attach(PhoenixDevToolbar.Application.plugins())

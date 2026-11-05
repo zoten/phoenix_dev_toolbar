@@ -32,7 +32,7 @@ Everything is optional and goes in `config/dev.exs`:
 
 ```elixir
 config :phoenix_dev_toolbar,
-  # Panels: the built-ins plus your own (see PhoenixDevToolbar.Plugin)
+  # Panels: the built-ins plus your own (guides/writing-a-plugin.md)
   plugins: [:defaults, {MyApp.Toolbar.Jobs, queues: [:default]}],
   # Values of keys containing these words are shown as [REDACTED]
   redact: ["password", "token", "secret"],

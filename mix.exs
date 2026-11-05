@@ -37,7 +37,9 @@ defmodule PhoenixDevToolbar.MixProject do
     ]
   end
 
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  # The example plugins are compiled in tests (and loaded by dev.exs), never
+  # shipped: the package only lists lib/.
+  defp elixirc_paths(:test), do: ["lib", "test/support", "examples"]
   defp elixirc_paths(_), do: ["lib"]
 
   defp deps do
@@ -51,6 +53,8 @@ defmodule PhoenixDevToolbar.MixProject do
       {:esbuild, "~> 0.10", only: :dev, runtime: false},
       # The `mix dev` harness (dev.exs, ADR 06).
       {:ecto_sqlite3, "~> 0.22", only: :dev},
+      # The example plugin (examples/oban, ADR 05): never needed by host apps.
+      {:oban, "~> 2.19", only: [:dev, :test]},
       {:bandit, "~> 1.5", only: :dev},
       {:jason, "~> 1.4", only: [:dev, :test]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
@@ -102,7 +106,17 @@ defmodule PhoenixDevToolbar.MixProject do
     [
       main: "readme",
       source_ref: "v#{@version}",
-      extras: ["README.md", "CHANGELOG.md"],
+      extras: ["README.md", "guides/writing-a-plugin.md", "CHANGELOG.md"],
+      groups_for_extras: [Guides: ["guides/writing-a-plugin.md"]],
+      groups_for_modules: [
+        "Plugin API": [
+          PhoenixDevToolbar.Plugin,
+          PhoenixDevToolbar.Panel,
+          PhoenixDevToolbar.Context,
+          PhoenixDevToolbar.Event,
+          PhoenixDevToolbar.Truncate
+        ]
+      ],
       # README links to repo files (ADRs, AGENTS.md) that are not part of the docs
       skip_undefined_reference_warnings_on: ["README.md"]
     ]

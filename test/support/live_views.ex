@@ -24,6 +24,21 @@ defmodule DemoWeb.PageLive do
     {:noreply, socket}
   end
 
+  # The span Oban.Engine.insert_job/3 emits in the inserting process
+  # (deps/oban/lib/oban/engine.ex, with_span/4), for the Oban example plugin.
+  def handle_event("enqueue", %{"worker" => worker, "queue" => queue}, socket) do
+    job =
+      %{"user_id" => 1, "token" => "s3cret"}
+      |> Oban.Job.new(worker: worker, queue: queue)
+      |> Ecto.Changeset.apply_changes()
+
+    :telemetry.span([:oban, :engine, :insert_job], %{conf: nil, engine: Oban.Engines.Lite}, fn ->
+      {{:ok, job}, %{conf: nil, engine: Oban.Engines.Lite, job: job}}
+    end)
+
+    {:noreply, socket}
+  end
+
   # What a third party plugin would listen to (TestPlugins.Tabbed).
   def handle_event("echo", %{"value" => value}, socket) do
     :telemetry.execute([:pdt_test, :echo], %{}, %{value: value})

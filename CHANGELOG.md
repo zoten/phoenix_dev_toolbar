@@ -40,3 +40,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Plugin panel shell: LiveComponent tabs, per plugin badges and trimmed notes (ADR 05)
 - LiveView tab on the public panel API; PanelLive is generic glue (ADR 05, ADR 07)
 - Plugin errors shown in their tab with Re-enable; panel side boundary for plugin code (ADR 05)
+- Plugin guide in ExDoc, Oban example plugin, harness pages for jobs and plugin errors (ADR 05, ADR 06)
