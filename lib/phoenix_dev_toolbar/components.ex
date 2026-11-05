@@ -6,42 +6,27 @@ defmodule PhoenixDevToolbar.Components do
   use Phoenix.Component
 
   alias PhoenixDevToolbar.Event
-  alias PhoenixDevToolbar.Summary
 
-  attr :summary, Summary, required: true
+  attr :badges, :list,
+    required: true,
+    doc: "the plugins' badges (PhoenixDevToolbar.Plugin.badge())"
+
   attr :dropped, :integer, default: 0, doc: "events over the flood guard budget, not recorded"
-  attr :trimmed, :integer, default: 0, doc: "oldest events removed past the per plugin and per page caps"
+
+  attr :trimmed, :integer,
+    default: 0,
+    doc: "oldest events removed past the per plugin and per page caps"
 
   def summary_bar(assigns) do
     ~H"""
     <div id="pdt-summary" class="pdt-summary">
       <span
-        :if={@summary.response}
-        id="pdt-badge-response"
-        class={["pdt-badge", status_class(@summary.response.status)]}
+        :for={badge <- @badges}
+        id={"pdt-badge-" <> badge.id}
+        class={["pdt-badge", level_class(badge.level)]}
+        title={badge[:title]}
       >
-        {@summary.response.status} · {duration(@summary.response.duration)}
-      </span>
-      <span
-        id="pdt-badge-queries"
-        class={["pdt-badge", @summary.failed_queries > 0 && "pdt-badge--error"]}
-      >
-        {@summary.queries} {if(@summary.queries == 1, do: "query", else: "queries")} · {duration(
-          @summary.db_us
-        )}
-      </span>
-      <span
-        :if={@summary.callbacks > 0}
-        id="pdt-badge-live"
-        class="pdt-badge"
-        title="LiveView callbacks and the slowest one"
-      >
-        {@summary.callbacks} {if(@summary.callbacks == 1, do: "callback", else: "callbacks")} · max {duration(
-          @summary.slowest_callback_us
-        )}
-      </span>
-      <span :if={@summary.errors > 0} id="pdt-badge-errors" class="pdt-badge pdt-badge--error">
-        {@summary.errors} {if(@summary.errors == 1, do: "error", else: "errors")}
+        {badge.text}
       </span>
       <span
         :if={@dropped > 0}
@@ -62,6 +47,11 @@ defmodule PhoenixDevToolbar.Components do
     </div>
     """
   end
+
+  defp level_class(:ok), do: "pdt-badge--ok"
+  defp level_class(:warn), do: "pdt-badge--warn"
+  defp level_class(:error), do: "pdt-badge--error"
+  defp level_class(_info), do: nil
 
   attr :id, :string, required: true
   attr :event, Event, required: true

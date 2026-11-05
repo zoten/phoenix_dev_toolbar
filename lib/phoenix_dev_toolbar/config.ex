@@ -9,7 +9,7 @@ defmodule PhoenixDevToolbar.Config do
   alias PhoenixDevToolbar.Plugin
   alias PhoenixDevToolbar.Plugins
 
-  @defaults [Plugins.Request, Plugins.Ecto, Plugins.LiveView]
+  @defaults [Plugins.Ecto, Plugins.Request, Plugins.LiveView]
 
   @type entry :: {module(), keyword()}
 

@@ -1,0 +1,113 @@
+defmodule PhoenixDevToolbar.Panel do
+  @moduledoc """
+  A plugin's tab in the toolbar panel: a `Phoenix.LiveComponent` (ADR 05).
+
+  A plugin returns its panel module from `c:PhoenixDevToolbar.Plugin.panel/0`.
+  The toolbar renders it inside its own iframe, never in the host page, and
+  hands it the plugin's events as they arrive:
+
+      defmodule MyApp.Toolbar.JobsPanel do
+        use PhoenixDevToolbar.Panel
+
+        # Events have no :id field: give streams a DOM id from the unique seq.
+        @impl Phoenix.LiveComponent
+        def mount(socket), do: {:ok, stream_configure(socket, :jobs, dom_id: &"jobs-\#{&1.seq}")}
+
+        @impl PhoenixDevToolbar.Panel
+        def handle_reset(events, socket),
+          do: stream(socket, :jobs, events, reset: true, limit: -500)
+
+        @impl PhoenixDevToolbar.Panel
+        def handle_events(events, socket),
+          do: Enum.reduce(events, socket, &stream_insert(&2, :jobs, &1, limit: -500))
+
+        @impl Phoenix.LiveComponent
+        def render(assigns) do
+          ~H\"\"\"
+          <ul id="jobs" class="pdt-list" phx-update="stream">
+            <li id="jobs-empty" class="pdt-list__empty">No jobs yet.</li>
+            <li :for={{id, job} <- @streams.jobs} id={id} class="pdt-row">{job.data.worker}</li>
+          </ul>
+          \"\"\"
+        end
+      end
+
+  Events are the plugin's own, oldest first. Keep them in streams, never in
+  plain assigns: a page can produce thousands. `handle_reset/2` gets every
+  stored event of a new page (the panel opened, live navigation), and runs
+  once with `[]` before the first render; `handle_events/2` gets the new ones
+  since. DOM ids must be unique in the whole panel: prefix them with your
+  plugin's name and use the event's `seq`.
+
+  The toolbar assigns, before calling either callback:
+
+    * `@config`: the plugin's config, as returned by its `init/1`
+    * `@page`: the page shown (`@page.root` is the sid of its HTTP request)
+    * `@shown?`: the tab is selected
+    * `@visible?`: the panel is open and the browser tab visible
+
+  `c:handle_props/1` runs when only those change, for example to start or stop
+  polling. A panel can use every LiveComponent feature: `handle_event/3`,
+  `start_async/3`, `send_update_after/3`. Style it with the panel's `pdt-`
+  classes (`pdt-list`, `pdt-row`, `pdt-tag`, `pdt-badge`): the panel
+  stylesheet is the only one loaded.
+
+  This behaviour is unstable before 1.0: changes are listed in the CHANGELOG.
+  """
+
+  alias Phoenix.LiveView.Socket
+  alias PhoenixDevToolbar.Event
+
+  @doc "The page changed: replace everything shown with `events`."
+  @callback handle_reset(events :: [Event.t()], Socket.t()) :: Socket.t()
+
+  @doc "New events of the plugin since the last call, oldest first."
+  @callback handle_events(events :: [Event.t()], Socket.t()) :: Socket.t()
+
+  @doc "`@shown?`, `@visible?` or `@page` changed. Defaults to doing nothing."
+  @callback handle_props(Socket.t()) :: Socket.t()
+
+  @optional_callbacks handle_props: 1
+
+  @doc false
+  defmacro __using__(_opts) do
+    quote do
+      use Phoenix.LiveComponent
+
+      @behaviour PhoenixDevToolbar.Panel
+
+      @impl Phoenix.LiveComponent
+      def update(assigns, socket),
+        do: PhoenixDevToolbar.Panel.__update__(__MODULE__, assigns, socket)
+
+      @impl PhoenixDevToolbar.Panel
+      def handle_props(socket), do: socket
+
+      defoverridable handle_props: 1
+    end
+  end
+
+  @doc false
+  # The toolbar delivers events with send_update(module, id: id, pdt: {...});
+  # everything else in `assigns` are the props rendered by the toolbar.
+  @spec __update__(module(), map(), Socket.t()) :: {:ok, Socket.t()}
+  def __update__(module, assigns, socket) do
+    {delivery, props} = Map.pop(assigns, :pdt)
+    socket = socket |> Phoenix.Component.assign(props) |> first_reset(module)
+
+    socket =
+      case delivery do
+        {:reset, events} -> module.handle_reset(events, socket)
+        {:events, events} -> module.handle_events(events, socket)
+        nil -> module.handle_props(socket)
+      end
+
+    {:ok, socket}
+  end
+
+  # The first render comes before the toolbar delivers the page's events.
+  defp first_reset(%Socket{assigns: %{pdt_ready?: true}} = socket, _module), do: socket
+
+  defp first_reset(socket, module),
+    do: [] |> module.handle_reset(socket) |> Phoenix.Component.assign(:pdt_ready?, true)
+end

@@ -16,6 +16,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
   use PhoenixDevToolbar.Plugin, id: :live_view, name: "LiveView"
 
   alias Phoenix.LiveView.Socket
+  alias PhoenixDevToolbar.Components
   alias PhoenixDevToolbar.Context
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.LiveViewCompat
@@ -41,6 +42,32 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
 
     view ++ component ++ [@lv ++ [:render, :stop], @lv ++ [:render, :exception]]
   end
+
+  @impl true
+  def summary_init(_config), do: %{callbacks: 0, slowest_us: 0}
+
+  @impl true
+  def summary_add(summary, %Event{kind: :callback, duration: duration}),
+    do: %{callbacks: summary.callbacks + 1, slowest_us: max(summary.slowest_us, duration || 0)}
+
+  def summary_add(summary, %Event{}), do: summary
+
+  @impl true
+  def badges(%{callbacks: 0}), do: []
+
+  def badges(%{callbacks: callbacks, slowest_us: slowest_us}) do
+    [
+      %{
+        id: "live",
+        text: "#{callbacks} #{noun(callbacks)} · max #{Components.duration(slowest_us)}",
+        level: :info,
+        title: "LiveView callbacks and the slowest one"
+      }
+    ]
+  end
+
+  defp noun(1), do: "callback"
+  defp noun(_callbacks), do: "callbacks"
 
   @impl true
   # LiveView callbacks run in the LiveView process itself, tracked through the

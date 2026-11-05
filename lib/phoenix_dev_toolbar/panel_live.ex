@@ -14,6 +14,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   import PhoenixDevToolbar.Components
 
   alias PhoenixDevToolbar.ClientEvent
+  alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.ComponentTree
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
@@ -21,8 +22,8 @@ defmodule PhoenixDevToolbar.PanelLive do
   alias PhoenixDevToolbar.Panels
   alias PhoenixDevToolbar.Profile
   alias PhoenixDevToolbar.Session
+  alias PhoenixDevToolbar.Shell
   alias PhoenixDevToolbar.Store
-  alias PhoenixDevToolbar.Summary
   alias PhoenixDevToolbar.Truncate
 
   @flush_ms 100
@@ -30,9 +31,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   @snapshot_ms 1000
   # Component tree poll interval, only while shown, open and visible.
   @tree_ms 2000
-  @tabs ~w(ecto request live_view)
-  @tab_labels [{"ecto", "Ecto"}, {"request", "Request"}, {"live_view", "LiveView"}]
-  # Rows kept in the DOM per list; the Store keeps 500 events per session.
+  # Rows kept in the DOM per list; the Store keeps 500 events per plugin and page.
   @dom_limit 500
   # Seqs are allocated before their row is written, so concurrent writers on one
   # session can land out of order: each flush re-reads this many seqs below the
@@ -45,15 +44,16 @@ defmodule PhoenixDevToolbar.PanelLive do
   # signed LiveView session, there are no route params.
   def mount(_params, session, socket) do
     root = valid_sid(session["pdt_sid"])
+    shell = Shell.new(Collector.plugins())
+    tabs = Shell.tabs(shell)
 
     socket =
       socket
-      |> assign(root: root, tab: "ecto", lv_tab: "profiler", flush: nil, subscribed: [])
+      |> assign(shell: shell, tabs: tabs, tab: default_tab(tabs))
+      |> assign(root: root, lv_tab: "profiler", flush: nil, subscribed: [])
       |> assign(snapshot: nil, snapshot_pending?: false, snapshot_at: nil, snapshot_timer: nil)
       |> assign(last_changed: [], visible?: false)
       |> assign(tree: nil, tree_pending?: false, tree_timer: nil)
-      |> stream_configure(:queries, dom_id: &"pdt-query-#{&1.seq}")
-      |> stream_configure(:requests, dom_id: &"pdt-request-#{&1.seq}")
       |> stream_configure(:lv_events, dom_id: &lv_dom_id/1)
       |> assign(client_count: 0, client_dropped: 0, recent_client: [])
       # Subscribe before reading: a LiveView announced between the read and the
@@ -64,10 +64,13 @@ defmodule PhoenixDevToolbar.PanelLive do
   end
 
   @impl true
-  def handle_event("tab", %{"tab" => tab}, socket) when tab in @tabs,
-    do: {:noreply, socket |> assign(:tab, tab) |> snapshot_if_shown() |> tree_if_shown()}
-
-  def handle_event("tab", _params, socket), do: {:noreply, socket}
+  # Tab ids are compared as strings: never an atom from the client.
+  def handle_event("tab", %{"tab" => tab}, socket) do
+    case tab in tab_ids(socket.assigns.tabs) do
+      true -> {:noreply, socket |> assign(:tab, tab) |> snapshot_if_shown() |> tree_if_shown()}
+      false -> {:noreply, socket}
+    end
+  end
 
   def handle_event("lv_tab", %{"tab" => tab}, socket) do
     case tab in Panels.LiveView.sub_tabs() do
@@ -213,7 +216,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     |> assign(
       page: page,
       missing?: sids == [],
-      summary: Summary.new(events),
+      shell: Shell.reset(socket.assigns.shell, events),
       profile: Profile.new(events),
       last_changed: Enum.reduce(events, [], &last_changed/2),
       snapshot: nil,
@@ -222,8 +225,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     )
     |> assign(seqs: %{}, seen: MapSet.new())
     |> remember(events)
-    |> stream(:queries, Enum.filter(events, &query?/1), reset: true, limit: -@dom_limit)
-    |> stream(:requests, Enum.filter(events, &request?/1), reset: true, limit: -@dom_limit)
+    |> deliver(:reset, events)
     |> stream(:lv_events, Enum.filter(events, &live_view?/1), reset: true, limit: -@dom_limit)
   end
 
@@ -257,10 +259,10 @@ defmodule PhoenixDevToolbar.PanelLive do
     |> Enum.reduce(socket, &stream_insert(&2, :lv_events, &1, limit: -@dom_limit))
   end
 
-  # Summary and profile are folded incrementally, never rebuilt from the Store.
+  # Summaries and profile are folded incrementally, never rebuilt from the Store.
   defp fold(socket, events) do
     assign(socket,
-      summary: Enum.reduce(events, socket.assigns.summary, &Summary.add(&2, &1)),
+      shell: Shell.fold(socket.assigns.shell, events),
       profile: Enum.reduce(events, socket.assigns.profile, &Profile.add(&2, &1)),
       last_changed: Enum.reduce(events, socket.assigns.last_changed, &last_changed/2)
     )
@@ -390,14 +392,24 @@ defmodule PhoenixDevToolbar.PanelLive do
   # Events over the flood guard budget (dropped) and the oldest events past the
   # per plugin and per page caps (trimmed) are counted, not stored: show the gaps.
   defp gaps(sids) do
-    Enum.reduce(sids, %{dropped: 0, trimmed: 0}, fn sid, gaps ->
+    Enum.reduce(sids, %{dropped: 0, trimmed: 0, by_plugin: %{}}, fn sid, gaps ->
       case safe(fn -> Store.session(sid) end, :error) do
         {:ok, session} ->
-          %{dropped: gaps.dropped + session.dropped, trimmed: gaps.trimmed + session.trimmed}
+          %{
+            dropped: gaps.dropped + session.dropped,
+            trimmed: gaps.trimmed + session.trimmed,
+            by_plugin: add_trimmed(gaps.by_plugin, safe(fn -> Store.plugin_counts(sid) end, %{}))
+          }
 
         :error ->
           gaps
       end
+    end)
+  end
+
+  defp add_trimmed(acc, counts) do
+    Enum.reduce(counts, acc, fn {plugin, %{trimmed: n}}, acc ->
+      Map.update(acc, Atom.to_string(plugin), n, &(&1 + n))
     end)
   end
 
@@ -407,16 +419,34 @@ defmodule PhoenixDevToolbar.PanelLive do
     |> Enum.sort_by(& &1.seq)
   end
 
-  defp insert_all(socket, events), do: Enum.reduce(events, socket, &insert/2)
-
-  defp insert(%Event{} = event, socket) do
-    cond do
-      query?(event) -> stream_insert(socket, :queries, event, limit: -@dom_limit)
-      request?(event) -> stream_insert(socket, :requests, event, limit: -@dom_limit)
-      live_view?(event) -> stream_insert(socket, :lv_events, event, limit: -@dom_limit)
-      true -> socket
-    end
+  defp insert_all(socket, events) do
+    events
+    |> Enum.filter(&live_view?/1)
+    |> Enum.reduce(socket, &stream_insert(&2, :lv_events, &1, limit: -@dom_limit))
+    |> deliver(:events, events)
   end
+
+  # Each tab's component gets its plugin's events (send_update: delivered after
+  # this callback, in order). A reset reaches every tab, even with no events.
+  defp deliver(socket, kind, events) do
+    routed = Shell.route(socket.assigns.shell, events)
+
+    for %{id: id, panel: panel} <- socket.assigns.tabs,
+        tab_events = Map.get(routed, id, []),
+        kind == :reset or tab_events != [] do
+      send_update(panel, id: panel_id(id), pdt: {kind, tab_events})
+    end
+
+    socket
+  end
+
+  defp panel_id(tab_id), do: "pdt-panel-" <> tab_id
+
+  # The LiveView tab is not on the plugin shell yet (Phase 3 task 4).
+  defp tab_ids(tabs), do: Enum.map(tabs, & &1.id) ++ ["live_view"]
+
+  defp default_tab([%{id: id} | _tabs]), do: id
+  defp default_tab([]), do: "live_view"
 
   # Tracks the highest seq per sid and the seqs already shown (for the re-read
   # window); `forget_below/2` keeps `seen` bounded to that window.
@@ -466,12 +496,6 @@ defmodule PhoenixDevToolbar.PanelLive do
     assign(socket, :flush, nil)
   end
 
-  defp query?(%Event{plugin: :ecto, kind: :query}), do: true
-  defp query?(_event), do: false
-
-  defp request?(%Event{plugin: :request}), do: true
-  defp request?(_event), do: false
-
   defp live_view?(%Event{plugin: :live_view}), do: true
   defp live_view?(_event), do: false
 
@@ -488,7 +512,12 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   @impl true
   def render(assigns) do
-    assigns = assign(assigns, :tab_labels, @tab_labels)
+    assigns =
+      assign(
+        assigns,
+        :tab_labels,
+        Enum.map(assigns.tabs, &{&1.id, &1.name}) ++ [{"live_view", "LiveView"}]
+      )
 
     ~H"""
     <div id="pdt-panel" class="pdt-panel">
@@ -498,7 +527,7 @@ defmodule PhoenixDevToolbar.PanelLive do
       <div id="pdt-bridge" phx-hook="PdtPanel" hidden></div>
       <header class="pdt-header">
         <span class="pdt-logo">dev toolbar</span>
-        <.summary_bar summary={@summary} dropped={@gaps.dropped} trimmed={@gaps.trimmed} />
+        <.summary_bar badges={Shell.badges(@shell)} dropped={@gaps.dropped} trimmed={@gaps.trimmed} />
         <nav class="pdt-tabs" role="tablist">
           <button
             :for={{tab, label} <- @tab_labels}
@@ -541,29 +570,28 @@ defmodule PhoenixDevToolbar.PanelLive do
       </p>
 
       <section
-        id="pdt-section-ecto"
+        :for={tab <- @tabs}
+        id={"pdt-section-" <> tab.id}
         class="pdt-section"
         role="tabpanel"
-        aria-labelledby="pdt-tab-ecto"
-        hidden={@tab != "ecto"}
+        aria-labelledby={"pdt-tab-" <> tab.id}
+        hidden={@tab != tab.id}
       >
-        <ul id="pdt-queries" class="pdt-list" phx-update="stream">
-          <li id="pdt-queries-empty" class="pdt-list__empty">No queries yet.</li>
-          <.query_row :for={{id, event} <- @streams.queries} id={id} event={event} root={@page.root} />
-        </ul>
-      </section>
-
-      <section
-        id="pdt-section-request"
-        class="pdt-section"
-        role="tabpanel"
-        aria-labelledby="pdt-tab-request"
-        hidden={@tab != "request"}
-      >
-        <ul id="pdt-requests" class="pdt-list" phx-update="stream">
-          <li id="pdt-requests-empty" class="pdt-list__empty">No requests yet.</li>
-          <.request_row :for={{id, event} <- @streams.requests} id={id} event={event} />
-        </ul>
+        <p
+          :if={Map.get(@gaps.by_plugin, tab.id, 0) > 0}
+          id={"pdt-trimmed-" <> tab.id}
+          class="pdt-hint"
+        >
+          {Map.get(@gaps.by_plugin, tab.id)} older events trimmed: the list starts later than the page.
+        </p>
+        <.live_component
+          module={tab.panel}
+          id={panel_id(tab.id)}
+          config={tab.config}
+          page={@page}
+          shown?={@tab == tab.id}
+          visible?={@visible?}
+        />
       </section>
 
       <section

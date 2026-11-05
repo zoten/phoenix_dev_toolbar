@@ -24,6 +24,12 @@ defmodule DemoWeb.PageLive do
     {:noreply, socket}
   end
 
+  # What a third party plugin would listen to (TestPlugins.Tabbed).
+  def handle_event("echo", %{"value" => value}, socket) do
+    :telemetry.execute([:pdt_test, :echo], %{}, %{value: value})
+    {:noreply, socket}
+  end
+
   @impl true
   def render(assigns), do: ~H"<p>page</p>"
 end

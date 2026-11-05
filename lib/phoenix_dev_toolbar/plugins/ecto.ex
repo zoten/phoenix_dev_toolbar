@@ -10,8 +10,10 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
 
   require Logger
 
+  alias PhoenixDevToolbar.Components
   alias PhoenixDevToolbar.Context
   alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.Panels
   alias PhoenixDevToolbar.Truncate
 
   # Frames hidden from the query origin: the caller's code is what matters.
@@ -32,6 +34,42 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   def telemetry_events(%{repos: repos}) do
     for repo <- repos, prefix = telemetry_prefix(repo), do: prefix ++ [:query]
   end
+
+  @impl true
+  def panel, do: Panels.Ecto
+
+  @impl true
+  def summary_init(_config), do: %{queries: 0, db_us: 0, slowest_us: 0, failed: 0}
+
+  @impl true
+  def summary_add(summary, %Event{kind: :query, duration: duration, data: data}) do
+    duration = duration || 0
+
+    %{
+      summary
+      | queries: summary.queries + 1,
+        db_us: summary.db_us + duration,
+        slowest_us: max(summary.slowest_us, duration),
+        failed: summary.failed + failed(data)
+    }
+  end
+
+  def summary_add(summary, %Event{}), do: summary
+
+  @impl true
+  def badges(%{queries: queries, db_us: db_us, failed: failed}) do
+    text = "#{queries} #{noun(queries)} · #{Components.duration(db_us)}"
+    [%{id: "queries", text: text, level: queries_level(failed)}]
+  end
+
+  defp noun(1), do: "query"
+  defp noun(_queries), do: "queries"
+
+  defp queries_level(0), do: :info
+  defp queries_level(_failed), do: :error
+
+  defp failed(%{result: {:error, _}}), do: 1
+  defp failed(_data), do: 0
 
   @impl true
   def collect(_event, {measurements, metadata}, %Context{source: source}) do

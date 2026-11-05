@@ -3,7 +3,9 @@ defmodule PhoenixDevToolbar.Plugin do
   The behaviour every toolbar panel implements, the built-ins included (ADR 05).
 
   A plugin collects events from `:telemetry` inside the host's processes and,
-  in the panel, folds and shows them. Register plugins in `config/dev.exs`:
+  in the panel, folds them into summary badges (`c:summary_init/1`,
+  `c:summary_add/2`, `c:badges/1`) and shows them in its own tab
+  (`c:panel/0`, see `PhoenixDevToolbar.Panel`). Register plugins in `config/dev.exs`:
 
       config :phoenix_dev_toolbar,
         plugins: [:defaults, {MyApp.Toolbar.Jobs, queues: [:default]}]
@@ -82,7 +84,37 @@ defmodule PhoenixDevToolbar.Plugin do
             ) ::
               {:record, Event.t()} | :skip
 
-  @optional_callbacks init: 1
+  @typedoc """
+  A badge of the summary bar, shown even when the panel is collapsed. `id`
+  becomes the DOM id `pdt-badge-<id>`; `title` is the tooltip.
+  """
+  @type badge :: %{
+          required(:id) => String.t(),
+          required(:text) => String.t(),
+          required(:level) => :ok | :info | :warn | :error,
+          optional(:title) => String.t()
+        }
+
+  @doc """
+  The plugin's tab: a module that does `use PhoenixDevToolbar.Panel`. A plugin
+  without it collects events and shows badges only.
+  """
+  @callback panel() :: module()
+
+  @doc """
+  The initial state of the plugin's summary for a page, folded by
+  `c:summary_add/2` in the panel process, event by event: it survives the
+  oldest events being trimmed from the buffer.
+  """
+  @callback summary_init(config()) :: term()
+
+  @doc "Folds one of the plugin's events into its summary. Pure and cheap."
+  @callback summary_add(summary :: term(), Event.t()) :: term()
+
+  @doc "The summary bar badges for the summary, in display order."
+  @callback badges(summary :: term()) :: [badge()]
+
+  @optional_callbacks init: 1, panel: 0, summary_init: 1, summary_add: 2, badges: 1
 
   @doc """
   Sets the behaviour and defines `id/0`, `name/0` and a default `init/1`.
