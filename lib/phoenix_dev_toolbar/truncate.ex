@@ -42,21 +42,28 @@ defmodule PhoenixDevToolbar.Truncate do
 
   @doc """
   Formats the first #{@frames} stacktrace frames that do not belong to the
-  toolbar or to `:telemetry`.
+  toolbar, to `:telemetry` or to the extra `skip` modules and namespaces (an
+  Elixir module skips itself and every module nested under it).
 
       iex> PhoenixDevToolbar.Truncate.stacktrace([{MyApp.Users, :list, 0, [file: ~c"lib/users.ex", line: 3]}])
       ["lib/users.ex:3: MyApp.Users.list/0"]
+
+      iex> PhoenixDevToolbar.Truncate.stacktrace([{Ecto.Repo.Queryable, :all, 3, []}], [Ecto])
+      []
 
       iex> PhoenixDevToolbar.Truncate.stacktrace(nil)
       []
 
   """
-  @spec stacktrace(Exception.stacktrace() | nil) :: [String.t()]
-  def stacktrace(nil), do: []
+  @spec stacktrace(Exception.stacktrace() | nil, [module()]) :: [String.t()]
+  def stacktrace(frames, skip \\ [])
+  def stacktrace(nil, _skip), do: []
 
-  def stacktrace(frames) when is_list(frames) do
+  def stacktrace(frames, skip) when is_list(frames) do
+    skip = @own_frames ++ skip
+
     frames
-    |> Stream.reject(&own_frame?/1)
+    |> Stream.reject(&skipped_frame?(&1, skip))
     |> Enum.take(@frames)
     |> Enum.map(&Exception.format_stacktrace_entry/1)
   end
@@ -146,14 +153,12 @@ defmodule PhoenixDevToolbar.Truncate do
   defp proper_split([item | rest], n, acc), do: proper_split(rest, n - 1, [item | acc])
   defp proper_split(_improper, _n, _acc), do: :improper
 
-  defp own_frame?({module, _fun, _arity, _location}) when is_atom(module) do
-    Enum.any?(@own_frames, fn
-      :telemetry -> module == :telemetry
-      prefix -> module == prefix or String.starts_with?(Atom.to_string(module), "#{prefix}.")
-    end)
+  defp skipped_frame?({module, _fun, _arity, _location}, skip) when is_atom(module) do
+    name = Atom.to_string(module)
+    Enum.any?(skip, &(module == &1 or String.starts_with?(name, Atom.to_string(&1) <> ".")))
   end
 
-  defp own_frame?(_frame), do: false
+  defp skipped_frame?(_frame, _skip), do: false
 
   # Cuts at `limit` bytes without splitting a UTF-8 codepoint (at most 3 bytes
   # back). Binaries that are not UTF-8 at all are cut at `limit`.

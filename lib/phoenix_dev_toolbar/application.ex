@@ -4,6 +4,10 @@ defmodule PhoenixDevToolbar.Application do
   use Application
 
   alias PhoenixDevToolbar.Collector
+  alias PhoenixDevToolbar.Plugins
+
+  # `:defaults` expansion and plugin options arrive with the public API (ADR 05).
+  @default_plugins [Plugins.Request, Plugins.Ecto]
 
   @impl true
   def start(_type, _args) do
@@ -27,7 +31,7 @@ defmodule PhoenixDevToolbar.Application do
 
   @doc false
   @spec plugins() :: [module()]
-  def plugins, do: Application.get_env(:phoenix_dev_toolbar, :plugins, [])
+  def plugins, do: Application.get_env(:phoenix_dev_toolbar, :plugins, @default_plugins)
 
   # Disabled means no processes, no ETS tables and no handlers (ADR 01).
   defp children(false), do: []

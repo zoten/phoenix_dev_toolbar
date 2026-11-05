@@ -86,6 +86,18 @@ host's hot path).
   calls them from its own process, never from a handler). Process metrics via
   `Process.info/2`. Both polled by the panel only while it is open.
 
+**Built-in collectors** (default `plugins`, `PhoenixDevToolbar.Plugins.*`):
+
+- `Request`: `router_dispatch` `:stop` and `:exception`: method, path, route pattern,
+  handler (the LiveView module and action for live routes, else plug and options),
+  status, redacted path params, duration; on exception also the error banner and the
+  stacktrace without router and Plug frames.
+- `Ecto`: `telemetry_prefix ++ [:query]` of each repo in `repos`, the prefix read from
+  `repo.config/0` (a module that is not a repo is skipped with a warning). Records repo,
+  SQL, redacted params (`cast_params` when present), source, result (`{:ok, rows}` or
+  `{:error, message}`), the four timings in microseconds, the origin stacktrace without
+  Ecto, DBConnection and repo frames, and `caller?` for queries from `$callers` children.
+
 **Handler rules**: `PhoenixDevToolbar.Collector` attaches one handler per event name
 (id `{PhoenixDevToolbar.Collector, event}`, an external function capture) that fans out
 to the plugins declaring that event. The body is wrapped in `rescue` (a raising handler

@@ -1,0 +1,117 @@
+defmodule PhoenixDevToolbar.Plugins.EctoTest do
+  # Reads `config :phoenix_dev_toolbar, repos:` and attaches global handlers.
+  use ExUnit.Case, async: false
+
+  import ExUnit.CaptureLog
+  import PhoenixDevToolbar.ProcessHelpers
+
+  alias PhoenixDevToolbar.Attribution
+  alias PhoenixDevToolbar.Collector
+  alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.Plugins.Ecto, as: EctoPlugin
+  alias PhoenixDevToolbar.Session
+  alias PhoenixDevToolbar.Store
+
+  @event [:demo, :repo, :query]
+
+  setup do
+    Store.reset()
+    put_repos([DemoWeb.FakeRepo])
+    Collector.attach([EctoPlugin])
+
+    on_exit(fn ->
+      Application.delete_env(:phoenix_dev_toolbar, :repos)
+      Collector.attach(PhoenixDevToolbar.Application.plugins())
+      Store.reset()
+    end)
+
+    %Session{sid: sid} = Store.new_session(Session.new(:request))
+    %{sid: sid}
+  end
+
+  defp put_repos(repos), do: Application.put_env(:phoenix_dev_toolbar, :repos, repos)
+
+  defp ms(n), do: System.convert_time_unit(n, :millisecond, :native)
+
+  defp query_metadata(overrides) do
+    Map.merge(
+      %{
+        type: :ecto_sql_query,
+        repo: DemoWeb.FakeRepo,
+        query: ~s|SELECT u0."id" FROM "users" AS u0 WHERE (u0."email" = $1)|,
+        params: ["ada@example.com"],
+        cast_params: ["ada@example.com"],
+        source: "users",
+        result: {:ok, %{num_rows: 1}},
+        stacktrace: [
+          {Ecto.Repo.Queryable, :all, 3, [file: ~c"lib/ecto/repo/queryable.ex", line: 22]},
+          {DemoWeb.FakeRepo, :all, 2, [file: ~c"lib/demo/repo.ex", line: 2]},
+          {DemoWeb.Users, :by_email, 1, [file: ~c"lib/demo/users.ex", line: 9]}
+        ],
+        options: []
+      },
+      overrides
+    )
+  end
+
+  defp run_query(sid, metadata, fun \\ &apply/2) do
+    measurements = %{query_time: ms(3), queue_time: ms(1), decode_time: ms(1), total_time: ms(5)}
+    emit = fn -> :telemetry.execute(@event, measurements, metadata) end
+
+    in_process(fn ->
+      Attribution.track(sid)
+      fun.(emit, [])
+    end)
+  end
+
+  test "attaches to the query event of each configured repo" do
+    assert EctoPlugin.telemetry_events() == [@event]
+  end
+
+  test "records SQL, timings, rows and the caller's origin", %{sid: sid} do
+    run_query(sid, query_metadata(%{}))
+
+    assert [%Event{plugin: :ecto, kind: :query, duration: 5000, data: data}] = Store.events(sid)
+
+    assert %{
+             repo: DemoWeb.FakeRepo,
+             source: "users",
+             params: ~s(["ada@example.com"]),
+             result: {:ok, 1},
+             times: %{query_time: 3000, queue_time: 1000, decode_time: 1000, total_time: 5000},
+             stacktrace: ["lib/demo/users.ex:9: DemoWeb.Users.by_email/1"],
+             caller?: false
+           } = data
+
+    assert data.sql =~ ~s(FROM "users")
+  end
+
+  test "marks queries run by Task.async children of the page", %{sid: sid} do
+    run_query(sid, query_metadata(%{}), fn emit, [] -> emit |> Task.async() |> Task.await() end)
+
+    assert [%Event{data: %{caller?: true}}] = Store.events(sid)
+  end
+
+  test "records failed queries with their error message", %{sid: sid} do
+    error = %ArgumentError{message: "relation \"users\" does not exist"}
+
+    run_query(sid, query_metadata(%{result: {:error, error}}))
+
+    assert [%Event{data: %{result: {:error, "relation \"users\" does not exist"}}}] =
+             Store.events(sid)
+  end
+
+  test "redacts sensitive keyword params", %{sid: sid} do
+    run_query(sid, query_metadata(%{cast_params: [password: "hunter2"]}))
+
+    assert [%Event{data: %{params: ~s([password: "[REDACTED]"])}}] = Store.events(sid)
+  end
+
+  test "skips, with a warning, configured modules that are not repos" do
+    put_repos([DemoWeb.HelloPlug])
+
+    log = capture_log(fn -> assert EctoPlugin.telemetry_events() == [] end)
+
+    assert log =~ "ignoring repo DemoWeb.HelloPlug"
+  end
+end
