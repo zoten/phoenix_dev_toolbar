@@ -25,17 +25,24 @@ serialize every query of the app behind one mailbox.
   | `:pdt_socket_ids` | `set` | `{socket_id, sid}` (dead render to LiveView) |
   | `:pdt_transports` | `set` | `{transport_pid, sid}` (newest sid per browser tab) |
   | `:pdt_rate` | `set` | `{{sid, second}, n}` (flood guard) |
+  | `:pdt_counts` | `set` | `{{sid, plugin}, count, trimmed}` (per plugin cap) |
 
   `seq` comes from a shared `:atomics` counter, so per-session order is insertion order.
 - Writers (host processes) insert directly (a missing table, while the Store restarts,
   also means `:no_session`): flood check (`update_counter` on `:pdt_rate`),
   `update_counter` of the session `count` (a missing session means `:no_session` and
-  the event is discarded), then the event row. Results: `:ok | :dropped | :no_session`.
-- Per-session cap: when `count` first exceeds `max_events` (and every 64 inserts after
-  that) the writer casts `{:trim, sid}`; the Store deletes the oldest events and loops
-  until the session is back within the cap, since inserts may race with the trim.
-  It adds the deleted events to `trimmed`, and the panel shows "N older trimmed" next
-  to "+N dropped", so lists that start later than the page are never silent.
+  the event is discarded), `update_counter` of the plugin's `count`, then the event
+  row. Results: `:ok | :dropped | :no_session`.
+- Caps, per plugin and per session: when a plugin's `count` first exceeds `max_events`
+  (and every 64 inserts after that) the writer casts `{:trim, sid, {:plugin, id}}`, so
+  a chatty plugin (LiveView events on a `phx-change` form) only trims its own events.
+  When the session `count` exceeds `max_session_events` it casts `{:trim, sid,
+  :session}`, which trims the oldest events of any plugin: many plugins stay bounded.
+  The Store deletes the oldest events of that scope (a match on the session's range,
+  at most `max_session_events` rows) and loops until it is back within the cap, since
+  inserts may race with the trim. Deleted events are added to `trimmed`, per plugin
+  and per session, and the panel shows "N older trimmed" next to "+N dropped", so
+  lists that start later than the page are never silent.
 - Session cap: on every new session the Store evicts sessions beyond `max_sessions`,
   those without a live LiveView owner first, then the oldest by `started_at`, so the
   open tab survives a burst of page loads.
@@ -50,7 +57,8 @@ serialize every query of the app behind one mailbox.
 
   | Key | Default |
   |---|---|
-  | `max_events` | 500 per session |
+  | `max_events` | 500 per plugin and session |
+  | `max_session_events` | 2000 per session |
   | `max_sessions` | 50 |
   | `events_per_second` | 200 per session |
   | `ttl_ms` | 10 minutes |
@@ -85,8 +93,6 @@ serialize every query of the app behind one mailbox.
 
 ## Open limits
 
-- Limits are global, not per plugin: a chatty plugin can push others' events out
-  (LiveView events on a `phx-change` form push out the page's queries); the trimmed
-  badge makes it visible, per plugin caps are planned for Phase 3.
+- Limits are the same for every plugin: a plugin cannot ask for a larger buffer.
 - Redaction walks only the first 50 entries of large maps: a sensitive key further in is
   hidden by the inspect limit in practice, not by redaction.

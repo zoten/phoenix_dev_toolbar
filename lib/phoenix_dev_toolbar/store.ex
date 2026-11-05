@@ -9,6 +9,7 @@ defmodule PhoenixDevToolbar.Store do
   # Tables:
   #   :pdt_events      ordered_set  {{sid, seq}, %Event{}}
   #   :pdt_sessions    set          {sid, %Session{}, count, dropped, trimmed}
+  #   :pdt_counts      set          {{sid, plugin}, count, trimmed}  (per plugin cap)
   #   :pdt_pids        set          {pid, sid}            ($callers attribution)
   #   :pdt_socket_ids  set          {socket_id, sid}      (dead render -> LiveView)
   #   :pdt_transports  set          {transport_pid, sid}  (latest sid per tab)
@@ -26,7 +27,8 @@ defmodule PhoenixDevToolbar.Store do
   @socket_ids :pdt_socket_ids
   @transports :pdt_transports
   @rate :pdt_rate
-  @tables [@events, @sessions, @pids, @socket_ids, @transports, @rate]
+  @counts :pdt_counts
+  @tables [@events, @sessions, @pids, @socket_ids, @transports, @rate, @counts]
 
   @limits_key {Store, :limits}
   @seq_key {Store, :seq}
@@ -36,6 +38,7 @@ defmodule PhoenixDevToolbar.Store do
 
   @default_limits %{
     max_events: 500,
+    max_session_events: 2000,
     max_sessions: 50,
     ttl_ms: :timer.minutes(10),
     sweep_ms: :timer.seconds(30),
@@ -45,6 +48,7 @@ defmodule PhoenixDevToolbar.Store do
 
   @type limits :: %{
           max_events: pos_integer(),
+          max_session_events: pos_integer(),
           max_sessions: pos_integer(),
           ttl_ms: non_neg_integer(),
           sweep_ms: pos_integer(),
@@ -159,12 +163,24 @@ defmodule PhoenixDevToolbar.Store do
     limits = limits()
 
     case within_rate?(sid, second, limits.events_per_second) do
-      true -> do_insert(sid, event, limits.max_events)
+      true -> do_insert(sid, event, limits)
       false -> count_dropped(sid)
     end
   rescue
     # Tables missing while the Store restarts: the event is lost, nothing else.
     ArgumentError -> :no_session
+  end
+
+  @doc "Per plugin counters of `sid`: events kept and events trimmed past the cap."
+  @spec plugin_counts(Session.sid()) :: %{
+          atom() => %{count: integer(), trimmed: non_neg_integer()}
+        }
+  def plugin_counts(sid) do
+    for [plugin, count, trimmed] <- :ets.match(@counts, {{sid, :"$1"}, :"$2", :"$3"}),
+        into: %{},
+        do: {plugin, %{count: count, trimmed: trimmed}}
+  rescue
+    ArgumentError -> %{}
   end
 
   @doc "Returns the events of `sid` with a seq greater than `after_seq`, oldest first."
@@ -222,8 +238,13 @@ defmodule PhoenixDevToolbar.Store do
     {:noreply, monitor(state, sid, owner)}
   end
 
-  def handle_cast({:trim, sid}, state) do
-    trim(sid, limits().max_events)
+  def handle_cast({:trim, sid, {:plugin, _plugin} = scope}, state) do
+    trim(sid, scope, limits().max_events)
+    {:noreply, state}
+  end
+
+  def handle_cast({:trim, sid, :session}, state) do
+    trim(sid, :session, limits().max_session_events)
     {:noreply, state}
   end
 
@@ -268,15 +289,18 @@ defmodule PhoenixDevToolbar.Store do
     :ets.update_counter(@rate, key, 1, {key, 0}) <= max
   end
 
-  defp do_insert(sid, event, max_events) do
+  defp do_insert(sid, %Event{plugin: plugin} = event, limits) do
     case bump(sid, 3) do
       nil ->
         :no_session
 
       count ->
+        key = {sid, plugin}
+        plugin_count = :ets.update_counter(@counts, key, {2, 1}, {key, 0, 0})
         seq = :atomics.add_get(:persistent_term.get(@seq_key), 1, 1)
         :ets.insert(@events, {{sid, seq}, %{event | sid: sid, seq: seq}})
-        maybe_request_trim(sid, count, max_events)
+        maybe_request_trim(sid, {:plugin, plugin}, plugin_count, limits.max_events)
+        maybe_request_trim(sid, :session, count, limits.max_session_events)
         :ok
     end
   end
@@ -295,11 +319,11 @@ defmodule PhoenixDevToolbar.Store do
     ArgumentError -> nil
   end
 
-  defp maybe_request_trim(sid, count, max)
+  defp maybe_request_trim(sid, scope, count, max)
        when count > max and rem(count - max, @trim_every) == 1,
-       do: GenServer.cast(Store, {:trim, sid})
+       do: GenServer.cast(Store, {:trim, sid, scope})
 
-  defp maybe_request_trim(_sid, _count, _max), do: :ok
+  defp maybe_request_trim(_sid, _scope, _count, _max), do: :ok
 
   defp maybe_index_transport(%Session{transport: transport, sid: sid}) when is_pid(transport),
     do: :ets.insert(@transports, {transport, sid})
@@ -319,22 +343,54 @@ defmodule PhoenixDevToolbar.Store do
 
   ## Housekeeping (run in the Store)
 
-  # Deletes the oldest events until the session is back within `max`. Loops
-  # because concurrent inserts may land between reading and decrementing.
-  defp trim(sid, max) do
-    with [{^sid, _session, count, _dropped, _trimmed}] when count > max <-
-           :ets.lookup(@sessions, sid),
-         {seqs, _cont} <- :ets.select(@events, [{{{sid, :"$1"}, :_}, [], [:"$1"]}], count - max) do
-      Enum.each(seqs, &:ets.delete(@events, {sid, &1}))
-      bump_by(sid, 5, length(seqs))
-      maybe_trim_again(sid, max, bump_by(sid, 3, -length(seqs)))
+  # Deletes the oldest events of the scope (one plugin, or the whole session)
+  # until it is back within `max`, and counts them as trimmed, per plugin and
+  # for the session. Loops because concurrent inserts may land between reading
+  # and decrementing; every round deletes at least one event or stops.
+  defp trim(sid, scope, max) do
+    with count when is_integer(count) and count > max <- scope_count(sid, scope),
+         {rows, _cont} <- :ets.select(@events, trim_spec(sid, scope), count - max) do
+      Enum.each(rows, fn {seq, _plugin} -> :ets.delete(@events, {sid, seq}) end)
+
+      rows
+      |> Enum.frequencies_by(fn {_seq, plugin} -> plugin end)
+      |> Enum.each(fn {plugin, n} -> bump_plugin(sid, plugin, -n, n) end)
+
+      bump_by(sid, 5, length(rows))
+      bump_by(sid, 3, -length(rows))
+      trim(sid, scope, max)
     end
   end
 
-  defp maybe_trim_again(sid, max, count) when is_integer(count) and count > max,
-    do: trim(sid, max)
+  defp scope_count(sid, :session) do
+    case :ets.lookup(@sessions, sid) do
+      [{^sid, _session, count, _dropped, _trimmed}] -> count
+      [] -> nil
+    end
+  end
 
-  defp maybe_trim_again(_sid, _max, _count), do: :ok
+  defp scope_count(sid, {:plugin, plugin}) do
+    case :ets.lookup(@counts, {sid, plugin}) do
+      [{_key, count, _trimmed}] -> count
+      [] -> nil
+    end
+  end
+
+  # Oldest first: the events table is ordered by {sid, seq}. `{:const, plugin}`
+  # keeps a plugin id such as :_ from being read as a match variable.
+  defp trim_spec(sid, :session),
+    do: [{{{sid, :"$1"}, %{plugin: :"$2"}}, [], [{{:"$1", :"$2"}}]}]
+
+  defp trim_spec(sid, {:plugin, plugin}),
+    do: [
+      {{{sid, :"$1"}, %{plugin: :"$2"}}, [{:"=:=", :"$2", {:const, plugin}}], [{{:"$1", :"$2"}}]}
+    ]
+
+  defp bump_plugin(sid, plugin, count, trimmed) do
+    :ets.update_counter(@counts, {sid, plugin}, [{2, count}, {3, trimmed}])
+  rescue
+    ArgumentError -> nil
+  end
 
   defp bump_by(sid, position, amount) do
     :ets.update_counter(@sessions, sid, {position, amount})
@@ -402,6 +458,11 @@ defmodule PhoenixDevToolbar.Store do
     for table <- [@pids, @socket_ids, @transports], {key, sid} <- :ets.tab2list(table) do
       _ = orphan_row?(table, key, sid) && :ets.delete(table, key)
     end
+
+    # A counter row created by an insert racing with its session's deletion.
+    for {{sid, _plugin} = key, _count, _trimmed} <- :ets.tab2list(@counts),
+        not :ets.member(@sessions, sid),
+        do: :ets.delete(@counts, key)
   end
 
   defp orphan_row?(table, key, sid) when table in [@pids, @transports],
@@ -436,6 +497,7 @@ defmodule PhoenixDevToolbar.Store do
   defp delete_session(sid) do
     :ets.delete(@sessions, sid)
     delete_events(sid)
+    :ets.match_delete(@counts, {{sid, :_}, :_, :_})
     :ets.match_delete(@pids, {:_, sid})
     :ets.match_delete(@socket_ids, {:_, sid})
     :ets.match_delete(@transports, {:_, sid})

@@ -61,8 +61,8 @@ defmodule PhoenixDevToolbar.StoreTest do
     end
   end
 
-  describe "per-session cap" do
-    test "trims the oldest events down to max_events" do
+  describe "caps" do
+    test "trims the oldest events of a plugin down to max_events" do
       Store.put_limits(max_events: 5)
       %Session{sid: sid} = Store.new_session(Session.new(:request))
 
@@ -71,6 +71,63 @@ defmodule PhoenixDevToolbar.StoreTest do
 
       assert Enum.map(Store.events(sid), & &1.data.n) == [6, 7, 8, 9, 10]
       assert {:ok, %Session{count: 5, trimmed: 5}} = Store.session(sid)
+      assert Store.plugin_counts(sid) == %{test: %{count: 5, trimmed: 5}}
+    end
+
+    test "a chatty plugin never trims another plugin's events" do
+      Store.put_limits(max_events: 3)
+      %Session{sid: sid} = Store.new_session(Session.new(:request))
+
+      Store.insert(sid, Event.new(:quiet, :ping, %{n: :kept}))
+      for n <- 1..10, do: Store.insert(sid, Event.new(:chatty, :ping, %{n: n}))
+      sync_store()
+
+      assert sid |> Store.events() |> Enum.map(&{&1.plugin, &1.data.n}) ==
+               [quiet: :kept, chatty: 8, chatty: 9, chatty: 10]
+
+      assert Store.plugin_counts(sid) == %{
+               quiet: %{count: 1, trimmed: 0},
+               chatty: %{count: 3, trimmed: 7}
+             }
+    end
+
+    test "the session ceiling trims the oldest events of any plugin" do
+      Store.put_limits(max_events: 10, max_session_events: 4)
+      %Session{sid: sid} = Store.new_session(Session.new(:request))
+
+      for n <- 1..3, do: Store.insert(sid, Event.new(:a, :ping, %{n: n}))
+      for n <- 4..6, do: Store.insert(sid, Event.new(:b, :ping, %{n: n}))
+      sync_store()
+
+      assert sid |> Store.events() |> Enum.map(& &1.data.n) == [3, 4, 5, 6]
+      assert {:ok, %Session{count: 4, trimmed: 2}} = Store.session(sid)
+
+      assert Store.plugin_counts(sid) == %{
+               a: %{count: 1, trimmed: 2},
+               b: %{count: 3, trimmed: 0}
+             }
+    end
+
+    test "a plugin id that looks like a match variable is trimmed as a plain atom" do
+      Store.put_limits(max_events: 1)
+      %Session{sid: sid} = Store.new_session(Session.new(:request))
+
+      Store.insert(sid, Event.new(:other, :ping, %{n: 0}))
+      for n <- 1..3, do: Store.insert(sid, Event.new(:_, :ping, %{n: n}))
+      sync_store()
+
+      assert sid |> Store.events() |> Enum.map(& &1.data.n) == [0, 3]
+    end
+
+    test "an expired session takes its counters along" do
+      %Session{sid: sid} = Store.new_session(Session.new(:request))
+      Store.insert(sid, event(1))
+      assert %{test: _} = Store.plugin_counts(sid)
+
+      Store.sweep(System.system_time(:microsecond) + :timer.hours(1) * 1000)
+
+      assert Store.session(sid) == :error
+      assert Store.plugin_counts(sid) == %{}
     end
   end
 

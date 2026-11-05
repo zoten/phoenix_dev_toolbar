@@ -36,3 +36,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mix dev` pages: Components and Assigns (ADR 06)
 - Trimmed events badge in the summary bar; client event validation module (ADR 03, ADR 07)
 - Public plugin behaviour, `use` macro, plugin options and config validation (ADR 05)
+- Per plugin event caps and a per page ceiling, limits documented in the README (ADR 03)
