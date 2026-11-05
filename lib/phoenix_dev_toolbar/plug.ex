@@ -1,18 +1,24 @@
 defmodule PhoenixDevToolbar.Plug do
   @moduledoc """
-  Tracks page requests and injects the toolbar into HTML responses.
+  The whole toolbar integration: tracks page requests, injects the toolbar
+  into HTML responses, and serves the toolbar's own assets and panel.
 
-  Add it to your endpoint, next to `Phoenix.LiveReloader`, and mount the panel
-  routes with `PhoenixDevToolbar.Router.dev_toolbar/2` at the same path:
+  Add it to your endpoint, next to `Phoenix.LiveReloader`:
 
       if code_reloading? do
         plug PhoenixDevToolbar.Plug
       end
 
+  No router changes are needed: the panel is a LiveView rendered by this plug
+  under `:path`, connected through your existing LiveView socket. This keeps
+  the package installable with `only: :dev`, since nothing outside the
+  `code_reloading?` block references it.
+
   ## Options
 
-    * `:path` - where the toolbar is mounted, the same path given to
-      `dev_toolbar/2`. Defaults to `"/__pdt"`.
+    * `:path` - where the toolbar lives. Defaults to `"/__pdt"`.
+    * `:live_socket_path` - the path of your `Phoenix.LiveView.Socket`, as
+      declared in your endpoint. Defaults to `"/live"`.
     * `:nonce_assign` - the `conn.assigns` key holding a CSP nonce for the
       injected script tag. Defaults to `:csp_nonce`.
 
@@ -50,6 +56,7 @@ defmodule PhoenixDevToolbar.Plug do
         %{
           path: path,
           segments: segments,
+          live_socket_path: Keyword.get(opts, :live_socket_path, "/live"),
           nonce_assign: Keyword.get(opts, :nonce_assign, :csp_nonce)
         }
 
@@ -71,11 +78,34 @@ defmodule PhoenixDevToolbar.Plug do
   defp route(conn, %{segments: segments} = opts) do
     case strip_prefix(conn.path_info, segments) do
       {:ok, ["assets", file]} -> serve_asset(conn, file)
-      # The panel itself, served by the router: never tracked, never injected.
+      {:ok, ["panel"]} -> serve_panel(conn, opts)
+      # Anything else under our path is not ours to answer: never tracked.
       {:ok, _rest} -> untracked(conn)
       :error -> maybe_track(conn, opts)
     end
   end
+
+  ## Panel
+
+  # Rendered without a router (`live_render/3`): the panel LiveView gets the
+  # sid through its session, never through route params. The host's session
+  # plug usually runs after this one, so nothing here needs the cookie session.
+  defp serve_panel(%Conn{method: "GET"} = conn, opts) do
+    conn = conn |> untracked() |> Conn.fetch_query_params()
+
+    conn
+    |> Conn.put_private(:phoenix_dev_toolbar_panel, %{live_socket_path: opts.live_socket_path})
+    |> Phoenix.Controller.put_root_layout(html: {PhoenixDevToolbar.Layouts, :root})
+    |> Phoenix.LiveView.Controller.live_render(PhoenixDevToolbar.PanelLive,
+      session: %{"pdt_sid" => panel_sid(conn.query_params)}
+    )
+    |> Conn.halt()
+  end
+
+  defp serve_panel(conn, _opts), do: conn |> untracked() |> Conn.send_resp(405, "") |> Conn.halt()
+
+  defp panel_sid(%{"sid" => sid}) when is_binary(sid), do: sid
+  defp panel_sid(_params), do: ""
 
   # Already tracked: the plug is in the pipeline twice (endpoint and router).
   defp maybe_track(%Conn{private: %{phoenix_dev_toolbar: _}} = conn, _opts), do: conn

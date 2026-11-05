@@ -32,7 +32,7 @@ defmodule PhoenixDevToolbar.Layouts do
     """
   end
 
-  defp socket_path(%Plug.Conn{private: %{phoenix_dev_toolbar: %{live_socket_path: path}}}),
+  defp socket_path(%Plug.Conn{private: %{phoenix_dev_toolbar_panel: %{live_socket_path: path}}}),
     do: path
 
   defp socket_path(_conn), do: "/live"

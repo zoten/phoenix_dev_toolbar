@@ -48,6 +48,14 @@ jobs:
         run: mix dialyzer
       - if: matrix.lint
         run: mix docs --warnings-as-errors
+      # The README install must compile where the dependency does not exist (ADR 01).
+      - name: Fixture host app compiles in prod and dev
+        working-directory: fixtures/host_app
+        run: |
+          MIX_ENV=prod mix deps.get
+          MIX_ENV=prod mix compile --warnings-as-errors
+          MIX_ENV=dev mix deps.get
+          MIX_ENV=dev mix compile --warnings-as-errors
       # priv/static is committed and shipped: it must match assets/ (ADR 04).
       - if: matrix.lint
         name: Built assets are up to date

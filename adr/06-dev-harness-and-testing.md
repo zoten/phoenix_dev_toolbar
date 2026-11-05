@@ -1,6 +1,6 @@
 # ADR 06: Dev Harness and Testing Strategy
 
-**Status:** Accepted  
+**Status:** Implemented (2026-11-05)  
 **Area:** testing  
 **Related:** [ADR 01](./01-zero-prod-footprint-and-installation.md) (prod guarantees), [ADR 04](./04-ui-delivery.md) (UI)
 
@@ -13,9 +13,10 @@ correctness and boundedness need tests, not just eyeballing.
 ## Decision
 
 - **Harness**: a single-file `dev.exs` (the `Phoenix.LiveDashboard` pattern) defines a
-  Bandit endpoint with `PhoenixDevToolbar.Plug`, a router with `dev_toolbar "/__pdt"`, and
-  an `ecto_sqlite3` repo (`tmp/dev.sqlite3`, recreated and seeded on every boot, with
-  `stacktrace: true`), so no database server is required. `mix dev` runs it on `PORT`
+  Bandit endpoint with `PhoenixDevToolbar.Plug` (before the session plug, as in a
+  generated endpoint), a router without any toolbar routes, and an `ecto_sqlite3` repo
+  (`tmp/dev.sqlite3`, recreated and seeded on every boot, with `stacktrace: true`), so no
+  database server is required. `mix dev` runs it on `PORT`
   (default 4000). Every page exercises a panel: Users (dead render and connected mount
   queries), Posts (an N+1 with a live patch to a preloaded version), Events (queries in
   `handle_event/3`, a slow handler, a failing query), Task.async (`Task.async_stream`
@@ -34,8 +35,11 @@ correctness and boundedness need tests, not just eyeballing.
     panel and for real LiveView telemetry end to end.
   - Overhead benchmark (manual, `bench/`): handler cost for untracked processes stays
     within a few hundred nanoseconds.
-- **Prod guarantee**: CI compiles a fixture host app (`test/fixtures/host_app`) with the
-  guarded install in `MIX_ENV=prod` without the dependency.
+- **Prod guarantee**: `fixtures/host_app` installs the package exactly as the README says
+  (path dependency, `only: :dev`). CI compiles it with `--warnings-as-errors` in
+  `MIX_ENV=prod`, where the dependency does not exist, and in `MIX_ENV=dev`. It lives
+  outside `test/` so the formatter and Credo never scan its `deps/`. It caught that a
+  router macro cannot be installed this way (ADR 01).
 - **Gate**: `mix precommit` (compile with warnings as errors, format, tests, Credo strict,
   Dialyzer, ExDoc warnings as errors). CI runs it on the minimum (Elixir 1.17 / OTP 26)
   and latest (Elixir 1.20 / OTP 29) versions.
@@ -46,4 +50,6 @@ correctness and boundedness need tests, not just eyeballing.
 
 ## Open limits
 
-- No browser tests for the loader yet; candidate once the loader grows (Phase 2).
+- No browser tests for the loader yet; candidate once the loader grows (Phase 2). Until
+  then, UI changes are checked by hand in `mix dev`.
+- The overhead benchmark (`bench/`) is not written yet.

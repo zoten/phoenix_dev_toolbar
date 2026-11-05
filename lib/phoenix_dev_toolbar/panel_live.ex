@@ -26,10 +26,12 @@ defmodule PhoenixDevToolbar.PanelLive do
   @sid_format ~r/^[A-Za-z0-9_-]{1,64}$/
 
   @impl true
-  def mount(params, _session, socket) do
+  # Rendered by PhoenixDevToolbar.Plug without a router: the sid comes from the
+  # signed LiveView session, there are no route params.
+  def mount(_params, session, socket) do
     socket =
       socket
-      |> assign(root: valid_sid(params["sid"]), tab: "ecto", flush: nil)
+      |> assign(root: valid_sid(session["pdt_sid"]), tab: "ecto", flush: nil)
       |> assign(sids: [], seqs: %{}, subscribed: [])
       |> stream_configure(:queries, dom_id: &"pdt-query-#{&1.seq}")
       |> stream_configure(:requests, dom_id: &"pdt-request-#{&1.seq}")

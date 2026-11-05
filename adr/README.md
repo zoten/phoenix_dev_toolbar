@@ -17,13 +17,13 @@ Next free number: **07**.
 
 | ADR | Title | Status |
 |---|---|---|
-| 01 | [Zero Production Footprint and Installation](./01-zero-prod-footprint-and-installation.md) | Accepted |
+| 01 | [Zero Production Footprint and Installation](./01-zero-prod-footprint-and-installation.md) | Implemented (2026-11-05) |
 
 ## Collection
 
 | ADR | Title | Status |
 |---|---|---|
-| 02 | [Telemetry Collection and Correlation](./02-telemetry-collection-and-correlation.md) | Accepted |
+| 02 | [Telemetry Collection and Correlation](./02-telemetry-collection-and-correlation.md) | Implemented (2026-11-05) |
 
 ## Storage
 
@@ -35,7 +35,7 @@ Next free number: **07**.
 
 | ADR | Title | Status |
 |---|---|---|
-| 04 | [UI Delivery: Isolated Iframe LiveView and Loader](./04-ui-delivery.md) | Accepted |
+| 04 | [UI Delivery: Isolated Iframe LiveView and Loader](./04-ui-delivery.md) | Implemented (2026-11-05) |
 
 ## Plugins
 
@@ -47,4 +47,4 @@ Next free number: **07**.
 
 | ADR | Title | Status |
 |---|---|---|
-| 06 | [Dev Harness and Testing Strategy](./06-dev-harness-and-testing.md) | Accepted |
+| 06 | [Dev Harness and Testing Strategy](./06-dev-harness-and-testing.md) | Implemented (2026-11-05) |

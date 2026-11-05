@@ -1,6 +1,6 @@
 # ADR 02: Telemetry Collection and Correlation
 
-**Status:** Accepted  
+**Status:** Implemented (2026-11-05)  
 **Area:** collection  
 **Related:** [ADR 03](./03-event-storage.md) (where events go), [ADR 05](./05-plugin-behaviour.md) (plugins declare events)
 

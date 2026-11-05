@@ -13,27 +13,23 @@ you are working on.
 # mix.exs
 {:phoenix_dev_toolbar, "~> 0.1", only: :dev}
 
-# endpoint.ex
+# config/dev.exs
+config :phoenix_dev_toolbar, repos: [MyApp.Repo]
+config :my_app, MyApp.Repo, stacktrace: true  # optional: shows where each query comes from
+
+# lib/my_app_web/endpoint.ex, next to Phoenix.LiveReloader
 if code_reloading? do
   plug PhoenixDevToolbar.Plug
 end
-
-# router.ex
-if Application.compile_env(:my_app, :dev_routes) do
-  import PhoenixDevToolbar.Router
-
-  scope "/" do
-    pipe_through :browser
-    dev_toolbar "/__pdt"
-  end
-end
 ```
 
-See [ADR 01](adr/01-zero-prod-footprint-and-installation.md) for why it never reaches production.
+That's all: no router, layout or `app.js` changes. See
+[ADR 01](adr/01-zero-prod-footprint-and-installation.md) for why it never reaches production.
 
 ## Contributing
 
 Read [AGENTS.md](AGENTS.md) and the [ADR index](adr/README.md). Run `mix precommit` before pushing.
+Try your changes in a real browser with `mix dev`, a demo app at http://localhost:4000.
 
 ## License
 

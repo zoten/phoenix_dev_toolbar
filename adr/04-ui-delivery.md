@@ -1,6 +1,6 @@
 # ADR 04: UI Delivery: Isolated Iframe LiveView and Loader
 
-**Status:** Accepted  
+**Status:** Implemented (2026-11-05)  
 **Area:** ui  
 **Related:** [ADR 01](./01-zero-prod-footprint-and-installation.md) (install), [ADR 03](./03-event-storage.md) (data source)
 
@@ -13,7 +13,8 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 ## Decision
 
 - **Page requests**: `PhoenixDevToolbar.Plug` (endpoint, before the router, options
-  `:path` default `"/__pdt"` and `:nonce_assign` default `:csp_nonce`) tracks a request as
+  `:path` default `"/__pdt"`, `:live_socket_path` default `"/live"` and `:nonce_assign`
+  default `:csp_nonce`) tracks a request as
   a page when it is a `GET` for a top level document: `sec-fetch-dest: document`, or,
   for clients without that header, an `Accept` containing `text/html`. Iframes, fetch,
   htmx and Turbo partials, `/phoenix/live_reload/*` and the toolbar's own routes are not
@@ -53,13 +54,18 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 - **Panel JS**: `panel.js` connects the panel through the host's LiveView socket (path
   from the layout's `data-socket-path`, CSRF token from the meta tag) and runs the
   `postMessage` side of the bridge.
-- **Router**: `PhoenixDevToolbar.Router.dev_toolbar/2` (default path `"/__pdt"`, option
-  `:live_socket_path` default `"/live"`) defines `<path>/panel` in its own
-  `live_session :phoenix_dev_toolbar` with the `PhoenixDevToolbar.Layouts.root/1` root
-  layout, inside the host's scope and pipeline (usually `:browser`). The root layout
-  loads only `panel.css` and `panel.js`, at URLs relative to the panel route, and passes
-  the socket path to `panel.js`; the panel uses the host's LiveView socket. The package
-  exports `locals_without_parens` for `dev_toolbar`.
+- **Panel route**: there is no router integration (ADR 01). The plug answers
+  `GET <path>/panel?sid=...` itself with `Phoenix.LiveView.Controller.live_render/3`
+  (other methods get a 405), passing the sid in the signed LiveView session, with the
+  `PhoenixDevToolbar.Layouts.root/1` root layout. The layout loads only `panel.css` and
+  `panel.js`, at URLs relative to the panel route, and passes the plug's
+  `:live_socket_path` (default `"/live"`) to `panel.js`, which connects through the
+  host's LiveView socket. The plug runs before the host's `Plug.Session` in a generated
+  endpoint, so the dead render never touches the cookie session (LiveView treats an
+  unfetched session as empty). The socket connection does: LiveView refuses to join when
+  the CSRF token does not match the host's session cookie, and a token minted by our
+  layout never can. `panel.js` therefore sends the host page's CSRF meta token (the
+  iframe is same origin; read only), falling back to its own for hosts without one.
 - **Panel**: `PhoenixDevToolbar.PanelLive` (`<path>/panel?sid=<request sid>`) shows one
   page: the request and its LiveView, or only the newest LiveView after live navigation
   in the same tab (`PhoenixDevToolbar.Page`; a duplicated tab never takes over). It reads

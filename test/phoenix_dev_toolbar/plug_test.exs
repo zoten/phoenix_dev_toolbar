@@ -179,12 +179,20 @@ defmodule PhoenixDevToolbar.PlugTest do
       assert Attribution.tracked_sid() == nil
     end
 
-    test "the toolbar's own routes pass through untracked" do
-      conn = page_conn("/__pdt/panel") |> ToolbarPlug.call(@opts)
+    test "unknown paths under the toolbar's own pass through untracked" do
+      conn = page_conn("/__pdt/elsewhere") |> ToolbarPlug.call(@opts)
 
       refute conn.halted
       refute Map.has_key?(conn.private, :phoenix_dev_toolbar)
       assert Store.sessions() == []
+    end
+
+    # GET is rendered by the panel LiveView, see PanelLiveTest.
+    test "the panel answers only GET" do
+      conn = :post |> conn("/__pdt/panel") |> ToolbarPlug.call(@opts)
+
+      assert conn.halted
+      assert conn.status == 405
     end
 
     test "every request, without crashing, while the Store is down" do

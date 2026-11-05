@@ -7,7 +7,23 @@ import {LiveSocket} from "phoenix_live_view"
 
 const script =
   document.currentScript || document.querySelector("script[data-socket-path]")
-const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
+
+const metaToken = (doc) => {
+  const meta = doc.querySelector("meta[name='csrf-token']")
+  return meta && meta.getAttribute("content")
+}
+
+// The LiveView socket only accepts a CSRF token that matches the host's session
+// cookie. Our panel is rendered before the host's session plug runs, so its own
+// token cannot match: use the host page's token (same origin, read only), and
+// fall back to ours for hosts without one.
+const csrfToken = () => {
+  try {
+    return metaToken(window.parent.document) || metaToken(document)
+  } catch (_error) {
+    return metaToken(document)
+  }
+}
 
 const toParent = (type) => {
   if (window.parent !== window) {
@@ -28,8 +44,9 @@ document.addEventListener("click", (event) => {
   else if (event.target.closest("[role='tab']")) toParent("open")
 })
 
+// A function, so reconnects pick up the host's current token.
 const liveSocket = new LiveSocket(script.dataset.socketPath, Socket, {
-  params: {_csrf_token: csrfToken},
+  params: () => ({_csrf_token: csrfToken()}),
 })
 
 liveSocket.connect()

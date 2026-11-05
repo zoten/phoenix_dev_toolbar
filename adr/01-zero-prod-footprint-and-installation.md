@@ -1,8 +1,8 @@
 # ADR 01: Zero Production Footprint and Installation
 
-**Status:** Accepted  
+**Status:** Implemented (2026-11-05)  
 **Area:** architecture  
-**Related:** [ADR 04](./04-ui-delivery.md) (what the plug injects), [ADR 06](./06-dev-harness-and-testing.md) (prod compile check)
+**Related:** [ADR 04](./04-ui-delivery.md) (what the plug injects and serves), [ADR 06](./06-dev-harness-and-testing.md) (prod compile check)
 
 ## Context
 
@@ -10,17 +10,25 @@ A debug toolbar that leaks into production is a security and performance
 incident (exposed queries, assigns, process info). Installation must also be
 short enough that people actually try it.
 
+A dependency declared `only: :dev` does not exist when compiling for prod, so
+any reference to its modules outside a block that the compiler skips breaks the
+prod build. `plug Mod` inside `if code_reloading?` is safe (it only stores an
+atom), but `import Mod` or a macro call inside `if Application.compile_env(...)`
+is not: both branches of `if` are expanded at compile time. LiveDashboard's
+router macro pattern works only because it is not a dev only dependency.
+
 ## Decision
 
 Three layers keep production clean:
 
 1. The dependency is declared `only: :dev`, so the code is not even compiled in prod.
-2. Every host-facing entry point lives behind Phoenix's own dev guards:
-   `if code_reloading?` in the endpoint and `if Application.compile_env(:my_app, :dev_routes)`
-   in the router, the same pattern as `Phoenix.LiveReloader` and `live_dashboard`.
-3. At runtime every entry point (plug, router macro, telemetry attach, supervisor
-   children) checks `PhoenixDevToolbar.enabled?/0` (`config :phoenix_dev_toolbar, enabled: false`
-   turns everything into a no-op, for example in `:test` of the host app).
+2. The only host-facing entry point is `PhoenixDevToolbar.Plug`, inside the endpoint's
+   `if code_reloading?` block, like `Phoenix.LiveReloader`. The plug also serves the
+   panel and its assets (ADR 04), so the host router is untouched and nothing outside
+   that block references the package.
+3. At runtime every entry point (plug, telemetry attach, supervisor children) checks
+   `PhoenixDevToolbar.enabled?/0` (`config :phoenix_dev_toolbar, enabled: false` turns
+   everything into a no-op, for example in `:test` of the host app).
 
 Installation:
 
@@ -36,27 +44,18 @@ config :my_app, MyApp.Repo, stacktrace: true  # optional: query origins
 if code_reloading? do
   plug PhoenixDevToolbar.Plug
 end
-
-# lib/my_app_web/router.ex
-if Application.compile_env(:my_app, :dev_routes) do
-  import PhoenixDevToolbar.Router
-
-  scope "/" do
-    pipe_through :browser
-    dev_toolbar "/__pdt"
-  end
-end
 ```
 
-No change to the host `root.html.heex` or `app.js` is required: the plug injects
-the loader (ADR 04).
+No change to the router, `root.html.heex` or `app.js` is required.
 
 ## Consequences
 
-- Hosts with `only: :dev` cannot reference our modules from code compiled in
-  other envs; docs always show the guarded form.
-- CI compiles a fixture host app in `MIX_ENV=prod` without the dependency to
-  prove the guarded install compiles cleanly.
+- One line of host code; uninstalling is deleting it and the dependency.
+- The panel cannot use the host's router pipeline (auth, `on_mount` hooks), which is
+  what we want: it is our own page.
+- `fixtures/host_app` installs the package exactly as above. CI compiles it with
+  `MIX_ENV=prod` (no dependency) and `MIX_ENV=dev` (with it), both with
+  `--warnings-as-errors`.
 
 ## Open limits
 

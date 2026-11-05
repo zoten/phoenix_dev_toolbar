@@ -306,7 +306,6 @@ defmodule Demo.Router do
   use Phoenix.Router
 
   import Phoenix.LiveView.Router
-  import PhoenixDevToolbar.Router
 
   pipeline :browser do
     plug :fetch_session
@@ -326,7 +325,6 @@ defmodule Demo.Router do
     end
 
     get "/plain", Demo.PlainPage, []
-    dev_toolbar "/__pdt"
   end
 end
 
@@ -348,11 +346,11 @@ defmodule Demo.Endpoint do
     from: {:phoenix_live_view, "priv/static"},
     only: ~w(phoenix_live_view.min.js)
 
+  # In a host app this sits under `if code_reloading? do`, before the session plug.
+  plug PhoenixDevToolbar.Plug
   plug Plug.RequestId
   plug Plug.Parsers, parsers: [:urlencoded, :multipart, :json], json_decoder: Jason
   plug Plug.Session, @session
-  # In a host app this sits under `if code_reloading? do`.
-  plug PhoenixDevToolbar.Plug
   plug Demo.Router
 end
 
