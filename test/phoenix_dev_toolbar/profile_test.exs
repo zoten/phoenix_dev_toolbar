@@ -50,6 +50,15 @@ defmodule PhoenixDevToolbar.ProfileTest do
     assert [%{key: {:render, DemoWeb.CounterComponent, nil}, count: 1}] = Profile.rows(profile)
   end
 
+  test "a nested LiveView's callbacks are keyed by its module" do
+    profile =
+      Profile.new([
+        callback(:handle_event, 10, %{event: "ping", nested?: true, view: DemoWeb.PageLive})
+      ])
+
+    assert [%{key: {:handle_event, DemoWeb.PageLive, "ping"}}] = Profile.rows(profile)
+  end
+
   test "other events are ignored" do
     query = %{Event.new(:ecto, :query, %{}, at: 0) | duration: 10}
 

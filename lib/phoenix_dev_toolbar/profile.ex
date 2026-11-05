@@ -4,7 +4,8 @@ defmodule PhoenixDevToolbar.Profile do
   # `:live_view` events in the panel process (like PhoenixDevToolbar.Summary),
   # so they survive the Store trimming old events.
   #
-  # One row per `{callback, component, event}`; renders are `{:render, component,
+  # One row per `{callback, subject, event}` (subject: the component or nested
+  # LiveView, nil for the page's LiveView); renders are `{:render, component,
   # nil}` (`nil` component: the LiveView itself). Event names come from the
   # client, so the number of rows is capped: past @max_keys, new keys share the
   # `:other` row.
@@ -39,12 +40,21 @@ defmodule PhoenixDevToolbar.Profile do
   """
   @spec add(t(), Event.t()) :: t()
   def add(%Profile{} = profile, %Event{plugin: :live_view, kind: :callback, data: data} = event),
-    do: put(profile, {data.callback, data.component, data.event}, 1, event.duration || 0)
+    do: put(profile, {data.callback, subject(data), data.event}, 1, event.duration || 0)
 
   def add(%Profile{} = profile, %Event{plugin: :live_view, kind: :render, data: data} = event),
     do: put(profile, {:render, data.component, nil}, 1, event.duration || 0)
 
   def add(%Profile{} = profile, %Event{}), do: profile
+
+  @doc """
+  What ran the callback when it is not the page's LiveView: the component, or
+  the nested LiveView's module.
+  """
+  @spec subject(map()) :: module() | nil
+  def subject(%{component: component}) when not is_nil(component), do: component
+  def subject(%{nested?: true, view: view}), do: view
+  def subject(_data), do: nil
 
   @doc "Rows, slowest total first."
   @spec rows(t()) :: [row()]

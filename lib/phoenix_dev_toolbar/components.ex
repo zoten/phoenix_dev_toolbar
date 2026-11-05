@@ -29,6 +29,16 @@ defmodule PhoenixDevToolbar.Components do
           @summary.db_us
         )}
       </span>
+      <span
+        :if={@summary.callbacks > 0}
+        id="pdt-badge-live"
+        class="pdt-badge"
+        title="LiveView callbacks and the slowest one"
+      >
+        {@summary.callbacks} {if(@summary.callbacks == 1, do: "callback", else: "callbacks")} · max {duration(
+          @summary.slowest_callback_us
+        )}
+      </span>
       <span :if={@summary.errors > 0} id="pdt-badge-errors" class="pdt-badge pdt-badge--error">
         {@summary.errors} {if(@summary.errors == 1, do: "error", else: "errors")}
       </span>

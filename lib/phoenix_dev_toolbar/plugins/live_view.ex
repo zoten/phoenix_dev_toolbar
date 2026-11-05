@@ -71,6 +71,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
         id: nil,
         count: nil,
         connected?: Phoenix.LiveView.connected?(socket),
+        nested?: LiveViewCompat.nested?(socket),
         event: name(meta[:event]),
         params: params(callback, meta),
         changes: nil,

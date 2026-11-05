@@ -16,4 +16,13 @@ defmodule PhoenixDevToolbar.SummaryTest do
     assert %Summary{queries: 1, failed_queries: 1, errors: 1} = summary
     assert summary.response == %{status: 404, duration: 900}
   end
+
+  test "counts LiveView callbacks and keeps the slowest" do
+    callback = Event.new(:live_view, :callback, %{callback: :handle_event}, at: 0)
+    render = %{Event.new(:live_view, :render, %{}, at: 0) | duration: 9000}
+
+    summary = Summary.new([%{callback | duration: 300}, %{callback | duration: 700}, render])
+
+    assert %Summary{callbacks: 2, slowest_callback_us: 700} = summary
+  end
 end

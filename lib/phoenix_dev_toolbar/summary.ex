@@ -6,7 +6,14 @@ defmodule PhoenixDevToolbar.Summary do
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Summary
 
-  defstruct queries: 0, db_us: 0, slowest_query_us: 0, failed_queries: 0, response: nil, errors: 0
+  defstruct queries: 0,
+            db_us: 0,
+            slowest_query_us: 0,
+            failed_queries: 0,
+            response: nil,
+            errors: 0,
+            callbacks: 0,
+            slowest_callback_us: 0
 
   @type t :: %Summary{
           queries: non_neg_integer(),
@@ -14,7 +21,9 @@ defmodule PhoenixDevToolbar.Summary do
           slowest_query_us: non_neg_integer(),
           failed_queries: non_neg_integer(),
           response: %{status: integer() | nil, duration: non_neg_integer() | nil} | nil,
-          errors: non_neg_integer()
+          errors: non_neg_integer(),
+          callbacks: non_neg_integer(),
+          slowest_callback_us: non_neg_integer()
         }
 
   @spec new([Event.t()]) :: t()
@@ -58,6 +67,14 @@ defmodule PhoenixDevToolbar.Summary do
 
   def add(%Summary{} = summary, %Event{plugin: :request, kind: :exception}),
     do: %{summary | errors: summary.errors + 1}
+
+  def add(%Summary{} = summary, %Event{plugin: :live_view, kind: :callback, duration: duration}) do
+    %{
+      summary
+      | callbacks: summary.callbacks + 1,
+        slowest_callback_us: max(summary.slowest_callback_us, duration || 0)
+    }
+  end
 
   def add(%Summary{} = summary, %Event{}), do: summary
 

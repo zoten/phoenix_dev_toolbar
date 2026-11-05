@@ -16,11 +16,14 @@ defmodule PhoenixDevToolbar.PanelLive do
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.Page
+  alias PhoenixDevToolbar.Panels
+  alias PhoenixDevToolbar.Profile
   alias PhoenixDevToolbar.Store
   alias PhoenixDevToolbar.Summary
 
   @flush_ms 100
-  @tabs ~w(ecto request)
+  @tabs ~w(ecto request live_view)
+  @tab_labels [{"ecto", "Ecto"}, {"request", "Request"}, {"live_view", "LiveView"}]
   # Rows kept in the DOM per list; the Store keeps 500 events per session.
   @dom_limit 500
   # Seqs are allocated before their row is written, so concurrent writers on one
@@ -37,9 +40,10 @@ defmodule PhoenixDevToolbar.PanelLive do
 
     socket =
       socket
-      |> assign(root: root, tab: "ecto", flush: nil, subscribed: [])
+      |> assign(root: root, tab: "ecto", lv_tab: "profiler", flush: nil, subscribed: [])
       |> stream_configure(:queries, dom_id: &"pdt-query-#{&1.seq}")
       |> stream_configure(:requests, dom_id: &"pdt-request-#{&1.seq}")
+      |> stream_configure(:lv_events, dom_id: &"pdt-lv-#{&1.seq}")
       # Subscribe before reading: a LiveView announced between the read and the
       # subscription would otherwise never reach the panel.
       |> subscribe(List.wrap(root))
@@ -52,6 +56,13 @@ defmodule PhoenixDevToolbar.PanelLive do
     do: {:noreply, assign(socket, :tab, tab)}
 
   def handle_event("tab", _params, socket), do: {:noreply, socket}
+
+  def handle_event("lv_tab", %{"tab" => tab}, socket) do
+    case tab in Panels.LiveView.sub_tabs() do
+      true -> {:noreply, assign(socket, :lv_tab, tab)}
+      false -> {:noreply, socket}
+    end
+  end
 
   @impl true
   def handle_info({:pdt_event, _sid}, %{assigns: %{flush: nil}} = socket),
@@ -95,6 +106,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     socket
     |> subscribe([live])
     |> assign(page: page)
+    |> fold(events)
     |> remember(events)
     |> insert_all(events)
   end
@@ -115,12 +127,14 @@ defmodule PhoenixDevToolbar.PanelLive do
       page: page,
       missing?: sids == [],
       summary: Summary.new(events),
+      profile: Profile.new(events),
       dropped: dropped(sids)
     )
     |> assign(seqs: %{}, seen: MapSet.new())
     |> remember(events)
     |> stream(:queries, Enum.filter(events, &query?/1), reset: true, limit: -@dom_limit)
     |> stream(:requests, Enum.filter(events, &request?/1), reset: true, limit: -@dom_limit)
+    |> stream(:lv_events, Enum.filter(events, &live_view?/1), reset: true, limit: -@dom_limit)
   end
 
   defp flush(%{assigns: %{page: %Page{sids: sids}, seqs: seqs, seen: seen}} = socket) do
@@ -133,11 +147,19 @@ defmodule PhoenixDevToolbar.PanelLive do
       |> Enum.sort_by(& &1.seq)
 
     socket
-    |> assign(:summary, Enum.reduce(events, socket.assigns.summary, &Summary.add(&2, &1)))
+    |> fold(events)
     |> assign(:dropped, dropped(sids))
     |> remember(events)
     |> forget_below(lows)
     |> insert_all(events)
+  end
+
+  # Summary and profile are folded incrementally, never rebuilt from the Store.
+  defp fold(socket, events) do
+    assign(socket,
+      summary: Enum.reduce(events, socket.assigns.summary, &Summary.add(&2, &1)),
+      profile: Enum.reduce(events, socket.assigns.profile, &Profile.add(&2, &1))
+    )
   end
 
   # Events over the flood guard budget are counted, not stored: show the gap.
@@ -163,6 +185,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     cond do
       query?(event) -> stream_insert(socket, :queries, event, limit: -@dom_limit)
       request?(event) -> stream_insert(socket, :requests, event, limit: -@dom_limit)
+      live_view?(event) -> stream_insert(socket, :lv_events, event, limit: -@dom_limit)
       true -> socket
     end
   end
@@ -221,6 +244,9 @@ defmodule PhoenixDevToolbar.PanelLive do
   defp request?(%Event{plugin: :request}), do: true
   defp request?(_event), do: false
 
+  defp live_view?(%Event{plugin: :live_view}), do: true
+  defp live_view?(_event), do: false
+
   defp valid_sid(sid) when is_binary(sid) do
     case Regex.match?(@sid_format, sid) do
       true -> sid
@@ -234,6 +260,8 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   @impl true
   def render(assigns) do
+    assigns = assign(assigns, :tab_labels, @tab_labels)
+
     ~H"""
     <div id="pdt-panel" class="pdt-panel">
       <header class="pdt-header">
@@ -241,7 +269,7 @@ defmodule PhoenixDevToolbar.PanelLive do
         <.summary_bar summary={@summary} dropped={@dropped} />
         <nav class="pdt-tabs" role="tablist">
           <button
-            :for={{tab, label} <- [{"ecto", "Ecto"}, {"request", "Request"}]}
+            :for={{tab, label} <- @tab_labels}
             id={"pdt-tab-" <> tab}
             type="button"
             role="tab"
@@ -304,6 +332,21 @@ defmodule PhoenixDevToolbar.PanelLive do
           <li id="pdt-requests-empty" class="pdt-list__empty">No requests yet.</li>
           <.request_row :for={{id, event} <- @streams.requests} id={id} event={event} />
         </ul>
+      </section>
+
+      <section
+        id="pdt-section-live_view"
+        class="pdt-section"
+        role="tabpanel"
+        aria-labelledby="pdt-tab-live_view"
+        hidden={@tab != "live_view"}
+      >
+        <Panels.LiveView.section
+          tab={@lv_tab}
+          profile={@profile}
+          events={@streams.lv_events}
+          root={@page.root}
+        />
       </section>
     </div>
     """

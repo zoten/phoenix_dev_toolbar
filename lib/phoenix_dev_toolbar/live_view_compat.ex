@@ -36,6 +36,10 @@ defmodule PhoenixDevToolbar.LiveViewCompat do
     }
   end
 
+  @doc "True for a LiveView rendered inside another with `live_render/3`."
+  @spec nested?(Socket.t()) :: boolean()
+  def nested?(%Socket{parent_pid: parent}), do: is_pid(parent)
+
   @doc """
   Keys assigned since the last render, from `socket.assigns.__changed__`, or
   `:all` when change tracking is off. Never reads the values: they can hold the

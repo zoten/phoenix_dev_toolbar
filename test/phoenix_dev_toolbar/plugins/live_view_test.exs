@@ -104,6 +104,19 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
                params
     end
 
+    test "flags callbacks of a nested LiveView", %{sid: sid} do
+      nested = %{socket() | parent_pid: self()}
+
+      emit(sid, [
+        {@lv ++ [:handle_event, :stop], %{duration: 1},
+         %{socket: nested, event: "ping", params: %{}}},
+        {@lv ++ [:handle_event, :stop], %{duration: 1},
+         %{socket: socket(), event: "root", params: %{}}}
+      ])
+
+      assert [%Event{data: %{nested?: true}}, %Event{data: %{nested?: false}}] = callbacks(sid)
+    end
+
     test "an exception records the error, without a diff", %{sid: sid} do
       emit(sid, [
         {@lv ++ [:handle_event, :exception], %{duration: ms(1)},
