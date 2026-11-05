@@ -117,6 +117,38 @@ defmodule PhoenixDevToolbar.StoreTest do
       sync_store()
 
       assert sid |> Store.events() |> Enum.map(& &1.data.n) == [0, 3]
+      assert %{other: %{count: 1, trimmed: 0}} = Store.plugin_counts(sid)
+
+      Store.insert(sid, Event.new(:"$1", :ping, %{n: 4}))
+      Store.insert(sid, Event.new(:"$1", :ping, %{n: 5}))
+      sync_store()
+
+      assert sid |> Store.events() |> Enum.map(& &1.data.n) == [0, 3, 5]
+    end
+
+    test "one insert can trigger both trims; per plugin trimmed adds up to the page's" do
+      Store.put_limits(max_events: 3, max_session_events: 5)
+      %Session{sid: sid} = Store.new_session(Session.new(:request))
+
+      for n <- 1..3, do: Store.insert(sid, Event.new(:a, :ping, %{n: n}))
+      for n <- 4..7, do: Store.insert(sid, Event.new(:b, :ping, %{n: n}))
+      sync_store()
+
+      assert {:ok, %Session{count: count, trimmed: trimmed}} = Store.session(sid)
+      counts = Store.plugin_counts(sid)
+
+      assert count == length(Store.events(sid))
+      assert count <= 5
+      assert trimmed == counts |> Map.values() |> Enum.map(& &1.trimmed) |> Enum.sum()
+      assert counts.b.count == 3
+    end
+
+    test "the sweep deletes counter rows whose session is gone" do
+      :ets.insert(:pdt_counts, {{"ghost", :test}, 1, 0})
+
+      Store.sweep()
+
+      assert Store.plugin_counts("ghost") == %{}
     end
 
     test "an expired session takes its counters along" do

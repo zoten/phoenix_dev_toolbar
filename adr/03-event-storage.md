@@ -94,5 +94,10 @@ serialize every query of the app behind one mailbox.
 ## Open limits
 
 - Limits are the same for every plugin: a plugin cannot ask for a larger buffer.
+- When `plugins × max_events` exceeds `max_session_events` (5 or more busy plugins at
+  the defaults), the page ceiling trims the oldest events of any plugin, so a chatty
+  plugin can again push out a quiet one.
+- A host process killed between the counter bump and the event insert leaves its
+  counters one above the stored rows: that scope settles at `max - 1` events.
 - Redaction walks only the first 50 entries of large maps: a sensitive key further in is
   hidden by the inspect limit in practice, not by redaction.

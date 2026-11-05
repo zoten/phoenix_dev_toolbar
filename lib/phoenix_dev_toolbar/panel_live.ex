@@ -388,7 +388,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   end
 
   # Events over the flood guard budget (dropped) and the oldest events past the
-  # per session cap (trimmed) are counted, not stored: show the gaps.
+  # per plugin and per page caps (trimmed) are counted, not stored: show the gaps.
   defp gaps(sids) do
     Enum.reduce(sids, %{dropped: 0, trimmed: 0}, fn sid, gaps ->
       case safe(fn -> Store.session(sid) end, :error) do
