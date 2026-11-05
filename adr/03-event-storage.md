@@ -56,7 +56,7 @@ serialize every query of the app behind one mailbox.
   | `down_grace_ms` | 60 seconds |
 
 - Payloads are truncated before insert by `PhoenixDevToolbar.Truncate`:
-  `inspect(value, limit: 50, printable_limit: 1024)` for assigns and params, SQL capped at
+  `inspect(value, limit: 50, printable_limit: 1024)` for query and path params, SQL capped at
   8 KB (UTF-8 safe), other text (exception messages and banners) at 2 KB, stacktraces at
   10 frames without toolbar and `:telemetry` frames. Every `inspect/2` in a collector uses
   these limits, including plug options and thrown or exited reasons.
@@ -64,6 +64,11 @@ serialize every query of the app behind one mailbox.
   (default `["password", "token", "secret"]`, case insensitive) become `"[REDACTED]"`;
   redaction is bounded in depth (6) and width: only the first 50 items of a list and
   the first 50 entries of a map (iteration order) are walked.
+- LiveView assigns and params can be huge (preloaded lists), so they go through
+  `Truncate.preview/3` instead: at most 200 nodes and 20 items per container are walked,
+  whatever is not walked becomes `"…"` (so a sensitive key past the budget is cut, never
+  shown), then `inspect(limit: 20, printable_limit: 256)` capped at 360 bytes per value.
+  A `:callback` event stays around 4 KB at most.
 - Live updates: our own `Registry` (`PhoenixDevToolbar.Registry`, duplicate keys) keyed
   by sid. Writers `Registry.dispatch/3` a `{:pdt_event, sid}` notification (no payload);
   the panel reads from ETS and throttles re-renders to every 100 ms. No dependency on

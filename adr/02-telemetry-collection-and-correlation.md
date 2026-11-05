@@ -68,23 +68,27 @@ host's hot path).
   | `[:phoenix, :live_view, :mount]` | `socket, params, session, uri` | runs twice: dead render (request process) and connected mount |
   | `[:phoenix, :live_view, :handle_params]` | `socket, params, uri` | |
   | `[:phoenix, :live_view, :handle_event]` | `socket, event, params` | |
-  | `[:phoenix, :live_view, :render]` | `socket, force?, changed?` | also emitted per component with `component, id, cid`: tell them apart by `:component` |
+  | `[:phoenix, :live_view, :render]` | `socket, force?, changed?` | also emitted, with `component, id, cid`, for a component rendered on its own (after its `handle_event` or a `send_update`, `Diff.write_component`, LiveView 1.2+ only); never for components rendered within their LiveView's render |
   | `[:phoenix, :live_component, :handle_event]` | `socket, component, event, params` | `socket` is the component socket |
-  | `[:phoenix, :live_component, :update]` | `socket, component, assigns_sockets` | `socket` is the parent LiveView socket |
+  | `[:phoenix, :live_component, :update]` | `socket, component, assigns_sockets` | `socket` is the parent LiveView socket; `:stop` carries the `:start` metadata (plus `sockets` for `update_many/1`), so it cannot be diffed |
 
   Plus `[:phoenix, :live_component, :destroyed]` (`socket, component, cid, live_view_socket`).
 - **Assigns diff**: `socket.assigns.__changed__` is cleared right after render
   (`Utils.clear_changed/1` inside the render span), so the `:stop` socket of
   `mount`, `handle_params` and `handle_event` still carries it, while the render `:stop`
   socket does not. The diff is computed on callback `:stop` from the keys of
-  `__changed__` (nil means everything changed).
+  `__changed__` (nil means everything changed), never its values (they can hold the
+  previous value of nested maps).
+- **Pushed events**: `push_event/3` names wait in `socket.private.live_temp[:push_events]`
+  (`[name, payload]` or `[name, payload, true]`, newest first, same in 1.1 and 1.2) until
+  the render, so callback `:stop` sockets carry them.
 - Ecto: `telemetry_prefix ++ [:query]` for each repo in `config :phoenix_dev_toolbar, repos: [...]`.
   Measurements: `query_time`, `decode_time`, `queue_time`, `idle_time`, `total_time` (native
   units, any may be missing). Metadata: `repo, query, params, cast_params, source, result,
   stacktrace` (`stacktrace` only with `stacktrace: true` in the repo config), `options`.
 - Pull, not push: `Phoenix.LiveView.Debug.list_liveviews/0`, `socket/1` and
   `live_components/1` (the last two are `GenServer.call`s to the LiveView, so the panel
-  calls them from its own process, never from a handler). Process metrics via
+  calls them from a task of its own, never from a handler; ADR 07). Process metrics via
   `Process.info/2`. Both polled by the panel only while it is open.
 
 **Built-in collectors** (default `plugins`, `PhoenixDevToolbar.Plugins.*`):
@@ -98,6 +102,15 @@ host's hot path).
   SQL, redacted params (`cast_params` when present), source, result (`{:ok, rows}` or
   `{:error, message}`), the four timings in microseconds, the origin stacktrace without
   Ecto, DBConnection and repo frames, and `caller?` for queries from `$callers` children.
+- `LiveView`: `mount`, `handle_params`, `handle_event` and `live_component` `handle_event`
+  and `update`, `:stop` and `:exception`, as `:callback` events: view, component, cid and
+  id, `connected?`, `nested?`, event name (128 bytes), params (`handle_event` and
+  `handle_params`, through `Truncate.preview/3`, 2 KB), the assigns diff (`Truncate.changes/2`:
+  20 changed keys, the first 10 values redacted and previewed, `:flash` listed without
+  value; not for `update`), the names of pushed events (at most the last 10, 128 bytes
+  each, never payloads) and on exception the error banner. `render` `:stop` and
+  `:exception` as `:render` events (component, cid and id for a component rendered on its
+  own). Skipped for `$callers` children: LiveView callbacks run in the tracked process.
 
 **Handler rules**: `PhoenixDevToolbar.Collector` attaches one handler per event name
 (id `{PhoenixDevToolbar.Collector, event}`, an external function capture) that fans out
@@ -115,11 +128,18 @@ attached when the application starts and detached in `prep_stop/1`.
 
 - Untracked processes (background jobs, other users' pages) pay one `Process.get/1`.
 - We rely on public telemetry contracts, so LiveView upgrades rarely break us.
-- Reading `__changed__` and the `:"$phx_transport_pid"` pdict key relies on LiveView
-  internals: both are isolated in `PhoenixDevToolbar.LiveViewCompat` and covered by the CI matrix.
+- Reading `__changed__` keys, `live_temp[:push_events]` names, `socket.parent_pid` and the
+  `:"$process_label"` of LiveView processes relies on LiveView internals: all are isolated
+  in `PhoenixDevToolbar.LiveViewCompat` and covered by the CI matrix. A `live_temp` shape
+  that changes makes `push_event_names/1` return `:unavailable` (logged once per node, shown
+  as such in the panel), never raise.
 
 ## Open limits
 
 - `handle_info/2` has no telemetry event: message tracing is an opt-in Phase 4
   feature based on `:erlang.trace/3` with rate limiting.
 - Processes spawned without `$callers` (raw `spawn`, GenServers) are not attributed.
+- Components rendered within their LiveView's render are not timed apart, and on
+  LiveView 1.1 component renders are never timed (no span).
+- On the connected mount, `handle_params` runs before the first render, so its diff
+  also lists the keys `mount` assigned.

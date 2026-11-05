@@ -5,7 +5,7 @@ How to write and maintain ADRs: see the ADR rules in [AGENTS.md](../AGENTS.md) a
 [TEMPLATE.md](./TEMPLATE.md). Status and area come from each ADR's header: keep
 this table in sync when you add an ADR or change its status.
 
-Next free number: **07**.
+Next free number: **08**.
 
 ## Product
 
@@ -36,6 +36,7 @@ Next free number: **07**.
 | ADR | Title | Status |
 |---|---|---|
 | 04 | [UI Delivery: Isolated Iframe LiveView and Loader](./04-ui-delivery.md) | Implemented (2026-11-05) |
+| 07 | [LiveView Panel: Profiler, Assigns, Event Log, Component Tree](./07-live-view-panel.md) | Implemented (2026-11-05) |
 
 ## Plugins
 

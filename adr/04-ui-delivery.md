@@ -41,7 +41,7 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   and fails when `priv/static` differs. `panel.css` is hand written, no CSS framework.
 - **Robustness**: `:path` must be absolute and below the root (raises in `init/1`); while
   the Store restarts every request is served untracked.
-- **Loader** (plain JS, under 2 KB minified): runs only in the top window and once per
+- **Loader** (plain JS, about 4 KB minified, under 2 KB gzipped): runs only in the top window and once per
   page. It appends a single `div#phoenix-dev-toolbar` (`data-phx-update="ignore"`) to
   `<body>` whose open shadow root holds its style and the panel `<iframe>`
   (`<path>/panel?sid=...`) and a corner pill, so host CSS and toolbar CSS cannot meet.
@@ -51,16 +51,18 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   small "dev toolbar" pill in the bottom right corner, so the bar never permanently
   covers the host page; clicking it collapses again). The iframe asks for `pdt:toggle`
   (toggle button), `pdt:open` (a tab was picked) and `pdt:hide` (hide button); the
-  loader answers with `pdt:state`. Both sides check `event.origin` and `event.source`. Later phases add
-  `phx:*` window events (client event log) and host socket RTT through
-  `window.liveSocket.getSocket().ping/1` when it exists, both read only. Page
+  loader answers with `pdt:state`. Both sides check `event.origin` and `event.source`. The
+  loader also forwards LiveView's own `phx:*` window events as `pdt:client` messages
+  (passive listeners, sanitized, rate limited: ADR 07). Phase 4 adds host socket RTT through
+  `window.liveSocket.getSocket().ping/1` when it exists, read only. Page
   correlation, including live navigation, happens server side (ADR 02), so the
   toolbar keeps working when the loader cannot reach `window.liveSocket`.
 - **Panel JS**: the root layout loads, deferred and in order, `phoenix.js`, `live_view.js`
   and `panel.js` (about 1 KB: no client bundled). `panel.js` takes `window.Phoenix` and
   `window.LiveView`, connects the panel through the host's LiveView socket (path from the
   layout's `data-socket-path`, CSRF token from the host page, see Panel route) and runs
-  the `postMessage` side of the bridge.
+  the `postMessage` side of the bridge. Its `PdtPanel` hook, on the empty `#pdt-bridge`
+  element, reports visibility and forwards client events to `PanelLive` (ADR 07).
 - **Panel route**: there is no router integration (ADR 01). The plug answers
   `GET <path>/panel?sid=...` itself with `Phoenix.LiveView.Controller.live_render/3`
   (other methods get a 405), passing the sid in the signed LiveView session, with the
@@ -91,7 +93,8 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   seqs already shown. Lists are LiveView streams capped at 500 rows; the summary bar
   (status and duration, query count and database time, router errors, and "+N dropped"
   when the flood guard discarded events, so counts are never silently low) is folded
-  incrementally (`PhoenixDevToolbar.Summary`). Tabs: Ecto, Request, as WAI-ARIA tabs
+  incrementally (`PhoenixDevToolbar.Summary`), plus a LiveView callbacks badge. Tabs: Ecto,
+  Request, LiveView (ADR 07), as WAI-ARIA tabs
   (`aria-controls`, `tabpanel`, roving `tabindex`, arrow keys in `panel.js`). Each query
   row says where it ran (`HTTP` for the dead render, `live` for the connected LiveView)
   and its details show params, repo, the queue/query/decode/idle timings and the origin

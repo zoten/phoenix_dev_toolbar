@@ -20,7 +20,9 @@ correctness and boundedness need tests, not just eyeballing.
   (default 4000). Every page exercises a panel: Users (dead render and connected mount
   queries), Posts (an N+1 with a live patch to a preloaded version), Events (queries in
   `handle_event/3`, a slow handler, a failing query), Task.async (`Task.async_stream`
-  queries attributed through `$callers`), and a dead Plug page. Phoenix and LiveView JS
+  queries attributed through `$callers`), Components (LiveComponents with events and
+  `send_update`, a nested LiveView, a `push_event`), Assigns (large, nested and
+  sensitive assigns, a per keystroke diff, a slow `handle_params`), and a dead Plug page. Phoenix and LiveView JS
   come from `deps/` through `Plug.Static`, so the harness has no build step.
   `ecto_sqlite3`, `bandit` and `jason` are `only: :dev` (`jason` also `:test`). Because
   `Demo.Repo` only exists once the script runs, `dev.exs` attaches the collector again
@@ -32,7 +34,11 @@ correctness and boundedness need tests, not just eyeballing.
     processes; assert recorded events through the Store API. Unique handler ids per test.
   - Plug: `Plug.Test` for injection rules (content type, status, chunked, missing `</body>`, nonce).
   - LiveView: `Phoenix.LiveViewTest` against a test endpoint in `test/support` for the
-    panel and for real LiveView telemetry end to end.
+    panel and for real LiveView telemetry end to end (host LiveViews with a component,
+    driven through `DemoWeb.Endpoint`).
+  - JS: the loader's pure helpers (`assets/js/client_events.mjs`) have unit tests run by
+    `node --test` (`mix test.js`, Node built-ins only, part of `mix precommit`; CI runs it
+    in the latest row). The wiring (listeners, `postMessage`, hooks) is checked by hand.
   - Overhead benchmark (manual, `bench/`): handler cost for untracked processes stays
     within a few hundred nanoseconds.
 - **Prod guarantee**: `fixtures/host_app` installs the package exactly as the README says
@@ -54,6 +60,7 @@ correctness and boundedness need tests, not just eyeballing.
 
 ## Open limits
 
-- No browser tests for the loader yet; candidate once the loader grows (Phase 2). Until
-  then, UI changes are checked by hand in `mix dev`.
+- No browser tests: the loader and panel wiring are checked by hand in `mix dev`. A JS
+  client behaviour (a hook push locking its element dropped stream resets) was only
+  visible in a real browser.
 - The overhead benchmark (`bench/`) is not written yet.
