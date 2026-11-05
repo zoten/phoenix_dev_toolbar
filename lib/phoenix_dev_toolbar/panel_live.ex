@@ -14,15 +14,14 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   use Phoenix.LiveView
 
-  import PhoenixDevToolbar.Components
-
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.Page
+  alias PhoenixDevToolbar.PageData
   alias PhoenixDevToolbar.Panel
+  alias PhoenixDevToolbar.PanelLayout
   alias PhoenixDevToolbar.Shell
-  alias PhoenixDevToolbar.Store
 
   @flush_ms 100
   # Seqs are allocated before their row is written, so concurrent writers on one
@@ -44,7 +43,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     socket =
       socket
       |> assign(shell: shell, tabs: tabs, tab: default_tab(tabs), visible?: false)
-      |> assign(panel_errors: %{}, quarantined: quarantined(shell))
+      |> assign(panel_errors: %{}, quarantined: PageData.quarantined(shell.plugins))
       |> assign(root: root, flush: nil, subscribed: [])
       # Subscribe before reading: a LiveView announced between the read and the
       # subscription would otherwise never reach the panel.
@@ -76,7 +75,7 @@ defmodule PhoenixDevToolbar.PanelLive do
           |> assign(shell: Shell.mend(socket.assigns.shell, tab))
           |> update(:panel_errors, &Map.delete(&1, tab))
 
-        {:noreply, show(socket, socket.assigns.page, read_all(socket.assigns.page.sids))}
+        {:noreply, show(socket, socket.assigns.page, PageData.read_all(socket.assigns.page.sids))}
 
       nil ->
         {:noreply, socket}
@@ -108,7 +107,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   def handle_info(:pdt_flush, socket), do: {:noreply, socket |> cancel_flush() |> flush()}
 
   def handle_info({:pdt_session, sid}, %{assigns: %{page: %Page{} = page}} = socket) do
-    with {:ok, child} <- safe(fn -> Store.session(sid) end, :error),
+    with {:ok, child} <- PageData.session(sid),
          {change, next} <- Page.follow(page, child) do
       {:noreply, apply_change(socket, change, next)}
     else
@@ -128,9 +127,9 @@ defmodule PhoenixDevToolbar.PanelLive do
   defp load(socket, nil), do: show(socket, %Page{}, [])
 
   defp load(socket, root) do
-    case safe(fn -> Page.initial(root) end, nil) do
+    case PageData.safe(fn -> Page.initial(root) end, nil) do
       %Page{sids: sids} = page ->
-        socket |> subscribe(sids) |> show(page, read_all(sids))
+        socket |> subscribe(sids) |> show(page, PageData.read_all(sids))
 
       nil ->
         show(socket, %Page{root: root}, [])
@@ -141,7 +140,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   # Tabs see the new page in their props (handle_props) and its events.
   defp apply_change(socket, :connected, %Page{} = page) do
     [_root, live] = page.sids
-    events = read_all([live])
+    events = PageData.read_all([live])
 
     socket
     |> subscribe([live])
@@ -156,7 +155,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     socket
     |> unsubscribe(socket.assigns.page.sids -- [socket.assigns.root])
     |> subscribe(sids)
-    |> show(page, read_all(sids))
+    |> show(page, PageData.read_all(sids))
   end
 
   defp apply_change(socket, :rejoined, %Page{} = page), do: assign(socket, :page, page)
@@ -167,8 +166,8 @@ defmodule PhoenixDevToolbar.PanelLive do
       page: page,
       missing?: sids == [],
       shell: Shell.reset(socket.assigns.shell, events),
-      gaps: gaps(sids),
-      quarantined: quarantined(socket.assigns.shell)
+      gaps: PageData.gaps(sids),
+      quarantined: PageData.quarantined(socket.assigns.shell.plugins)
     )
     |> assign(seqs: %{}, seen: MapSet.new())
     |> remember(events)
@@ -178,15 +177,14 @@ defmodule PhoenixDevToolbar.PanelLive do
   defp flush(%{assigns: %{page: %Page{sids: sids}, seqs: seqs, seen: seen}} = socket) do
     lows = Map.new(sids, &{&1, max(Map.get(seqs, &1, 0) - @reread_window, 0)})
 
-    events =
-      sids
-      |> Enum.flat_map(fn sid -> safe(fn -> Store.events(sid, lows[sid]) end, []) end)
-      |> Enum.reject(&MapSet.member?(seen, &1.seq))
-      |> Enum.sort_by(& &1.seq)
+    events = sids |> PageData.read_since(lows) |> Enum.reject(&MapSet.member?(seen, &1.seq))
 
     socket
     |> fold(events)
-    |> assign(gaps: gaps(sids), quarantined: quarantined(socket.assigns.shell))
+    |> assign(
+      gaps: PageData.gaps(sids),
+      quarantined: PageData.quarantined(socket.assigns.shell.plugins)
+    )
     |> remember(events)
     |> forget_below(lows)
     |> deliver(:events, events)
@@ -213,27 +211,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     socket
   end
 
-  defp panel_id(tab_id), do: "pdt-panel-" <> tab_id
-
-  # Plugins the collector disabled after their collect/3 raised, by tab id
-  # (a persistent_term read each: no copy).
-  defp quarantined(%Shell{plugins: plugins}) do
-    for {plugin, _config} <- plugins,
-        banner = Collector.quarantine_reason(plugin),
-        into: %{},
-        do: {Atom.to_string(plugin.id()), banner}
-  end
-
-  # A disabled plugin without a tab would vanish silently: say so in the bar.
-  defp disabled_without_tab(assigns) do
-    tab_ids = MapSet.new(assigns.tabs, & &1.id)
-
-    for {plugin, _config} <- assigns.shell.plugins,
-        id = Atom.to_string(plugin.id()),
-        not MapSet.member?(tab_ids, id),
-        banner = assigns.quarantined[id] || Shell.broken(assigns.shell)[id],
-        do: {id, plugin.name(), banner}
-  end
+  defp panel_id(tab_id), do: PanelLayout.panel_id(tab_id)
 
   defp recover_tab(tabs, tab) do
     case Enum.find(tabs, &(&1.id == tab)) do
@@ -242,44 +220,8 @@ defmodule PhoenixDevToolbar.PanelLive do
     end
   end
 
-  # Why a tab is disabled: its collector, its summary or its component raised.
-  defp tab_error(assigns, tab_id) do
-    assigns.quarantined[tab_id] || Shell.broken(assigns.shell)[tab_id] ||
-      assigns.panel_errors[tab_id]
-  end
-
   defp default_tab([%{id: id} | _tabs]), do: id
   defp default_tab([]), do: nil
-
-  # Events over the flood guard budget (dropped) and the oldest events past the
-  # per plugin and per page caps (trimmed) are counted, not stored: show the gaps.
-  defp gaps(sids) do
-    Enum.reduce(sids, %{dropped: 0, trimmed: 0, by_plugin: %{}}, fn sid, gaps ->
-      case safe(fn -> Store.session(sid) end, :error) do
-        {:ok, session} ->
-          %{
-            dropped: gaps.dropped + session.dropped,
-            trimmed: gaps.trimmed + session.trimmed,
-            by_plugin: add_trimmed(gaps.by_plugin, safe(fn -> Store.plugin_counts(sid) end, %{}))
-          }
-
-        :error ->
-          gaps
-      end
-    end)
-  end
-
-  defp add_trimmed(acc, counts) do
-    Enum.reduce(counts, acc, fn {plugin, %{trimmed: n}}, acc ->
-      Map.update(acc, Atom.to_string(plugin), n, &(&1 + n))
-    end)
-  end
-
-  defp read_all(sids) do
-    sids
-    |> Enum.flat_map(fn sid -> safe(fn -> Store.events(sid) end, []) end)
-    |> Enum.sort_by(& &1.seq)
-  end
 
   # Tracks the highest seq per sid and the seqs already shown (for the re-read
   # window); `forget_below/2` keeps `seen` bounded to that window.
@@ -315,13 +257,6 @@ defmodule PhoenixDevToolbar.PanelLive do
     end
   end
 
-  # The Store's tables vanish while it restarts: the panel shows what it can.
-  defp safe(fun, fallback) do
-    fun.()
-  rescue
-    ArgumentError -> fallback
-  end
-
   defp cancel_flush(%{assigns: %{flush: nil}} = socket), do: socket
 
   defp cancel_flush(%{assigns: %{flush: ref}} = socket) do
@@ -343,113 +278,17 @@ defmodule PhoenixDevToolbar.PanelLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div id="pdt-panel" class="pdt-panel">
-      <%!-- The hook lives on its own empty element: LiveView locks a hook's
-           element while its pushEvent is in flight, and a diff landing in a
-           locked tree loses its stream resets (seen on live navigation). --%>
-      <div id="pdt-bridge" phx-hook="PdtPanel" hidden></div>
-      <header class="pdt-header">
-        <span class="pdt-logo">dev toolbar</span>
-        <.summary_bar badges={Shell.badges(@shell)} dropped={@gaps.dropped} trimmed={@gaps.trimmed} />
-        <button
-          :for={{id, name, banner} <- disabled_without_tab(assigns)}
-          id={"pdt-badge-disabled-" <> id}
-          type="button"
-          class="pdt-badge pdt-badge--error pdt-badge--button"
-          title={banner}
-          phx-click="pdt_reenable"
-          phx-value-tab={id}
-        >
-          {name} disabled · re-enable
-        </button>
-        <nav class="pdt-tabs" role="tablist">
-          <button
-            :for={tab <- @tabs}
-            id={"pdt-tab-" <> tab.id}
-            type="button"
-            role="tab"
-            aria-selected={to_string(@tab == tab.id)}
-            aria-controls={"pdt-section-" <> tab.id}
-            tabindex={if(@tab == tab.id, do: "0", else: "-1")}
-            class={[
-              "pdt-tab",
-              @tab == tab.id && "pdt-tab--active",
-              tab_error(assigns, tab.id) && "pdt-tab--error"
-            ]}
-            phx-click="tab"
-            phx-value-tab={tab.id}
-          >
-            {tab.name}
-          </button>
-        </nav>
-        <button
-          id="pdt-hide"
-          type="button"
-          class="pdt-hide"
-          data-pdt-hide
-          aria-label="Hide the toolbar to a corner badge"
-          title="Hide"
-        >
-          <span aria-hidden="true">&times;</span>
-        </button>
-        <button
-          id="pdt-toggle"
-          type="button"
-          class="pdt-toggle"
-          data-pdt-toggle
-          aria-label="Expand or collapse the toolbar"
-        >
-          <span class="pdt-toggle__icon" aria-hidden="true"></span>
-        </button>
-      </header>
-
-      <p :if={@missing?} id="pdt-empty" class="pdt-empty">
-        No data for this page: it expired or the toolbar restarted. Reload the page.
-      </p>
-
-      <section
-        :for={tab <- @tabs}
-        id={"pdt-section-" <> tab.id}
-        class="pdt-section"
-        role="tabpanel"
-        aria-labelledby={"pdt-tab-" <> tab.id}
-        hidden={@tab != tab.id}
-      >
-        <p
-          :if={Map.get(@gaps.by_plugin, tab.id, 0) > 0}
-          id={"pdt-trimmed-" <> tab.id}
-          class="pdt-hint"
-        >
-          {Map.get(@gaps.by_plugin, tab.id)} older events trimmed: the list starts later than the page.
-        </p>
-        <div
-          :if={tab_error(assigns, tab.id)}
-          id={"pdt-disabled-" <> tab.id}
-          class="pdt-disabled"
-          role="alert"
-        >
-          <p>{tab.name} is disabled after an error. The rest of the toolbar keeps working.</p>
-          <pre class="pdt-error">{tab_error(assigns, tab.id)}</pre>
-          <button
-            id={"pdt-reenable-" <> tab.id}
-            type="button"
-            class="pdt-button"
-            phx-click="pdt_reenable"
-            phx-value-tab={tab.id}
-          >
-            Re-enable
-          </button>
-        </div>
-        <.live_component
-          module={tab.panel}
-          id={panel_id(tab.id)}
-          config={tab.config}
-          page={@page}
-          shown?={@tab == tab.id}
-          visible?={@visible?}
-        />
-      </section>
-    </div>
+    <PanelLayout.panel
+      shell={@shell}
+      tabs={@tabs}
+      tab={@tab}
+      page={@page}
+      gaps={@gaps}
+      quarantined={@quarantined}
+      panel_errors={@panel_errors}
+      missing?={@missing?}
+      visible?={@visible?}
+    />
     """
   end
 end
