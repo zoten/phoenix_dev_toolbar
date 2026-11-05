@@ -21,10 +21,12 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   committed to the package), so the host's asset pipeline is never involved.
 - **Loader** (plain JS, about 3 KB): creates a fixed, collapsible container with an
   `<iframe>` pointing to the router-mounted panel (`/__pdt/panel?sid=...`). It is
-  read-only towards the host: it reads the main LiveView id, listens to `phx:*` window
-  events and `phx:page-loading-stop` (live navigation changes the LiveView), measures
-  host socket RTT with `window.liveSocket.socket.ping/1` when available, and forwards
-  everything to the iframe with `postMessage` (origin checked both ways).
+  read-only towards the host: it listens to `phx:*` window events (client event log),
+  measures host socket RTT with `window.liveSocket.getSocket().ping(cb)` (public API of
+  `LiveSocket` and `Phoenix.Socket`) when `window.liveSocket` exists, and forwards
+  everything to the iframe with `postMessage` (origin checked both ways). Page
+  correlation, including live navigation, happens server side (ADR 02), so the
+  toolbar keeps working when the loader cannot reach `window.liveSocket`.
 - **Panel**: `PhoenixDevToolbar.PanelLive`, mounted by the `dev_toolbar/1` router macro in
   its own `live_session`, with its own root layout, its own LiveSocket and its own CSS.
   It reads events from the Store, subscribes via the Registry, and renders plugins' panels.
