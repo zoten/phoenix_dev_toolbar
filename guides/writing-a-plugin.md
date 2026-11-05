@@ -7,6 +7,26 @@ repository's `examples/oban` folder.
 
 > The plugin API is unstable before 1.0: changes are listed in the CHANGELOG.
 
+## Where the module lives
+
+The toolbar is a dev only dependency (`only: :dev`): in `:prod` (and `:test`)
+`PhoenixDevToolbar.Plugin` does not exist, so a plugin module in `lib/` breaks
+those builds. Keep plugins in a directory compiled in `:dev` only:
+
+```elixir
+# mix.exs
+def project do
+  [elixirc_paths: elixirc_paths(Mix.env()), ...]
+end
+
+defp elixirc_paths(:dev), do: ["lib", "dev"]
+defp elixirc_paths(_env), do: ["lib"]
+```
+
+and put `MyApp.Toolbar.Jobs` in `dev/toolbar/jobs.ex`, registered from
+`config/dev.exs`. A plugin published as its own package declares the toolbar
+as a dependency and is installed `only: :dev` as well.
+
 ## Where your code runs
 
 A plugin has three parts, each running in a different place:
@@ -23,16 +43,19 @@ your Repo. The toolbar only calls it for processes it tracks (the page you are
 looking at and its `Task.async` children), but there it runs on every event:
 
 - Keep it cheap and pure: no `GenServer.call`, no I/O, no `Process.sleep`.
-- Bound everything you keep. Use `PhoenixDevToolbar.Truncate`: `string/2`,
-  `inspect_value/2`, `redact/2` (hides values of keys such as `password`).
-  Never store a whole struct, a socket or a conn.
+- Bound everything you keep. Use `PhoenixDevToolbar.Truncate`: `string/2`
+  (binaries only), `inspect_value/2`, and `preview/2` for user data such as
+  params or job args: it redacts keys such as `password` and cuts what it does
+  not walk, however deep. Never store a whole struct, a socket or a conn.
 - Never create atoms from runtime data.
 - Never assume a metadata field is present or has a type: a value you did not
   expect is better shown as `inspect_value/1` than raised on.
 
-If `collect/3` raises, throws or exits anyway, the toolbar disables the plugin
-(it is *quarantined*), logs the error once and shows it in the plugin's tab
-with a **Re-enable** button. The host app and the other plugins keep working.
+If `collect/3` raises, throws, exits or returns anything other than
+`{:record, event}` or `:skip`, the toolbar disables the plugin (it is
+*quarantined*), logs the error once and shows it in the plugin's tab with a
+**Re-enable** button (in the summary bar for a plugin without a tab). The host
+app and the other plugins keep working.
 
 ## Attribution: what counts as "the page"
 
@@ -44,7 +67,8 @@ them (`Task.async`, `Task.async_stream`). `Context.source` tells which:
 Work done in other processes is not attributed: a GenServer the LiveView calls,
 a PubSub subscriber, a job runner. For Oban, the *insert* of a job runs in the
 caller (the LiveView that enqueued it), so it shows; the job's *execution*
-runs in Oban's queue processes, which belong to no page, so it does not.
+runs in Oban's queue processes, which belong to no page, so it does not
+(except with `testing: :inline`, where jobs run in the caller).
 
 ## 1. Collection
 
@@ -70,12 +94,14 @@ defmodule MyApp.Toolbar.Jobs do
   # Runs in the host process. The config is the one init/1 returned.
   @impl true
   def collect(_event, {measurements, %{job: job}}, %Context{config: config}) do
-    data = %{
-      worker: Truncate.string(job.worker, 128),
-      args: job.args |> Truncate.redact() |> Truncate.inspect_value(limit: 10)
-    }
+    case config.queues == :all or job.queue in config.queues do
+      true ->
+        data = %{worker: Truncate.inspect_value(job.worker), args: Truncate.preview(job.args, 512)}
+        {:record, Event.new(:jobs, :inserted, data, duration: measurements[:duration])}
 
-    {:record, Event.new(:jobs, :inserted, data, duration: measurements[:duration])}
+      false ->
+        :skip
+    end
   end
 
   def collect(_event, _payload, _context), do: :skip
@@ -97,8 +123,8 @@ config :phoenix_dev_toolbar,
 ```
 
 An invalid entry (a module that does not implement the behaviour, an `init/1`
-returning an error, malformed event names) is logged and skipped: your app
-always boots.
+returning an error, malformed event names, half of the summary callbacks) is
+logged and skipped: your app always boots.
 
 ## 2. Summary badges
 
@@ -119,7 +145,9 @@ buffer (each plugin keeps its last 500 events per page).
   def badges(count), do: [%{id: "jobs", text: "#{count} jobs", level: :info}]
 ```
 
-Define all three callbacks or none. A badge is a map with `id` (the DOM id
+Define all three callbacks or none. A badge that is not well formed is
+dropped, and an error in any of the three disables the plugin in the panel,
+like an error in its tab. A badge is a map with `id` (the DOM id
 becomes `pdt-badge-<id>`: start it with your plugin's id), `text`, `level`
 (`:ok`, `:info`, `:warn`, `:error`) and an optional `title` tooltip.
 
@@ -185,17 +213,19 @@ end
 - DOM ids must be unique in the whole panel: prefix them with your plugin id.
 
 An exception in the tab's code (its callbacks, its template, `mount/1`)
-disables the tab only, with the error and a Re-enable button.
+disables the tab only, with the error and a Re-enable button. The template is
+checked by rendering it once more behind that boundary; a template that nests
+live components is not checked, and an error there still breaks the panel.
 
 ## Testing a plugin
 
 - Unit test `collect/3` with the metadata shape the library really emits:
   read it in the library's source (`deps/`), not from memory.
 - Unit test the summary callbacks: they are pure functions.
-- Drive the whole path once: list the plugin in `config/test.exs`, load a
-  page of your app the way a browser does (`Accept: text/html`,
-  `Sec-Fetch-Dest: document`) to get its sid from the injected
-  `script[data-pdt-sid]`, emit the event from the page's LiveView, open the
-  panel at `/__pdt/panel?sid=<sid>` with `Phoenix.LiveViewTest.live/2` and
-  assert on its tab. The toolbar's own tests (`test/examples/oban_test.exs`)
-  show how.
+- To test against the toolbar, install it `only: [:dev, :test]` and compile
+  `dev/` in `:test` too.
+- The whole path (a page of your app, the injected sid, the panel at
+  `/__pdt/panel?sid=<sid>`) needs `PhoenixDevToolbar.Plug` in the test
+  endpoint, which usually sits under `code_reloading?` and is off in tests:
+  check it by hand in `mix phx.server` instead. The toolbar's own tests
+  (`test/examples/oban_test.exs`) show the full path against a test endpoint.

@@ -8,4 +8,5 @@ config :host_app, HostApp.Endpoint,
 if config_env() == :dev do
   config :host_app, dev_routes: true
   config :host_app, HostApp.Endpoint, code_reloader: true
+  config :phoenix_dev_toolbar, plugins: [:defaults, HostApp.Toolbar.Greetings]
 end

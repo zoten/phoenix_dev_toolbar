@@ -31,6 +31,20 @@ defmodule PdtExamples.ObanTest do
       assert data.args =~ "[REDACTED]"
       refute data.args =~ "hunter2"
 
+      deep = %{
+        job
+        | args: %{
+            "a" => %{
+              "b" => %{"c" => %{"d" => %{"e" => %{"f" => %{"g" => %{"password" => "LEAK"}}}}}}
+            }
+          }
+      }
+
+      assert {:record, %Event{data: %{args: args}}} =
+               PdtExamples.Oban.collect(event, {%{}, %{job: deep}}, context)
+
+      refute args =~ "LEAK"
+
       assert PdtExamples.Oban.collect(event, {%{duration: 10}, %{job: job("default")}}, context) ==
                :skip
     end

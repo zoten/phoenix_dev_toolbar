@@ -107,8 +107,8 @@ defmodule PdtExamples.Oban do
     %{
       worker: text(job.worker, 128),
       queue: text(job.queue, 64),
-      args:
-        job.args |> Truncate.redact() |> Truncate.inspect_value(limit: 10, printable_limit: 256),
+      # preview/2 redacts and cuts what it does not walk, however deep.
+      args: Truncate.preview(job.args, 512),
       state: job.state,
       conflict?: Map.get(job, :conflict?, false)
     }
@@ -128,5 +128,6 @@ defmodule PdtExamples.Oban do
   defp level(_failed), do: :error
 
   defp title(0), do: "Jobs inserted by this page (not their execution)"
+  defp title(1), do: "1 insert failed"
   defp title(failed), do: "#{failed} inserts failed"
 end

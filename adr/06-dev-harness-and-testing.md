@@ -50,7 +50,8 @@ correctness and boundedness need tests, not just eyeballing.
   - Overhead benchmark (manual, `bench/`): handler cost for untracked processes stays
     within a few hundred nanoseconds.
 - **Prod guarantee**: `fixtures/host_app` installs the package exactly as the README says
-  (path dependency, `only: :dev`). CI compiles it with `--warnings-as-errors` in
+  (path dependency, `only: :dev`), with a third party plugin in `dev/` compiled in `:dev`
+  only, as the plugin guide says. CI compiles it with `--warnings-as-errors` in
   `MIX_ENV=prod`, where the dependency does not exist, and in `MIX_ENV=dev`. It lives
   outside `test/` so the formatter and Credo never scan its `deps/`. It caught that a
   router macro cannot be installed this way (ADR 01).

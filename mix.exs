@@ -108,6 +108,10 @@ defmodule PhoenixDevToolbar.MixProject do
       source_ref: "v#{@version}",
       extras: ["README.md", "guides/writing-a-plugin.md", "CHANGELOG.md"],
       groups_for_extras: [Guides: ["guides/writing-a-plugin.md"]],
+      # Examples are compiled in tests, where precommit builds the docs.
+      filter_modules: fn module, _meta ->
+        not String.starts_with?(inspect(module), "PdtExamples")
+      end,
       groups_for_modules: [
         "Plugin API": [
           PhoenixDevToolbar.Plugin,
