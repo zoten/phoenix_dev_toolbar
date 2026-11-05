@@ -12,11 +12,19 @@ correctness and boundedness need tests, not just eyeballing.
 
 ## Decision
 
-- **Harness**: a single-file `dev.exs` (the `Phoenix.LiveDashboard` pattern) defines an
-  endpoint, router, a few LiveViews and LiveComponents that exercise every panel (N+1
-  page, slow handler, chatty assigns, `Task.async` queries) and an `ecto_sqlite3` repo,
-  so no database server is required. `mix dev` runs it on `PORT` (default 4000).
-  `ecto_sqlite3` and `phoenix_live_reload` are `only: :dev`.
+- **Harness**: a single-file `dev.exs` (the `Phoenix.LiveDashboard` pattern) defines a
+  Bandit endpoint with `PhoenixDevToolbar.Plug`, a router with `dev_toolbar "/__pdt"`, and
+  an `ecto_sqlite3` repo (`tmp/dev.sqlite3`, recreated and seeded on every boot, with
+  `stacktrace: true`), so no database server is required. `mix dev` runs it on `PORT`
+  (default 4000). Every page exercises a panel: Users (dead render and connected mount
+  queries), Posts (an N+1 with a live patch to a preloaded version), Events (queries in
+  `handle_event/3`, a slow handler, a failing query), Task.async (`Task.async_stream`
+  queries attributed through `$callers`), and a dead Plug page. Phoenix and LiveView JS
+  come from `deps/` through `Plug.Static`, so the harness has no build step.
+  `ecto_sqlite3`, `bandit` and `jason` are `only: :dev` (`jason` also `:test`). Because
+  `Demo.Repo` only exists once the script runs, `dev.exs` attaches the collector again
+  after defining it; host apps do not need this, their repo modules are loadable when the
+  toolbar starts. New panels add a harness page that demonstrates them.
 - **Test pyramid**:
   - Unit: `Truncate`, `Store` (caps, TTL, flood guard, DOWN cleanup), attribution.
   - Telemetry: emit synthetic events with `:telemetry.execute/3` in tracked and untracked

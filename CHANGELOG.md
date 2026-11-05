@@ -18,3 +18,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PhoenixDevToolbar.Plug`: page tracking, loader injection, asset serving (ADR 04)
 - `dev_toolbar` router macro and live panel: summary, Ecto and Request tabs (ADR 04)
 - Loader (shadow DOM iframe, collapse state), panel JS and CSS, esbuild bundles (ADR 04)
+- `mix dev` harness: SQLite demo app with N+1, events, Task.async and dead pages (ADR 06)

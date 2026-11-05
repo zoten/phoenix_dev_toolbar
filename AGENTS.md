@@ -11,8 +11,9 @@ This is an open source Elixir library: `phoenix_dev_toolbar` (`PhoenixDevToolbar
 
 ## Tooling
 
-- `mix dev` boots the single-file dev harness (`dev.exs`, a tiny Phoenix app with an endpoint, a LiveView and a SQLite repo) at `http://localhost:4000` with the toolbar mounted. Use it to check every UI change by hand. See [ADR 06](./adr/06-dev-harness-and-testing.md). Available from Phase 1
+- `mix dev` boots the single-file dev harness (`dev.exs`, a tiny Phoenix app with LiveViews and a SQLite repo) at `http://localhost:4000` with the toolbar mounted. Use it to check every UI change by hand, in a real browser. See [ADR 06](./adr/06-dev-harness-and-testing.md)
   - If port 4000 is taken (most likely by me), run with `PORT=4001 mix dev`
+- After changing `assets/`, run `mix assets.build` and commit `priv/static` (CI fails on stale bundles)
 - `mix precommit` is the quality gate (see Project guidelines)
 - You can create your own tooling to optimize your workflows (put scripts under `agent-tools/`). However, ask for review from me.
 

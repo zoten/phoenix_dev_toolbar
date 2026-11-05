@@ -3,8 +3,7 @@
     %{
       name: "default",
       files: %{
-        # Add "dev.exs" once the harness lands (Phase 1, ADR 06)
-        included: ["lib/", "test/"],
+        included: ["lib/", "test/", "dev.exs"],
         excluded: [~r"/_build/", ~r"/deps/", ~r"/node_modules/"]
       },
       plugins: [],

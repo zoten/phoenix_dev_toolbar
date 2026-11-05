@@ -49,6 +49,10 @@ defmodule PhoenixDevToolbar.MixProject do
       {:lazy_html, "~> 0.1", only: :test},
       # Builds priv/static (committed and shipped): never needed by host apps.
       {:esbuild, "~> 0.10", only: :dev, runtime: false},
+      # The `mix dev` harness (dev.exs, ADR 06).
+      {:ecto_sqlite3, "~> 0.22", only: :dev},
+      {:bandit, "~> 1.5", only: :dev},
+      {:jason, "~> 1.4", only: [:dev, :test]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:jump_credo_checks, "~> 0.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
