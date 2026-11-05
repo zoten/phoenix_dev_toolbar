@@ -1,17 +1,16 @@
 defmodule PhoenixDevToolbar.Layouts do
   @moduledoc false
   # Root layout of the panel iframe (ADR 04): our own assets only, nothing from
-  # the host. Asset URLs are relative to the panel route, so the toolbar works
-  # under any mount path.
+  # the host. Asset URLs come from the plug's configured `:path`, never from the
+  # request path: `//__pdt/panel` routes to the panel too, and a base derived
+  # from it would load script from another host (`//__pdt/...`).
 
   use Phoenix.Component
 
   @spec root(map()) :: Phoenix.LiveView.Rendered.t()
   def root(assigns) do
-    assigns =
-      assigns
-      |> assign(:base, assigns.conn.request_path |> Path.dirname() |> String.trim_trailing("/"))
-      |> assign(:socket_path, socket_path(assigns.conn))
+    %{path: base, live_socket_path: socket_path} = assigns.conn.private.phoenix_dev_toolbar_panel
+    assigns = assign(assigns, base: base, socket_path: socket_path)
 
     ~H"""
     <!DOCTYPE html>
@@ -31,9 +30,4 @@ defmodule PhoenixDevToolbar.Layouts do
     </html>
     """
   end
-
-  defp socket_path(%Plug.Conn{private: %{phoenix_dev_toolbar_panel: %{live_socket_path: path}}}),
-    do: path
-
-  defp socket_path(_conn), do: "/live"
 end

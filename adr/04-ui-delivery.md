@@ -58,7 +58,9 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   `GET <path>/panel?sid=...` itself with `Phoenix.LiveView.Controller.live_render/3`
   (other methods get a 405), passing the sid in the signed LiveView session, with the
   `PhoenixDevToolbar.Layouts.root/1` root layout. The layout loads only `panel.css` and
-  `panel.js`, at URLs relative to the panel route, and passes the plug's
+  `panel.js`, at URLs built from the plug's configured `:path` (never from the request
+  path: `//__pdt/panel` also reaches the panel and would yield a protocol relative URL
+  to another host), and passes the plug's
   `:live_socket_path` (default `"/live"`) to `panel.js`, which connects through the
   host's LiveView socket. The plug runs before the host's `Plug.Session` in a generated
   endpoint, so the dead render never touches the cookie session (LiveView treats an
@@ -85,6 +87,11 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   expired sid, or the Store restarting, shows an explanation, not an error.
 - Collapsed by default to the header bar (status, query count and time, errors);
   the open state persists in `localStorage` of the host origin.
+
+- **Access**: the sid is the only key to a page's data. It is 96 random bits, never
+  listed or enumerable, and reaches the panel only through the injected tag and the
+  signed LiveView session: a bearer capability, adequate for a dev only tool on the
+  developer's machine. There is no other access control.
 
 ## Consequences
 

@@ -30,8 +30,8 @@ defmodule PhoenixDevToolbar.Plugins.RequestTest do
 
       try do
         DemoWeb.Router.call(conn(method, path), DemoWeb.Router.init([]))
-      rescue
-        exception -> {:raised, exception}
+      catch
+        _kind, reason -> {:raised, reason}
       end
     end)
   end
@@ -52,6 +52,19 @@ defmodule PhoenixDevToolbar.Plugins.RequestTest do
              status: 200,
              path_params: %{"name" => "ada"}
            }
+  end
+
+  test "keeps huge plug options and thrown terms bounded", %{sid: sid} do
+    dispatch(sid, :get, "/big-opts")
+    {_pid, {:raised, _}} = dispatch(sid, :get, "/throw")
+
+    assert [%Event{kind: :dispatch, data: big}, %Event{kind: :exception, data: thrown}] =
+             Store.events(sid)
+
+    assert byte_size(big.handler) < 1_000
+    assert big.handler =~ "..."
+    assert thrown.error =~ "** (throw) [1, 2, 3"
+    assert byte_size(thrown.error) < 1_000
   end
 
   test "records a request that raised, with the error and its origin", %{sid: sid} do

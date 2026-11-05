@@ -57,7 +57,9 @@ serialize every query of the app behind one mailbox.
 
 - Payloads are truncated before insert by `PhoenixDevToolbar.Truncate`:
   `inspect(value, limit: 50, printable_limit: 1024)` for assigns and params, SQL capped at
-  8 KB (UTF-8 safe), stacktraces at 10 frames without toolbar and `:telemetry` frames.
+  8 KB (UTF-8 safe), other text (exception messages and banners) at 2 KB, stacktraces at
+  10 frames without toolbar and `:telemetry` frames. Every `inspect/2` in a collector uses
+  these limits, including plug options and thrown or exited reasons.
   Keys whose name contains an entry of `config :phoenix_dev_toolbar, redact: [...]`
   (default `["password", "token", "secret"]`, case insensitive) become `"[REDACTED]"`;
   redaction is bounded in depth (6) and width: only the first 50 items of a list and

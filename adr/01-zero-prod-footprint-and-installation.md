@@ -28,7 +28,10 @@ Three layers keep production clean:
    that block references the package.
 3. At runtime every entry point (plug, telemetry attach, supervisor children) checks
    `PhoenixDevToolbar.enabled?/0` (`config :phoenix_dev_toolbar, enabled: false` turns
-   everything into a no-op, for example in `:test` of the host app).
+   everything into a no-op, for example in `:test` of the host app). When `enabled` is
+   not configured and the application starts without `Mix` loaded (a release, so the
+   dependency was installed without `only: :dev`), it disables itself and logs a
+   warning; `enabled: true` forces it on.
 
 Installation:
 

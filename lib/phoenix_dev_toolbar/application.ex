@@ -3,6 +3,8 @@ defmodule PhoenixDevToolbar.Application do
 
   use Application
 
+  require Logger
+
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Plugins
 
@@ -11,6 +13,7 @@ defmodule PhoenixDevToolbar.Application do
 
   @impl true
   def start(_type, _args) do
+    :ok = settle_enabled(Application.fetch_env(:phoenix_dev_toolbar, :enabled), mix_loaded?())
     enabled? = PhoenixDevToolbar.enabled?()
 
     with {:ok, pid} <-
@@ -32,6 +35,24 @@ defmodule PhoenixDevToolbar.Application do
   @doc false
   @spec plugins() :: [module()]
   def plugins, do: Application.get_env(:phoenix_dev_toolbar, :plugins, @default_plugins)
+
+  @doc false
+  # Running without Mix means a release: the package was installed without
+  # `only: :dev`. Turn off unless `enabled` was set explicitly (ADR 01).
+  @spec settle_enabled({:ok, term()} | :error, boolean()) :: :ok
+  def settle_enabled({:ok, _explicit}, _mix_loaded?), do: :ok
+  def settle_enabled(:error, true), do: :ok
+
+  def settle_enabled(:error, false) do
+    Application.put_env(:phoenix_dev_toolbar, :enabled, false)
+
+    Logger.warning(
+      "[phoenix_dev_toolbar] running outside Mix (a release?): the toolbar is disabled. " <>
+        "Declare the dependency with `only: :dev`, or set `enabled: true` to force it."
+    )
+  end
+
+  defp mix_loaded?, do: Code.ensure_loaded?(Mix)
 
   # Disabled means no processes, no ETS tables and no handlers (ADR 01).
   defp children(false), do: []

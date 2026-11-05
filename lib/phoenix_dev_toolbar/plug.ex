@@ -94,7 +94,7 @@ defmodule PhoenixDevToolbar.Plug do
     conn = conn |> untracked() |> Conn.fetch_query_params()
 
     conn
-    |> Conn.put_private(:phoenix_dev_toolbar_panel, %{live_socket_path: opts.live_socket_path})
+    |> Conn.put_private(:phoenix_dev_toolbar_panel, Map.take(opts, [:path, :live_socket_path]))
     |> Phoenix.Controller.put_root_layout(html: {PhoenixDevToolbar.Layouts, :root})
     |> Phoenix.LiveView.Controller.live_render(PhoenixDevToolbar.PanelLive,
       session: %{"pdt_sid" => panel_sid(conn.query_params)}

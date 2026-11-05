@@ -72,7 +72,10 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
 
   defp result({:ok, %{num_rows: rows}}), do: {:ok, rows}
   defp result({:ok, _other}), do: {:ok, nil}
-  defp result({:error, %{__exception__: true} = error}), do: {:error, Exception.message(error)}
+
+  defp result({:error, %{__exception__: true} = error}),
+    do: {:error, error |> Exception.message() |> Truncate.string()}
+
   defp result({:error, reason}), do: {:error, Truncate.inspect_value(reason)}
   defp result(_other), do: nil
 

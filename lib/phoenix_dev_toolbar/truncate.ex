@@ -6,6 +6,7 @@ defmodule PhoenixDevToolbar.Truncate do
 
   @inspect_opts [limit: 50, printable_limit: 1024]
   @sql_limit 8192
+  @string_limit 2048
   @frames 10
   @redacted "[REDACTED]"
   # Containers deeper than this, or list items past @list_items, are left as is:
@@ -39,6 +40,20 @@ defmodule PhoenixDevToolbar.Truncate do
   def sql(nil), do: nil
   def sql(sql) when is_binary(sql) and byte_size(sql) <= @sql_limit, do: sql
   def sql(sql) when is_binary(sql), do: valid_prefix(sql, @sql_limit) <> " [truncated]"
+
+  @doc """
+  Caps any text (exception messages, banners) at #{@string_limit} bytes.
+
+      iex> PhoenixDevToolbar.Truncate.string("boom")
+      "boom"
+
+      iex> "x" |> String.duplicate(3000) |> PhoenixDevToolbar.Truncate.string() |> byte_size()
+      2060
+
+  """
+  @spec string(String.t()) :: String.t()
+  def string(text) when is_binary(text) and byte_size(text) <= @string_limit, do: text
+  def string(text) when is_binary(text), do: valid_prefix(text, @string_limit) <> " [truncated]"
 
   @doc """
   Formats the first #{@frames} stacktrace frames that do not belong to the
