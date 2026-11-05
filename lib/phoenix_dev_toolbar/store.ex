@@ -8,7 +8,7 @@ defmodule PhoenixDevToolbar.Store do
   #
   # Tables:
   #   :pdt_events      ordered_set  {{sid, seq}, %Event{}}
-  #   :pdt_sessions    set          {sid, %Session{}, count, dropped}
+  #   :pdt_sessions    set          {sid, %Session{}, count, dropped, trimmed}
   #   :pdt_pids        set          {pid, sid}            ($callers attribution)
   #   :pdt_socket_ids  set          {socket_id, sid}      (dead render -> LiveView)
   #   :pdt_transports  set          {transport_pid, sid}  (latest sid per tab)
@@ -62,7 +62,7 @@ defmodule PhoenixDevToolbar.Store do
   @doc "Registers a session. Runs in the caller: direct ETS insert plus a cast."
   @spec new_session(Session.t()) :: Session.t()
   def new_session(%Session{sid: sid} = session) do
-    :ets.insert(@sessions, {sid, session, 0, 0})
+    :ets.insert(@sessions, {sid, session, 0, 0, 0})
     maybe_index_transport(session)
     GenServer.cast(Store, {:session_created, session})
     session
@@ -72,8 +72,11 @@ defmodule PhoenixDevToolbar.Store do
   @spec session(Session.sid()) :: {:ok, Session.t()} | :error
   def session(sid) do
     case :ets.lookup(@sessions, sid) do
-      [{^sid, session, count, dropped}] -> {:ok, %{session | count: count, dropped: dropped}}
-      [] -> :error
+      [{^sid, session, count, dropped, trimmed}] ->
+        {:ok, %{session | count: count, dropped: dropped, trimmed: trimmed}}
+
+      [] ->
+        :error
     end
   end
 
@@ -82,8 +85,8 @@ defmodule PhoenixDevToolbar.Store do
   def sessions do
     @sessions
     |> :ets.tab2list()
-    |> Enum.map(fn {_sid, session, count, dropped} ->
-      %{session | count: count, dropped: dropped}
+    |> Enum.map(fn {_sid, session, count, dropped, trimmed} ->
+      %{session | count: count, dropped: dropped, trimmed: trimmed}
     end)
     |> Enum.sort_by(& &1.started_at)
   end
@@ -95,7 +98,7 @@ defmodule PhoenixDevToolbar.Store do
   @spec claim(Session.sid(), pid(), pid() | nil) :: {:ok, Session.t()} | :error
   def claim(sid, owner, transport) when is_pid(owner) do
     case :ets.lookup(@sessions, sid) do
-      [{^sid, session, _count, _dropped}] ->
+      [{^sid, session, _count, _dropped, _trimmed}] ->
         claimed = %{session | owner: owner, transport: transport}
         :ets.update_element(@sessions, sid, {2, claimed})
         maybe_index_transport(claimed)
@@ -319,9 +322,11 @@ defmodule PhoenixDevToolbar.Store do
   # Deletes the oldest events until the session is back within `max`. Loops
   # because concurrent inserts may land between reading and decrementing.
   defp trim(sid, max) do
-    with [{^sid, _session, count, _dropped}] when count > max <- :ets.lookup(@sessions, sid),
+    with [{^sid, _session, count, _dropped, _trimmed}] when count > max <-
+           :ets.lookup(@sessions, sid),
          {seqs, _cont} <- :ets.select(@events, [{{{sid, :"$1"}, :_}, [], [:"$1"]}], count - max) do
       Enum.each(seqs, &:ets.delete(@events, {sid, &1}))
+      bump_by(sid, 5, length(seqs))
       maybe_trim_again(sid, max, bump_by(sid, 3, -length(seqs)))
     end
   end
@@ -370,7 +375,7 @@ defmodule PhoenixDevToolbar.Store do
   # LiveView claims it first (see claim/2).
   defp expire(sid, pid) do
     case :ets.lookup(@sessions, sid) do
-      [{^sid, %Session{owner: ^pid}, _count, _dropped}] -> delete_session(sid)
+      [{^sid, %Session{owner: ^pid}, _count, _dropped, _trimmed}] -> delete_session(sid)
       _ -> :ok
     end
   end

@@ -1,7 +1,7 @@
 defmodule PhoenixDevToolbar.Session do
   @moduledoc false
   # One page view: a dead render request or a LiveView process (ADR 02).
-  # `count` and `dropped` are filled from the Store counters when read.
+  # `count`, `dropped` and `trimmed` are filled from the Store counters when read.
 
   alias PhoenixDevToolbar.Session
 
@@ -15,7 +15,8 @@ defmodule PhoenixDevToolbar.Session do
             path: nil,
             started_at: nil,
             count: 0,
-            dropped: 0
+            dropped: 0,
+            trimmed: 0
 
   @type sid :: String.t()
   @type kind :: :request | :live_view
@@ -30,7 +31,8 @@ defmodule PhoenixDevToolbar.Session do
           path: String.t() | nil,
           started_at: integer(),
           count: non_neg_integer(),
-          dropped: non_neg_integer()
+          dropped: non_neg_integer(),
+          trimmed: non_neg_integer()
         }
 
   @fields [:parent, :owner, :transport, :view, :path]

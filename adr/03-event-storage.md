@@ -20,7 +20,7 @@ serialize every query of the app behind one mailbox.
   | Table | Type | Row |
   |---|---|---|
   | `:pdt_events` | `ordered_set` | `{{sid, seq}, %Event{}}` |
-  | `:pdt_sessions` | `set` | `{sid, %Session{}, count, dropped}` |
+  | `:pdt_sessions` | `set` | `{sid, %Session{}, count, dropped, trimmed}` |
   | `:pdt_pids` | `set` | `{pid, sid}` (`$callers` attribution, ADR 02) |
   | `:pdt_socket_ids` | `set` | `{socket_id, sid}` (dead render to LiveView) |
   | `:pdt_transports` | `set` | `{transport_pid, sid}` (newest sid per browser tab) |
@@ -34,6 +34,8 @@ serialize every query of the app behind one mailbox.
 - Per-session cap: when `count` first exceeds `max_events` (and every 64 inserts after
   that) the writer casts `{:trim, sid}`; the Store deletes the oldest events and loops
   until the session is back within the cap, since inserts may race with the trim.
+  It adds the deleted events to `trimmed`, and the panel shows "N older trimmed" next
+  to "+N dropped", so lists that start later than the page are never silent.
 - Session cap: on every new session the Store evicts sessions beyond `max_sessions`,
   those without a live LiveView owner first, then the oldest by `started_at`, so the
   open tab survives a burst of page loads.
@@ -83,6 +85,8 @@ serialize every query of the app behind one mailbox.
 
 ## Open limits
 
-- Limits are global, not per plugin: a chatty plugin can push others' events out.
+- Limits are global, not per plugin: a chatty plugin can push others' events out
+  (LiveView events on a `phx-change` form push out the page's queries); the trimmed
+  badge makes it visible, per plugin caps are planned for Phase 3.
 - Redaction walks only the first 50 entries of large maps: a sensitive key further in is
   hidden by the inspect limit in practice, not by redaction.

@@ -110,6 +110,17 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     assert has_element?(view, "#pdt-badge-dropped", "+2 dropped")
   end
 
+  test "says how many older events the per page cap trimmed", %{conn: conn, request: request} do
+    Store.put_limits(max_events: 2)
+    for n <- 1..5, do: Store.insert(request, Event.new(:test, :ping, %{n: n}, at: 0))
+    _ = :sys.get_state(Store)
+
+    view = open(conn, request)
+
+    assert has_element?(view, "#pdt-badge-trimmed", "3 older trimmed")
+    refute has_element?(view, "#pdt-badge-dropped")
+  end
+
   test "hints at stacktrace: true when a query has no origin", %{conn: conn, request: request} do
     :ok =
       Store.insert(

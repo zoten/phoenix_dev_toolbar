@@ -70,7 +70,7 @@ defmodule PhoenixDevToolbar.StoreTest do
       sync_store()
 
       assert Enum.map(Store.events(sid), & &1.data.n) == [6, 7, 8, 9, 10]
-      assert {:ok, %Session{count: 5}} = Store.session(sid)
+      assert {:ok, %Session{count: 5, trimmed: 5}} = Store.session(sid)
     end
   end
 

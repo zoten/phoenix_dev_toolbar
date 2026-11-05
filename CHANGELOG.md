@@ -34,3 +34,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Client event log: LiveView window events forwarded by the loader (ADR 04, ADR 07)
 - JS unit tests for the loader helpers: `mix test.js`, in precommit and CI (ADR 06)
 - `mix dev` pages: Components and Assigns (ADR 06)
+- Trimmed events badge in the summary bar; client event validation module (ADR 03, ADR 07)

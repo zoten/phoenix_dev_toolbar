@@ -10,6 +10,7 @@ defmodule PhoenixDevToolbar.Components do
 
   attr :summary, Summary, required: true
   attr :dropped, :integer, default: 0, doc: "events over the flood guard budget, not recorded"
+  attr :trimmed, :integer, default: 0, doc: "oldest events removed past the per session cap"
 
   def summary_bar(assigns) do
     ~H"""
@@ -49,6 +50,14 @@ defmodule PhoenixDevToolbar.Components do
         title="Events over the per second limit were not recorded: counts are lower than reality"
       >
         +{@dropped} dropped
+      </span>
+      <span
+        :if={@trimmed > 0}
+        id="pdt-badge-trimmed"
+        class="pdt-badge pdt-badge--warn"
+        title="The oldest events were removed past the per page limit: lists start later than the page"
+      >
+        {@trimmed} older trimmed
       </span>
     </div>
     """
