@@ -1,11 +1,12 @@
 defmodule PhoenixDevToolbar.Plugins.Ecto do
   @moduledoc false
   # Built-in Ecto panel collector (ADR 02): one event per query of the repos in
-  # `config :phoenix_dev_toolbar, repos: [MyApp.Repo]`. `ecto_sql` stays an
-  # optional dependency: without repos, or without Ecto loaded, this plugin
-  # attaches to nothing.
+  # `config :phoenix_dev_toolbar, repos: [MyApp.Repo]`, or in the plugin's own
+  # `repos:` option (`{PhoenixDevToolbar.Plugins.Ecto, repos: [...]}`), which wins.
+  # `ecto_sql` stays an optional dependency: without repos, or without Ecto
+  # loaded, this plugin attaches to nothing.
 
-  @behaviour PhoenixDevToolbar.Plugin
+  use PhoenixDevToolbar.Plugin, id: :ecto, name: "Ecto"
 
   require Logger
 
@@ -18,15 +19,22 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   @times [:query_time, :queue_time, :decode_time, :idle_time, :total_time]
 
   @impl true
-  def id, do: :ecto
-
-  @impl true
-  def telemetry_events do
-    for repo <- repos(), prefix = telemetry_prefix(repo), do: prefix ++ [:query]
+  def init(opts) do
+    case Keyword.get_lazy(opts, :repos, fn ->
+           Application.get_env(:phoenix_dev_toolbar, :repos, [])
+         end) do
+      repos when is_list(repos) -> {:ok, %{repos: repos}}
+      other -> {:error, "repos must be a list of modules, got: #{inspect(other, limit: 5)}"}
+    end
   end
 
   @impl true
-  def collect_metrics(_event, {measurements, metadata}, %Context{source: source}) do
+  def telemetry_events(%{repos: repos}) do
+    for repo <- repos, prefix = telemetry_prefix(repo), do: prefix ++ [:query]
+  end
+
+  @impl true
+  def collect(_event, {measurements, metadata}, %Context{source: source}) do
     data = %{
       repo: metadata[:repo],
       sql: metadata |> Map.get(:query) |> sql(),
@@ -40,10 +48,6 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
 
     {:record, Event.new(:ecto, :query, data, duration: total(measurements))}
   end
-
-  @doc false
-  @spec repos() :: [module()]
-  def repos, do: Application.get_env(:phoenix_dev_toolbar, :repos, [])
 
   # Ecto derives the prefix from the repo name unless the repo config sets one;
   # `config/0` returns the resolved value. A repo that cannot be read is skipped.

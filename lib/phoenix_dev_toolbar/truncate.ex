@@ -1,8 +1,11 @@
 defmodule PhoenixDevToolbar.Truncate do
-  @moduledoc false
-  # Bounds every payload before it is stored (ADR 03). Runs inside host
-  # processes, so every function is pure and cheap on small inputs and bounded
-  # on large ones.
+  @moduledoc """
+  Bounds payloads before they are stored (ADR 03): plugins use these helpers
+  in `c:PhoenixDevToolbar.Plugin.collect/3`, which runs inside host processes.
+  Every function is pure, cheap on small inputs and bounded on large ones.
+  `redact/2` hides the values of sensitive keys (`config :phoenix_dev_toolbar,
+  redact: [...]`, by default keys containing "password", "token" or "secret").
+  """
 
   @inspect_opts [limit: 50, printable_limit: 1024]
   @sql_limit 8192

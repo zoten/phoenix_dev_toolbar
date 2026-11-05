@@ -35,3 +35,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JS unit tests for the loader helpers: `mix test.js`, in precommit and CI (ADR 06)
 - `mix dev` pages: Components and Assigns (ADR 06)
 - Trimmed events badge in the summary bar; client event validation module (ADR 03, ADR 07)
+- Public plugin behaviour, `use` macro, plugin options and config validation (ADR 05)

@@ -64,8 +64,21 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
     end)
   end
 
+  defp events(opts) do
+    {:ok, config} = EctoPlugin.init(opts)
+    EctoPlugin.telemetry_events(config)
+  end
+
   test "attaches to the query event of each configured repo" do
-    assert EctoPlugin.telemetry_events() == [@event]
+    assert events([]) == [@event]
+  end
+
+  test "the plugin's repos option wins over the app env, and is validated" do
+    put_repos([DemoWeb.HelloPlug])
+
+    assert events(repos: [DemoWeb.FakeRepo]) == [@event]
+    assert {:error, message} = EctoPlugin.init(repos: DemoWeb.FakeRepo)
+    assert message =~ "list of modules"
   end
 
   test "records SQL, timings, rows and the caller's origin", %{sid: sid} do
@@ -110,7 +123,7 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
   test "skips, with a warning, configured modules that are not repos" do
     put_repos([DemoWeb.HelloPlug])
 
-    log = capture_log(fn -> assert EctoPlugin.telemetry_events() == [] end)
+    log = capture_log(fn -> assert events([]) == [] end)
 
     assert log =~ "ignoring repo DemoWeb.HelloPlug"
   end

@@ -1,18 +1,15 @@
 defmodule PhoenixDevToolbar.TestPlugins.Echo do
   @moduledoc false
-  @behaviour PhoenixDevToolbar.Plugin
+  use PhoenixDevToolbar.Plugin, id: :echo
 
   alias PhoenixDevToolbar.Event
 
   @impl true
-  def id, do: :echo
+  def telemetry_events(_config), do: [[:pdt_test, :echo]]
 
   @impl true
-  def telemetry_events, do: [[:pdt_test, :echo]]
+  def collect(_event, {_measurements, %{skip: true}}, _context), do: :skip
 
-  @impl true
-  def collect_metrics(_event, {_measurements, %{skip: true}}, _context), do: :skip
-
-  def collect_metrics(_event, {_measurements, metadata}, context),
+  def collect(_event, {_measurements, metadata}, context),
     do: {:record, Event.new(:echo, :echo, %{value: metadata[:value], source: context.source})}
 end

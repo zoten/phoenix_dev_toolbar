@@ -13,7 +13,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
   # (`Diff.write_component`, LiveView 1.2+; 1.1 has none). Components rendered
   # as part of their LiveView's render are timed within that render only.
 
-  @behaviour PhoenixDevToolbar.Plugin
+  use PhoenixDevToolbar.Plugin, id: :live_view, name: "LiveView"
 
   alias Phoenix.LiveView.Socket
   alias PhoenixDevToolbar.Context
@@ -28,10 +28,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
   @id_inspect [limit: 5, printable_limit: 128]
 
   @impl true
-  def id, do: :live_view
-
-  @impl true
-  def telemetry_events do
+  def telemetry_events(_config) do
     view =
       for callback <- [:mount, :handle_params, :handle_event],
           stage <- [:stop, :exception],
@@ -48,15 +45,15 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
   @impl true
   # LiveView callbacks run in the LiveView process itself, tracked through the
   # pdict: a `$callers` child is never the page's LiveView.
-  def collect_metrics(_event, _payload, %Context{source: :caller}), do: :skip
+  def collect(_event, _payload, %Context{source: :caller}), do: :skip
 
-  def collect_metrics(@lv ++ [:render, stage], {measurements, metadata}, _context),
+  def collect(@lv ++ [:render, stage], {measurements, metadata}, _context),
     do: render(stage, measurements, metadata)
 
-  def collect_metrics(@lv ++ [callback, stage], {measurements, metadata}, _context),
+  def collect(@lv ++ [callback, stage], {measurements, metadata}, _context),
     do: callback(callback, stage, nil, measurements, metadata)
 
-  def collect_metrics(@lc ++ [callback, stage], {measurements, metadata}, _context),
+  def collect(@lc ++ [callback, stage], {measurements, metadata}, _context),
     do: callback(callback, stage, metadata.component, measurements, metadata)
 
   ## Callbacks

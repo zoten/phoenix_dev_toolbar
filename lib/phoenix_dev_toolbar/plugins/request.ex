@@ -5,7 +5,7 @@ defmodule PhoenixDevToolbar.Plugins.Request do
   # time, including plugs before the router, is recorded by
   # `PhoenixDevToolbar.Plug`.
 
-  @behaviour PhoenixDevToolbar.Plugin
+  use PhoenixDevToolbar.Plugin, id: :request, name: "Request"
 
   alias PhoenixDevToolbar.Context
   alias PhoenixDevToolbar.Event
@@ -15,18 +15,15 @@ defmodule PhoenixDevToolbar.Plugins.Request do
   @exception [:phoenix, :router_dispatch, :exception]
 
   @impl true
-  def id, do: :request
+  def telemetry_events(_config), do: [@stop, @exception]
 
   @impl true
-  def telemetry_events, do: [@stop, @exception]
-
-  @impl true
-  def collect_metrics(@stop, {measurements, metadata}, %Context{}) do
+  def collect(@stop, {measurements, metadata}, %Context{}) do
     {:record,
      Event.new(:request, :dispatch, route_data(metadata), duration: measurements[:duration])}
   end
 
-  def collect_metrics(@exception, {measurements, metadata}, %Context{}) do
+  def collect(@exception, {measurements, metadata}, %Context{}) do
     data =
       metadata
       |> route_data()

@@ -7,6 +7,7 @@ defmodule PhoenixDevToolbar.CollectorTest do
 
   alias PhoenixDevToolbar.Attribution
   alias PhoenixDevToolbar.Collector
+  alias PhoenixDevToolbar.TestPlugins.Configured
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.Session
@@ -95,6 +96,27 @@ defmodule PhoenixDevToolbar.CollectorTest do
     Collector.attach([Raising])
 
     refute Collector.quarantined?(Raising)
+  end
+
+  test "hands each plugin its init/1 config, and lists the attached plugins", %{sid: sid} do
+    Collector.attach([{Configured, label: "from opts"}, Echo])
+
+    tracked(sid, fn -> emit(%{value: 1}) end)
+
+    assert [{Configured, %{label: "from opts"}}, {Echo, []}] = Collector.plugins()
+
+    assert [%Event{plugin: :configured, data: %{label: "from opts"}}, %Event{plugin: :echo}] =
+             Store.events(sid)
+  end
+
+  test "leaves out, with an error log, a plugin whose init/1 fails", %{sid: sid} do
+    log = capture_log(fn -> Collector.attach([{Configured, label: 1}, Echo]) end)
+
+    assert log =~ "Configured is disabled: init/1 returned an error: label must be a string"
+    assert [{Echo, []}] = Collector.plugins()
+
+    tracked(sid, fn -> emit(%{value: 1}) end)
+    assert [%Event{plugin: :echo}] = Store.events(sid)
   end
 
   test "detach/0 removes every toolbar handler" do

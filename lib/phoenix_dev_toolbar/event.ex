@@ -1,8 +1,12 @@
 defmodule PhoenixDevToolbar.Event do
-  @moduledoc false
-  # One recorded fact (a query, a callback, a request). `sid` and `seq` are set
-  # by the Store on insert. `data` must already be truncated (ADR 03). Becomes
-  # public with the plugin API (ADR 05).
+  @moduledoc """
+  One recorded fact: a query, a callback, a request (ADR 05).
+
+  Plugins build events with `new/4` in `c:PhoenixDevToolbar.Plugin.collect/3`.
+  `plugin` is the plugin's id, `kind` an atom of the plugin's choosing, `data`
+  a map that must already be bounded (see `PhoenixDevToolbar.Truncate`): it is
+  stored as is. `sid` and `seq` are set by the toolbar on insert.
+  """
 
   alias PhoenixDevToolbar.Event
 

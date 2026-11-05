@@ -6,10 +6,7 @@ defmodule PhoenixDevToolbar.Application do
   require Logger
 
   alias PhoenixDevToolbar.Collector
-  alias PhoenixDevToolbar.Plugins
-
-  # `:defaults` expansion and plugin options arrive with the public API (ADR 05).
-  @default_plugins [Plugins.Request, Plugins.Ecto, Plugins.LiveView]
+  alias PhoenixDevToolbar.Config
 
   @impl true
   def start(_type, _args) do
@@ -33,8 +30,8 @@ defmodule PhoenixDevToolbar.Application do
   end
 
   @doc false
-  @spec plugins() :: [module()]
-  def plugins, do: Application.get_env(:phoenix_dev_toolbar, :plugins, @default_plugins)
+  @spec plugins() :: [Config.entry()]
+  def plugins, do: Config.plugins()
 
   @doc false
   # Running without Mix means a release: the package was installed without

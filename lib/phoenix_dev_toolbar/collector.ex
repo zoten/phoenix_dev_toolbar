@@ -11,6 +11,7 @@ defmodule PhoenixDevToolbar.Collector do
 
   alias PhoenixDevToolbar.Attribution
   alias PhoenixDevToolbar.Collector
+  alias PhoenixDevToolbar.Config
   alias PhoenixDevToolbar.Context
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
@@ -19,20 +20,72 @@ defmodule PhoenixDevToolbar.Collector do
 
   @mount_start [:phoenix, :live_view, :mount, :start]
 
-  @doc "Attaches handlers for `plugins`, replacing any previous attachment."
-  @spec attach([module()]) :: :ok
+  @plugins_key {Collector, :plugins}
+
+  @doc """
+  Attaches handlers for `plugins` (`Config.plugins/0` entries, or bare modules),
+  replacing any previous attachment. Runs each plugin's `init/1` here: a plugin
+  whose `init/1` or `telemetry_events/1` fails is logged and left out.
+  """
+  @spec attach([Config.entry() | module()]) :: :ok
   def attach(plugins) do
     detach()
-    Enum.each(plugins, &release/1)
 
-    plugins
-    |> Enum.flat_map(fn plugin -> Enum.map(plugin.telemetry_events(), &{&1, plugin}) end)
+    attached = Enum.flat_map(plugins, &attachable/1)
+    configs = Enum.map(attached, fn {plugin, config, _events} -> {plugin, config} end)
+    :persistent_term.put(@plugins_key, configs)
+
+    attached
+    |> Enum.flat_map(fn {plugin, config, events} -> Enum.map(events, &{&1, {plugin, config}}) end)
     |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
     # Session tracking needs the mount event even when no plugin asks for it.
     |> Map.put_new(@mount_start, [])
     |> Enum.each(fn {event, event_plugins} ->
       :ok = :telemetry.attach({Collector, event}, event, &Collector.handle_event/4, event_plugins)
     end)
+  end
+
+  @doc "The attached plugins with their config, in configuration order."
+  @spec plugins() :: [{module(), term()}]
+  def plugins, do: :persistent_term.get(@plugins_key, [])
+
+  defp attachable(entry) do
+    {plugin, opts} = normalize(entry)
+    release(plugin)
+
+    case start(plugin, opts) do
+      {:ok, config, events} -> [{plugin, config, events}]
+      :skip -> []
+    end
+  end
+
+  defp normalize({plugin, opts}) when is_atom(plugin) and is_list(opts), do: {plugin, opts}
+  defp normalize(plugin) when is_atom(plugin), do: {plugin, []}
+
+  defp start(plugin, opts) do
+    with {:ok, config} <- init(plugin, opts),
+         events when is_list(events) <- plugin.telemetry_events(config) do
+      {:ok, config, events}
+    else
+      {:error, reason} -> skip(plugin, "init/1 returned an error: #{reason}")
+      other -> skip(plugin, "unexpected return: #{inspect(other, limit: 5)}")
+    end
+  catch
+    kind, reason -> skip(plugin, Exception.format(kind, reason, __STACKTRACE__))
+  end
+
+  defp init(plugin, opts) do
+    # function_exported?/3 does not load the module: a plugin not loaded yet
+    # would silently skip its init/1.
+    case Code.ensure_loaded?(plugin) and function_exported?(plugin, :init, 1) do
+      true -> plugin.init(opts)
+      false -> {:ok, opts}
+    end
+  end
+
+  defp skip(plugin, why) do
+    Logger.error("[phoenix_dev_toolbar] plugin #{inspect(plugin)} is disabled: #{why}")
+    :skip
   end
 
   @doc "Detaches every toolbar handler."
@@ -43,7 +96,7 @@ defmodule PhoenixDevToolbar.Collector do
   end
 
   @doc false
-  @spec handle_event(:telemetry.event_name(), map(), map(), [module()]) :: :ok
+  @spec handle_event(:telemetry.event_name(), map(), map(), [{module(), term()}]) :: :ok
   def handle_event(event, measurements, metadata, plugins) do
     maybe_track(event, metadata)
 
@@ -74,9 +127,9 @@ defmodule PhoenixDevToolbar.Collector do
   defp maybe_track(_event, _metadata), do: :ok
 
   defp collect(plugins, event, payload, %Context{} = context) do
-    for plugin <- plugins,
+    for {plugin, config} <- plugins,
         not quarantined?(plugin),
-        do: collect_one(plugin, event, payload, context)
+        do: collect_one(plugin, event, payload, %{context | config: config})
 
     :ok
   end
@@ -91,7 +144,7 @@ defmodule PhoenixDevToolbar.Collector do
   end
 
   defp run_plugin(plugin, event, payload, context) do
-    case plugin.collect_metrics(event, payload, context) do
+    case plugin.collect(event, payload, context) do
       {:record, %Event{}} = record ->
         record
 
