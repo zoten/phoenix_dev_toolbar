@@ -55,8 +55,12 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   correlation, including live navigation, happens server side (ADR 02), so the
   toolbar keeps working when the loader cannot reach `window.liveSocket`.
 - **Panel JS**: `panel.js` connects the panel through the host's LiveView socket (path
-  from the layout's `data-socket-path`, CSRF token from the meta tag) and runs the
-  `postMessage` side of the bridge.
+  from the layout's `data-socket-path`, CSRF token from the host page, see Panel route)
+  and runs the `postMessage` side of the bridge. It bundles the `phoenix` and
+  `phoenix_live_view` JS clients of the versions locked here (LiveView 1.2), whatever
+  LiveView the host runs on the server. LiveView 1.1 and 1.2 speak the same socket
+  protocol (`vsn=2.0.0`), so this pairing is supported; a host on a LiveView with a
+  different protocol version is not, until we rebuild and pin per range.
 - **Panel route**: there is no router integration (ADR 01). The plug answers
   `GET <path>/panel?sid=...` itself with `Phoenix.LiveView.Controller.live_render/3`
   (other methods get a 405), passing the sid in the signed LiveView session, with the
@@ -107,5 +111,8 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 
 ## Open limits
 
-- Strict CSP without a nonce (or `frame-src` restrictions) blocks the toolbar; we log a hint.
+- The bundled JS client is only exercised against the locked server LiveView (by hand in
+  `mix dev`); CI's LiveView 1.1 row covers the server side through `LiveViewTest`, which
+  does not run the JS client.
+- Strict CSP without a nonce (or `frame-src` restrictions) blocks the toolbar silently.
 - Pages that are not HTML responses from Plug (static files) get no toolbar.

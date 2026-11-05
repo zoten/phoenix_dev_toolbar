@@ -43,7 +43,7 @@ defmodule PhoenixDevToolbar.MixProject do
   defp deps do
     [
       {:phoenix, "~> 1.8"},
-      {:phoenix_live_view, "~> 1.1"},
+      {:phoenix_live_view, live_view_requirement()},
       {:telemetry, "~> 1.0"},
       {:ecto_sql, "~> 3.12", optional: true},
       {:lazy_html, "~> 0.1", only: :test},
@@ -58,6 +58,16 @@ defmodule PhoenixDevToolbar.MixProject do
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false}
     ]
+  end
+
+  # CI overrides the requirement to test the oldest supported LiveView
+  # (PDT_LIVE_VIEW="~> 1.1.0", ADR 06). Unset or empty (GitHub Actions turns a
+  # missing matrix value into "") means the published requirement.
+  defp live_view_requirement do
+    case System.get_env("PDT_LIVE_VIEW", "") do
+      "" -> "~> 1.1"
+      requirement -> requirement
+    end
   end
 
   defp aliases do

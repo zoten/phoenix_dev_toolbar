@@ -7,18 +7,22 @@ on:
 
 jobs:
   test:
-    name: Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }}
+    name: Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }} / LiveView ${{ matrix.live_view || 'locked' }}
     runs-on: ubuntu-latest
     env:
       MIX_ENV: test
+      # Read by mix.exs: overrides the LiveView requirement (empty = published one).
+      PDT_LIVE_VIEW: ${{ matrix.live_view }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Minimum supported (ADR 01)
+          # Minimum supported: Elixir, OTP and LiveView (ADR 00, ADR 06). This is
+          # what covers LiveViewCompat's use of LiveView internals on 1.1.
           - elixir: "1.17"
             otp: "26"
-          # Latest, also runs the strict checks
+            live_view: "~> 1.1.0"
+          # Latest, with the locked LiveView; also runs the strict checks
           - elixir: "1.20"
             otp: "29"
             lint: true
@@ -34,8 +38,12 @@ jobs:
             deps
             _build
             priv/plts
-          key: ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('mix.lock') }}
+          key: ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ matrix.live_view || 'locked' }}-${{ hashFiles('mix.lock') }}
       - run: mix deps.get
+        if: ${{ !matrix.live_view }}
+      # Resolves the overridden requirement (the lockfile pins the latest LiveView).
+      - run: mix deps.update phoenix_live_view
+        if: ${{ matrix.live_view }}
       - run: mix compile --warnings-as-errors
       - run: mix test --warnings-as-errors
       - if: matrix.lint
@@ -49,7 +57,10 @@ jobs:
       - if: matrix.lint
         run: mix docs --warnings-as-errors
       # The README install must compile where the dependency does not exist (ADR 01).
+      # Latest row only: the fixture's lockfile pins the latest LiveView, which the
+      # minimum row's PDT_LIVE_VIEW override would conflict with.
       - name: Fixture host app compiles in prod and dev
+        if: matrix.lint
         working-directory: fixtures/host_app
         run: |
           MIX_ENV=prod mix deps.get
