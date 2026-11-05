@@ -37,21 +37,23 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
   defp socket(assigns \\ []),
     do: Phoenix.Component.assign(%Socket{view: DemoWeb.PageLive}, assigns)
 
-  # Emits `events` ({name, measurements, metadata}) from a process tracked as
-  # `sid` and returns what is left of the render fold in its pdict afterwards.
+  # Emits `events` ({name, measurements, metadata}) from a process tracked as `sid`.
   defp emit(sid, events) do
-    {_pid, fold} =
-      in_process(fn ->
-        Attribution.track(sid)
+    in_process(fn ->
+      Attribution.track(sid)
 
-        Enum.each(events, fn {name, measurements, metadata} ->
-          :telemetry.execute(name, measurements, metadata)
-        end)
-
-        Process.get(LiveViewPlugin.fold_key())
+      Enum.each(events, fn {name, measurements, metadata} ->
+        :telemetry.execute(name, measurements, metadata)
       end)
+    end)
 
-    fold
+    :ok
+  end
+
+  # LiveView 1.2 added a render span for a component rendered on its own
+  # (after its handle_event or a send_update); 1.1 has none.
+  defp component_render_spans? do
+    :phoenix_live_view |> Application.spec(:vsn) |> to_string() |> Version.match?(">= 1.2.0")
   end
 
   defp callbacks(sid), do: for(%Event{kind: :callback} = e <- Store.events(sid), do: e)
@@ -214,59 +216,29 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
         {@lv ++ [:render, stage], %{duration: ms(4)},
          Map.merge(%{socket: socket(), force?: false, changed?: true}, extra)}
 
-    test "folds component renders into their LiveView render, top 10 by time", %{sid: sid} do
-      components = for cid <- 1..12, do: component_render(cid, cid * 100)
-      fold = emit(sid, [view_render(:start)] ++ components ++ [view_render(:stop)])
+    test "records a LiveView render", %{sid: sid} do
+      emit(sid, [view_render(:stop)])
 
       assert [%Event{duration: 4000, data: data}] = renders(sid)
-      assert %{view: DemoWeb.PageLive, component: nil, changed?: true} = data
-      assert length(data.components) == 10
-
-      assert hd(data.components) == %{
-               component: DemoWeb.CounterComponent,
-               cid: 12,
-               id: ~s("c12"),
-               count: 1,
-               us: 1200
-             }
-
-      assert data.rest == %{count: 2, us: 300}
-      assert fold == nil
+      assert %{view: DemoWeb.PageLive, component: nil, changed?: true, error: nil} = data
     end
 
-    test "a render that raises cleans the fold", %{sid: sid} do
-      fold =
-        emit(sid, [
-          view_render(:start),
-          component_render(1, 100),
-          view_render(:exception, %{kind: :error, reason: :boom, stacktrace: []})
-        ])
+    test "a render that raises records the error", %{sid: sid} do
+      emit(sid, [view_render(:exception, %{kind: :error, reason: :boom, stacktrace: []})])
 
       assert [%Event{data: %{error: error}}] = renders(sid)
       assert error =~ "boom"
-      assert fold == nil
     end
 
-    test "a component render outside a LiveView render is recorded on its own", %{sid: sid} do
+    test "a component rendered on its own is recorded with its cid and id", %{sid: sid} do
       emit(sid, [component_render(5, 250)])
 
-      assert [%Event{duration: 250, data: %{component: DemoWeb.CounterComponent, cid: 5}}] =
-               renders(sid)
-    end
-
-    test "untracked processes never get a fold" do
-      {_pid, keys} =
-        in_process(fn ->
-          :telemetry.execute(@lv ++ [:render, :start], %{system_time: 0}, %{
-            socket: socket(),
-            force?: false,
-            changed?: true
-          })
-
-          Process.get_keys()
-        end)
-
-      assert keys == []
+      assert [
+               %Event{
+                 duration: 250,
+                 data: %{component: DemoWeb.CounterComponent, cid: 5, id: ~s("c5")}
+               }
+             ] = renders(sid)
     end
   end
 
@@ -308,6 +280,12 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
       assert mount.data.changes.values.api_token == ~s("[REDACTED]")
 
       assert Enum.any?(events, &(&1.kind == :render and &1.data.component == nil))
+
+      assert Enum.any?(
+               events,
+               &(&1.kind == :render and &1.data.component == DemoWeb.CounterComponent)
+             ) ==
+               component_render_spans?()
     end
   end
 end

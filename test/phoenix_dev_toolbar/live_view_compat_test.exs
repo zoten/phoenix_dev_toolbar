@@ -48,15 +48,21 @@ defmodule PhoenixDevToolbar.LiveViewCompatTest do
       assert LiveViewCompat.push_event_names(socket()) == {:ok, []}
     end
 
-    test "keeps at most 10 names, each truncated" do
-      long = String.duplicate("e", 500)
-
+    test "keeps the last 10 names, in push order" do
       socket =
-        Enum.reduce(1..15, socket(), fn _n, acc -> Phoenix.LiveView.push_event(acc, long, %{}) end)
+        Enum.reduce(1..15, socket(), fn n, acc ->
+          Phoenix.LiveView.push_event(acc, "event-#{n}", %{})
+        end)
 
-      assert {:ok, names} = LiveViewCompat.push_event_names(socket)
-      assert length(names) == 10
-      assert Enum.all?(names, &(byte_size(&1) <= 140))
+      assert LiveViewCompat.push_event_names(socket) ==
+               {:ok, for(n <- 6..15, do: "event-#{n}")}
+    end
+
+    test "truncates long names" do
+      socket = Phoenix.LiveView.push_event(socket(), String.duplicate("e", 500), %{})
+
+      assert {:ok, [name]} = LiveViewCompat.push_event_names(socket)
+      assert byte_size(name) <= 140
     end
 
     test "a changed internal shape degrades to :unavailable and warns once" do

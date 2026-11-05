@@ -12,7 +12,7 @@ defmodule PhoenixDevToolbar.ProfileTest do
   end
 
   defp render(us, data) do
-    data = Map.merge(%{component: nil, components: [], rest: %{count: 0, us: 0}}, data)
+    data = Map.merge(%{component: nil}, data)
     %{Event.new(:live_view, :render, data, at: 0) | duration: us}
   end
 
@@ -37,14 +37,11 @@ defmodule PhoenixDevToolbar.ProfileTest do
            ]
   end
 
-  test "LiveView renders and their folded component renders get their own rows" do
-    component = %{component: DemoWeb.CounterComponent, cid: 1, id: ~s("c"), count: 3, us: 90}
-    profile = Profile.new([render(400, %{components: [component]}), render(200, %{})])
+  test "LiveView renders get their own row" do
+    profile = Profile.new([render(400, %{}), render(200, %{})])
 
-    assert [
-             %{key: {:render, nil, nil}, count: 2, total_us: 600, max_us: 400},
-             %{key: {:render, DemoWeb.CounterComponent, nil}, count: 3, total_us: 90}
-           ] = Profile.rows(profile)
+    assert [%{key: {:render, nil, nil}, count: 2, total_us: 600, max_us: 400}] =
+             Profile.rows(profile)
   end
 
   test "a component rendered on its own counts as that component's render" do

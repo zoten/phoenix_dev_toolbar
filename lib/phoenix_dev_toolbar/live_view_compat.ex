@@ -61,16 +61,29 @@ defmodule PhoenixDevToolbar.LiveViewCompat do
   def push_event_names(%Socket{private: %{live_temp: %{} = temp}}) do
     case Map.get(temp, :push_events) do
       nil -> {:ok, []}
-      events when is_list(events) -> names(events, [])
+      events when is_list(events) -> events |> newest(@push_names) |> names([])
       _other -> unavailable()
     end
   end
 
   def push_event_names(%Socket{}), do: unavailable()
 
-  # Newest first: keep walking (prepending) so the result is in push order, and
-  # keep the last @push_names, the ones closest to what the client receives.
-  defp names([], acc), do: {:ok, Enum.take(acc, -@push_names)}
+  # The list is newest first: the first @push_names are the last pushed. Walking
+  # them prepends, so the result is in push order.
+  defp newest(events, n) do
+    case proper_take(events, n, []) do
+      {:ok, taken} -> taken
+      :improper -> :improper
+    end
+  end
+
+  defp proper_take(_rest, 0, acc), do: {:ok, Enum.reverse(acc)}
+  defp proper_take([], _n, acc), do: {:ok, Enum.reverse(acc)}
+  defp proper_take([event | rest], n, acc), do: proper_take(rest, n - 1, [event | acc])
+  defp proper_take(_improper, _n, _acc), do: :improper
+
+  defp names(:improper, _acc), do: unavailable()
+  defp names([], acc), do: {:ok, acc}
   defp names([[name | _payload] | rest], acc), do: names(rest, [name(name) | acc])
   defp names(_improper, _acc), do: unavailable()
 

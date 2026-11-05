@@ -1,17 +1,17 @@
 defmodule PhoenixDevToolbar.Plugins.LiveView do
   @moduledoc false
   # Built-in LiveView collector (ADR 02): one `:callback` event per LiveView and
-  # LiveComponent callback, one `:render` event per LiveView render.
+  # LiveComponent callback, one `:render` event per render.
   #
   # Runs inside the host's LiveView (or dead render request) process, and only
   # for tracked processes: the collector returns before reaching the plugin for
   # everything else. So every value is bounded (Truncate) and nothing calls
   # another process.
   #
-  # Component renders run inside their LiveView's render span, often many per
-  # render: they are folded in the pdict (at most @fold_size entries) and stored
-  # with the LiveView render instead of flooding the session buffer. A component
-  # render outside a LiveView render (after `send_update`) is stored on its own.
+  # LiveView emits a component `render` span only when it renders one component
+  # on its own: after a component `handle_event` or a `send_update`
+  # (`Diff.write_component`, LiveView 1.2+; 1.1 has none). Components rendered
+  # as part of their LiveView's render are timed within that render only.
 
   @behaviour PhoenixDevToolbar.Plugin
 
@@ -23,11 +23,9 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
 
   @lv [:phoenix, :live_view]
   @lc [:phoenix, :live_component]
-  @fold :pdt_render_fold
-  @fold_size 10
   @name_bytes 128
+  @params_bytes 2048
   @id_inspect [limit: 5, printable_limit: 128]
-  @empty_fold %{entries: %{}, rest_count: 0, rest_native: 0}
 
   @impl true
   def id, do: :live_view
@@ -44,14 +42,8 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
           stage <- [:stop, :exception],
           do: @lc ++ [callback, stage]
 
-    render = for stage <- [:start, :stop, :exception], do: @lv ++ [:render, stage]
-
-    view ++ component ++ render
+    view ++ component ++ [@lv ++ [:render, :stop], @lv ++ [:render, :exception]]
   end
-
-  @doc false
-  @spec fold_key() :: atom()
-  def fold_key, do: @fold
 
   @impl true
   # LiveView callbacks run in the LiveView process itself, tracked through the
@@ -92,7 +84,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
   end
 
   defp params(callback, %{params: params}) when callback in [:handle_event, :handle_params],
-    do: params |> Truncate.redact() |> Truncate.inspect_value()
+    do: Truncate.preview(params, @params_bytes)
 
   defp params(_callback, _metadata), do: nil
 
@@ -120,7 +112,8 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
     %{cid: cid, id: component_id(assigns[:id])}
   end
 
-  # `update` `:stop` metadata is its `:start` metadata: nothing to diff.
+  # `update` `:stop` metadata carries the sockets before the update (plus the
+  # updated ones for `update_many/1` only): timed, not diffed.
   defp outcome(:stop, :update, _socket, _metadata), do: %{}
 
   defp outcome(:stop, _callback, socket, _metadata) do
@@ -138,39 +131,10 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
 
   ## Renders
 
-  defp render(:start, _measurements, %{component: _component}), do: :skip
+  defp render(:stop, measurements, metadata), do: record_render(measurements, metadata, %{})
 
-  defp render(:start, _measurements, _metadata) do
-    Process.put(@fold, @empty_fold)
-    :skip
-  end
-
-  defp render(:stop, measurements, %{component: _component} = metadata) do
-    case Process.get(@fold) do
-      nil ->
-        record_render(measurements, metadata, %{
-          cid: metadata[:cid],
-          id: component_id(metadata[:id])
-        })
-
-      fold ->
-        Process.put(@fold, fold_add(fold, metadata, measurements[:duration] || 0))
-        :skip
-    end
-  end
-
-  defp render(:stop, measurements, metadata) do
-    fold = Process.delete(@fold) || @empty_fold
-    record_render(measurements, metadata, fold_data(fold))
-  end
-
-  # A component render that raises raises its LiveView render too.
-  defp render(:exception, _measurements, %{component: _component}), do: :skip
-
-  defp render(:exception, measurements, %{kind: kind, reason: reason} = metadata) do
-    _ = Process.delete(@fold)
-    record_render(measurements, metadata, %{error: Truncate.banner(kind, reason)})
-  end
+  defp render(:exception, measurements, %{kind: kind, reason: reason} = metadata),
+    do: record_render(measurements, metadata, %{error: Truncate.banner(kind, reason)})
 
   defp record_render(measurements, %{socket: %Socket{} = socket} = metadata, extra) do
     data =
@@ -178,67 +142,16 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
         %{
           view: socket.view,
           component: metadata[:component],
-          cid: nil,
-          id: nil,
+          cid: metadata[:cid],
+          id: component_id(metadata[:id]),
           force?: metadata[:force?],
           changed?: metadata[:changed?],
-          components: [],
-          rest: %{count: 0, us: 0},
           error: nil
         },
         extra
       )
 
     {:record, Event.new(:live_view, :render, data, duration: measurements[:duration])}
-  end
-
-  # Keeps the @fold_size slowest components; the others are summed in `rest`.
-  defp fold_add(%{entries: entries} = fold, %{cid: cid} = metadata, duration) do
-    case entries do
-      %{^cid => {component, id, count, total}} ->
-        %{fold | entries: %{entries | cid => {component, id, count + 1, total + duration}}}
-
-      _ when map_size(entries) < @fold_size ->
-        %{fold | entries: Map.put(entries, cid, entry(metadata, duration))}
-
-      _ ->
-        {fastest, {_c, _id, count, total}} =
-          Enum.min_by(entries, fn {_cid, entry} -> elem(entry, 3) end)
-
-        evict(fold, fastest, count, total, metadata, duration)
-    end
-  end
-
-  defp evict(fold, fastest, count, total, metadata, duration) when duration > total do
-    %{
-      fold
-      | entries:
-          fold.entries |> Map.delete(fastest) |> Map.put(metadata.cid, entry(metadata, duration)),
-        rest_count: fold.rest_count + count,
-        rest_native: fold.rest_native + total
-    }
-  end
-
-  defp evict(fold, _fastest, _count, _total, _metadata, duration),
-    do: %{fold | rest_count: fold.rest_count + 1, rest_native: fold.rest_native + duration}
-
-  defp entry(metadata, duration), do: {metadata.component, metadata[:id], 1, duration}
-
-  defp fold_data(%{entries: entries, rest_count: rest_count, rest_native: rest_native}) do
-    components =
-      entries
-      |> Enum.sort_by(fn {_cid, entry} -> elem(entry, 3) end, :desc)
-      |> Enum.map(fn {cid, {component, id, count, total}} ->
-        %{
-          component: component,
-          cid: cid,
-          id: component_id(id),
-          count: count,
-          us: Event.native_to_us(total)
-        }
-      end)
-
-    %{components: components, rest: %{count: rest_count, us: Event.native_to_us(rest_native)}}
   end
 
   defp component_id(nil), do: nil

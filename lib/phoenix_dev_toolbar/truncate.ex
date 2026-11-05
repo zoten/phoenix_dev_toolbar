@@ -20,6 +20,11 @@ defmodule PhoenixDevToolbar.Truncate do
   @change_values 10
   @change_inspect [limit: 20, printable_limit: 256]
   @change_bytes 360
+  # A preview walks at most @preview_nodes nodes and @preview_width items per
+  # container, whatever the value's size: assigns can be huge (ADR 03).
+  @preview_nodes 200
+  @preview_width 20
+  @cut "…"
 
   @type changes :: %{keys: [term()], values: %{term() => String.t()}, omitted: non_neg_integer()}
 
@@ -140,7 +145,7 @@ defmodule PhoenixDevToolbar.Truncate do
 
   def changes(assigns, keys) when is_map(assigns) and is_list(keys) do
     {shown, rest} = keys |> List.delete(:__changed__) |> Enum.sort() |> Enum.split(@change_keys)
-    redact = Enum.map(redact_keys(), &(&1 |> to_string() |> String.downcase()))
+    redact = lowered_redact_keys()
 
     values =
       for key <- Enum.take(shown, @change_values),
@@ -157,14 +162,111 @@ defmodule PhoenixDevToolbar.Truncate do
   def redact_keys, do: Application.get_env(:phoenix_dev_toolbar, :redact, @default_redact)
 
   defp change_value(key, value, redact) do
-    value =
-      case sensitive?(key, redact) do
-        true -> @redacted
-        false -> do_redact(value, redact, 1)
-      end
-
-    value |> inspect_value(@change_inspect) |> string(@change_bytes)
+    case sensitive?(key, redact) do
+      true -> inspect_value(@redacted)
+      false -> preview(value, @change_bytes, redact)
+    end
   end
+
+  @doc """
+  Redacted, bounded inspect of any value, at most `bytes` long.
+
+  Unlike `redact/2`, the cost does not depend on the value: at most
+  #{@preview_nodes} nodes and #{@preview_width} items per container are walked,
+  and whatever is not walked is replaced by `"#{@cut}"`, so a sensitive key
+  deep in a large value is cut, never shown.
+
+      iex> PhoenixDevToolbar.Truncate.preview(%{user: %{password: "hunter2"}})
+      ~s(%{user: %{password: "[REDACTED]"}})
+
+      iex> PhoenixDevToolbar.Truncate.preview(Enum.to_list(1..30))
+      "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, ...]"
+
+  """
+  @spec preview(term(), pos_integer(), [String.t()]) :: String.t()
+  def preview(value, bytes \\ @change_bytes, redact \\ lowered_redact_keys()) do
+    {pruned, _budget} = prune(value, @preview_nodes, redact)
+    pruned |> inspect_value(@change_inspect) |> string(bytes)
+  end
+
+  defp lowered_redact_keys, do: Enum.map(redact_keys(), &(&1 |> to_string() |> String.downcase()))
+
+  defp prune(_value, budget, _keys) when budget <= 0, do: {@cut, 0}
+
+  # Structs made of scalars only (dates, decimals) keep their own Inspect.
+  defp prune(%{__struct__: _} = struct, budget, keys) do
+    case Enum.any?(Map.values(struct), &container?/1) do
+      false -> {struct, budget - 1}
+      true -> prune_fields(struct, budget - 1, keys)
+    end
+  end
+
+  defp prune(%{} = map, budget, keys) do
+    {pairs, budget} =
+      map
+      |> first_entries(@preview_width)
+      |> Enum.map_reduce(budget - 1, &prune_pair(&1, &2, keys))
+
+    pruned = Map.new(pairs)
+
+    case map_size(map) > @preview_width do
+      true -> {Map.put(pruned, @cut, @cut), budget}
+      false -> {pruned, budget}
+    end
+  end
+
+  defp prune(list, budget, keys) when is_list(list) do
+    case proper_split(list, @preview_width) do
+      {:ok, head, rest} ->
+        {items, budget} = Enum.map_reduce(head, budget - 1, &prune_item(&1, &2, keys))
+        {items ++ cut_marker(rest), budget}
+
+      :improper ->
+        {@cut, budget - 1}
+    end
+  end
+
+  defp prune(tuple, budget, keys) when is_tuple(tuple) do
+    shown = min(tuple_size(tuple), @preview_width)
+    head = for index <- 0..(shown - 1)//1, do: elem(tuple, index)
+    {items, budget} = Enum.map_reduce(head, budget - 1, &prune_item(&1, &2, keys))
+    {List.to_tuple(items ++ cut_marker(tuple_size(tuple) > shown)), budget}
+  end
+
+  defp prune(value, budget, _keys), do: {value, budget - 1}
+
+  # A struct keeps every field (derived Inspect implementations expect them):
+  # fields past the budget become "…".
+  defp prune_fields(struct, budget, keys) do
+    struct
+    |> Map.from_struct()
+    |> Enum.reduce({struct, budget}, fn {key, value}, {acc, left} ->
+      {{_key, pruned}, left} = prune_pair({key, value}, left, keys)
+      {Map.put(acc, key, pruned), left}
+    end)
+  end
+
+  defp prune_pair({key, value}, budget, keys) do
+    case sensitive?(key, keys) do
+      true ->
+        {{key, @redacted}, budget - 1}
+
+      false ->
+        {pruned, budget} = prune(value, budget, keys)
+        {{key, pruned}, budget}
+    end
+  end
+
+  defp prune_item({key, _value} = pair, budget, keys) when is_atom(key) or is_binary(key),
+    do: prune_pair(pair, budget, keys)
+
+  defp prune_item(item, budget, keys), do: prune(item, budget, keys)
+
+  defp cut_marker(rest) when rest in [[], false], do: []
+  defp cut_marker(_rest), do: [@cut]
+
+  defp container?(value) when is_map(value) or is_list(value) or is_tuple(value), do: true
+  defp container?(_value), do: false
 
   defp cap(text, limit) when byte_size(text) <= limit, do: text
   defp cap(text, limit), do: valid_prefix(text, limit) <> " [truncated]"

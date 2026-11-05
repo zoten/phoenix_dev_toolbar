@@ -141,4 +141,38 @@ defmodule PhoenixDevToolbar.TruncateTest do
       assert changes |> :erlang.term_to_binary() |> byte_size() < 4_500
     end
   end
+
+  describe "preview/3" do
+    test "cost and size are bounded however deep the value" do
+      deep = Enum.reduce(1..5, :leaf, fn _level, acc -> List.duplicate(acc, 20) end)
+
+      preview = Truncate.preview(deep)
+
+      assert byte_size(preview) <= 360 + byte_size(" [truncated]")
+    end
+
+    test "a sensitive key past the walk budget is cut, never shown" do
+      wide = Map.new(1..19, &{:"k#{&1}", Enum.to_list(1..20)})
+      value = Map.put(wide, :zz, %{password: "hunter2"})
+
+      refute Truncate.preview(value, 100_000) =~ "hunter2"
+    end
+
+    test "redacts keyword lists inside lists and tuples" do
+      assert Truncate.preview({:ok, [api_token: "abc", page: 1]}) ==
+               ~s({:ok, [api_token: "[REDACTED]", page: 1]})
+    end
+
+    test "scalar structs keep their own inspect" do
+      assert Truncate.preview(~U[2026-11-05 10:00:00Z]) == "~U[2026-11-05 10:00:00Z]"
+      assert Truncate.preview(%{at: ~D[2026-11-05]}) == "%{at: ~D[2026-11-05]}"
+    end
+
+    test "nested structs are walked and redacted" do
+      uri = %URI{host: "example.com", query: "a=1", userinfo: "ada:hunter2"}
+      session = %{__struct__: Plug.Conn, secret_key_base: "s3cret", assigns: %{uri: uri}}
+
+      refute Truncate.preview(session, 100_000) =~ "s3cret"
+    end
+  end
 end

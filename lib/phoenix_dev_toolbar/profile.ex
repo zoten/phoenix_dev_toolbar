@@ -7,7 +7,7 @@ defmodule PhoenixDevToolbar.Profile do
   # One row per `{callback, component, event}`; renders are `{:render, component,
   # nil}` (`nil` component: the LiveView itself). Event names come from the
   # client, so the number of rows is capped: past @max_keys, new keys share the
-  # `:other` row. A folded component's `max_us` is its time within one render.
+  # `:other` row.
 
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Profile
@@ -41,13 +41,8 @@ defmodule PhoenixDevToolbar.Profile do
   def add(%Profile{} = profile, %Event{plugin: :live_view, kind: :callback, data: data} = event),
     do: put(profile, {data.callback, data.component, data.event}, 1, event.duration || 0)
 
-  def add(%Profile{} = profile, %Event{plugin: :live_view, kind: :render, data: data} = event) do
-    profile = put(profile, {:render, data.component, nil}, 1, event.duration || 0)
-
-    Enum.reduce(data.components, profile, fn component, acc ->
-      put(acc, {:render, component.component, nil}, component.count, component.us)
-    end)
-  end
+  def add(%Profile{} = profile, %Event{plugin: :live_view, kind: :render, data: data} = event),
+    do: put(profile, {:render, data.component, nil}, 1, event.duration || 0)
 
   def add(%Profile{} = profile, %Event{}), do: profile
 
