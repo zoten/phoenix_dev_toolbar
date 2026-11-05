@@ -48,3 +48,13 @@ jobs:
         run: mix dialyzer
       - if: matrix.lint
         run: mix docs --warnings-as-errors
+      # priv/static is committed and shipped: it must match assets/ (ADR 04).
+      - if: matrix.lint
+        name: Built assets are up to date
+        env:
+          MIX_ENV: dev
+        run: |
+          mix deps.get
+          mix assets.setup
+          mix assets.build
+          git diff --exit-code priv/static

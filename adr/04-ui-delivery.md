@@ -29,19 +29,30 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   then drops the connection process from the `$callers` index while keeping its mark
   for the `router_dispatch :stop` event. Any failure leaves the response untouched.
 - **Assets**: the plug serves a whitelist (`loader.js`, `panel.js`, `panel.css`) under
-  `<path>/assets/` from `priv/static` (prebuilt with esbuild, committed to the package)
-  and halts; anything else, or a missing file, is a 404. The host's asset pipeline is
-  never involved.
+  `<path>/assets/` from `priv/static` and halts; anything else, or a missing file, is a
+  404. The host's asset pipeline is never involved. Sources live in `assets/`;
+  `mix assets.build` (esbuild, a dev only dependency, `--bundle --minify --target=es2020
+  --format=iife`) writes the bundles, which are committed and shipped in the package.
+  CI rebuilds them and fails when `priv/static` differs. `panel.js` bundles the
+  `phoenix` and `phoenix_live_view` JS from `deps/` (NODE_PATH); `panel.css` is hand
+  written, no CSS framework.
 - **Robustness**: `:path` must be absolute and below the root (raises in `init/1`); while
   the Store restarts every request is served untracked.
-- **Loader** (plain JS, about 3 KB): creates a fixed, collapsible container with an
-  `<iframe>` pointing to the router-mounted panel (`/__pdt/panel?sid=...`). It is
-  read-only towards the host: it listens to `phx:*` window events (client event log),
-  measures host socket RTT with `window.liveSocket.getSocket().ping(cb)` (public API of
-  `LiveSocket` and `Phoenix.Socket`) when `window.liveSocket` exists, and forwards
-  everything to the iframe with `postMessage` (origin checked both ways). Page
+- **Loader** (plain JS, under 2 KB minified): runs only in the top window and once per
+  page. It appends a single `div#phoenix-dev-toolbar` (`data-phx-update="ignore"`) to
+  `<body>` whose open shadow root holds its style and the panel `<iframe>`
+  (`<path>/panel?sid=...`), so host CSS and toolbar CSS cannot meet. The iframe is fixed
+  at the bottom: 34px collapsed (the panel header), `min(45vh, 520px)` open; the state
+  persists in the host origin's `localStorage` (`pdt:open`). The iframe asks for
+  `pdt:toggle` (toggle button) and `pdt:open` (a tab was picked); the loader answers
+  with `pdt:state`. Both sides check `event.origin` and `event.source`. Later phases add
+  `phx:*` window events (client event log) and host socket RTT through
+  `window.liveSocket.getSocket().ping/1` when it exists, both read only. Page
   correlation, including live navigation, happens server side (ADR 02), so the
   toolbar keeps working when the loader cannot reach `window.liveSocket`.
+- **Panel JS**: `panel.js` connects the panel through the host's LiveView socket (path
+  from the layout's `data-socket-path`, CSRF token from the meta tag) and runs the
+  `postMessage` side of the bridge.
 - **Router**: `PhoenixDevToolbar.Router.dev_toolbar/2` (default path `"/__pdt"`, option
   `:live_socket_path` default `"/live"`) defines `<path>/panel` in its own
   `live_session :phoenix_dev_toolbar` with the `PhoenixDevToolbar.Layouts.root/1` root
@@ -57,8 +68,8 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   streams capped at 500 rows; the summary bar (status and duration, query count and
   database time, router errors) is folded incrementally (`PhoenixDevToolbar.Summary`).
   Tabs: Ecto, Request. An invalid or expired sid shows an explanation, not an error.
-- Collapsed by default to a small badge bar (query count, slowest callback, warnings);
-  open/closed state and size persist in `localStorage` of the host origin.
+- Collapsed by default to the header bar (status, query count and time, errors);
+  the open state persists in `localStorage` of the host origin.
 
 ## Consequences
 

@@ -224,12 +224,18 @@ defmodule PhoenixDevToolbar.PlugTest do
 
   describe "assets" do
     test "are served from priv/static and halt the pipeline" do
-      conn = :get |> conn("/__pdt/assets/loader.js") |> ToolbarPlug.call(@opts)
+      for {file, type, marker} <- [
+            {"loader.js", "text/javascript", "data-pdt-sid"},
+            {"panel.js", "text/javascript", "LiveSocket"},
+            {"panel.css", "text/css", ".pdt-header"}
+          ] do
+        conn = :get |> conn("/__pdt/assets/#{file}") |> ToolbarPlug.call(@opts)
 
-      assert conn.halted
-      assert conn.status == 200
-      assert ["text/javascript" <> _] = get_resp_header(conn, "content-type")
-      assert conn.resp_body =~ "phoenix_dev_toolbar loader"
+        assert conn.halted
+        assert conn.status == 200
+        assert [^type <> _] = get_resp_header(conn, "content-type")
+        assert conn.resp_body =~ marker
+      end
     end
 
     test "files outside the whitelist are a 404" do

@@ -47,6 +47,8 @@ defmodule PhoenixDevToolbar.MixProject do
       {:telemetry, "~> 1.0"},
       {:ecto_sql, "~> 3.12", optional: true},
       {:lazy_html, "~> 0.1", only: :test},
+      # Builds priv/static (committed and shipped): never needed by host apps.
+      {:esbuild, "~> 0.10", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:jump_credo_checks, "~> 0.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
@@ -57,6 +59,8 @@ defmodule PhoenixDevToolbar.MixProject do
   defp aliases do
     [
       dev: "run --no-halt dev.exs",
+      "assets.setup": ["esbuild.install --if-missing"],
+      "assets.build": ["esbuild loader", "esbuild panel", "esbuild panel_css"],
       precommit: [
         "compile --warnings-as-errors",
         "deps.unlock --unused",

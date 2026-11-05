@@ -161,6 +161,15 @@ defmodule PhoenixDevToolbar.PanelLive do
             {label}
           </button>
         </nav>
+        <button
+          id="pdt-toggle"
+          type="button"
+          class="pdt-toggle"
+          data-pdt-toggle
+          aria-label="Expand or collapse the toolbar"
+        >
+          <span class="pdt-toggle__icon" aria-hidden="true"></span>
+        </button>
       </header>
 
       <p :if={@missing?} id="pdt-empty" class="pdt-empty">
