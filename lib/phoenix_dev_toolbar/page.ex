@@ -20,13 +20,14 @@ defmodule PhoenixDevToolbar.Page do
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
 
-  defstruct root: nil, sids: [], transport: nil, path: nil
+  defstruct root: nil, sids: [], transport: nil, path: nil, owner: nil
 
   @type t :: %Page{
           root: Session.sid(),
           sids: [Session.sid()],
           transport: pid() | nil,
-          path: String.t() | nil
+          path: String.t() | nil,
+          owner: pid() | nil
         }
   @type change :: :connected | :navigated | :rejoined
 
@@ -49,7 +50,7 @@ defmodule PhoenixDevToolbar.Page do
   @spec follow(t(), Session.t()) :: {change(), t()} | :ignore
   def follow(%Page{} = page, %Session{kind: :live_view, sid: sid} = child) do
     cond do
-      sid in page.sids -> {:rejoined, %{page | transport: child.transport}}
+      sid in page.sids -> {:rejoined, %{page | transport: child.transport, owner: child.owner}}
       connected?(page, child) -> {:connected, %{at(page, child) | sids: [page.root, sid]}}
       navigated?(page, child) -> {:navigated, %{at(page, child) | sids: [sid]}}
       true -> :ignore
@@ -58,8 +59,10 @@ defmodule PhoenixDevToolbar.Page do
 
   def follow(%Page{}, %Session{}), do: :ignore
 
-  defp at(page, %Session{transport: transport, path: path}),
-    do: %{page | transport: transport, path: path}
+  # `owner` changes on every LiveView change, rejoins included: tabs reading
+  # from the LiveView restart their reads (Panel props).
+  defp at(page, %Session{transport: transport, path: path, owner: owner}),
+    do: %{page | transport: transport, path: path, owner: owner}
 
   defp connected?(%Page{root: root, sids: [root]}, %Session{parent: root}), do: true
   defp connected?(_page, _child), do: false

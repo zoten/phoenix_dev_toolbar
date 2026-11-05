@@ -20,7 +20,7 @@ defmodule PhoenixDevToolbar.TestPlugins.TabbedPanel do
   @impl Phoenix.LiveComponent
   def render(assigns) do
     ~H"""
-    <div id="tabbed" data-shown={to_string(@shown?)} data-prefix={@config.prefix}>
+    <div id="tabbed" data-shown={to_string(@shown?)} data-prefix={@config.prefix} data-props={@props}>
       <ul id="tabbed-list" phx-update="stream">
         <li :for={{id, event} <- @streams.echoes} id={id}>{event.data.text}</li>
       </ul>

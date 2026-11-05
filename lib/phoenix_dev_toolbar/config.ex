@@ -80,9 +80,20 @@ defmodule PhoenixDevToolbar.Config do
 
   defp check(module) do
     cond do
-      not Code.ensure_loaded?(module) -> {:error, "module not available"}
-      not plugin?(module) -> {:error, "it does not implement PhoenixDevToolbar.Plugin"}
-      true -> check_id(module.id())
+      not Code.ensure_loaded?(module) ->
+        {:error, "module not available"}
+
+      not plugin?(module) ->
+        {:error, "it does not implement PhoenixDevToolbar.Plugin"}
+
+      not summary?(module) ->
+        {:error, "define all of summary_init/1, summary_add/2, badges/1 or none"}
+
+      not panel?(module) ->
+        {:error, "panel/0 must return a module that uses PhoenixDevToolbar.Panel"}
+
+      true ->
+        check_id(module.id())
     end
   end
 
@@ -98,6 +109,26 @@ defmodule PhoenixDevToolbar.Config do
   defp skip(module, why) do
     warn("ignoring plugin #{inspect(module)}: #{why}")
     []
+  end
+
+  defp summary?(module) do
+    [summary_init: 1, summary_add: 2, badges: 1]
+    |> Enum.map(fn {name, arity} -> function_exported?(module, name, arity) end)
+    |> Enum.uniq()
+    |> length() == 1
+  end
+
+  defp panel?(module) do
+    case function_exported?(module, :panel, 0) do
+      true ->
+        panel = module.panel()
+
+        is_atom(panel) and Code.ensure_loaded?(panel) and
+          function_exported?(panel, :handle_reset, 2)
+
+      false ->
+        true
+    end
   end
 
   defp plugin?(module) do

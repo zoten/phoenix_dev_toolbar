@@ -1,371 +1,334 @@
 defmodule PhoenixDevToolbar.Panels.LiveView do
   @moduledoc false
-  # Function components of the panel's LiveView tab (ADR 07): the profiler, the
-  # assigns inspector, the server and client event log and the component tree,
-  # as WAI-ARIA sub-tabs. Data comes from PanelLive; nothing here reads the Store.
+  # The LiveView tab (ADR 07), on the public panel API (ADR 05): the profiler
+  # and the event log are folded from the plugin's events; the assigns snapshot
+  # and the component tree are pulled from the host LiveView through
+  # Phoenix.LiveView.Debug, in tasks (start_async), only while someone looks.
+  # Client events come from the PdtPanel hook, forwarded by PanelLive.
 
-  use Phoenix.Component
+  use PhoenixDevToolbar.Panel
 
-  import PhoenixDevToolbar.Components, only: [duration: 1]
-
+  alias PhoenixDevToolbar.ClientEvent
+  alias PhoenixDevToolbar.ComponentTree
   alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.Page
+  alias PhoenixDevToolbar.Panel
+  alias PhoenixDevToolbar.Panels.LiveViewSections
   alias PhoenixDevToolbar.Profile
+  alias PhoenixDevToolbar.Session
+  alias PhoenixDevToolbar.Store
+  alias PhoenixDevToolbar.Truncate
 
-  @sub_tabs [
-    {"profiler", "Profiler"},
-    {"assigns", "Assigns"},
-    {"events", "Events"},
-    {"components", "Components"}
-  ]
+  # At most one assigns snapshot per second while the Assigns sub-tab is shown.
+  @snapshot_ms 1000
+  # Component tree poll interval, only while shown, open and visible.
+  @tree_ms 2000
+  # Rows kept in the DOM; the Store keeps 500 events per plugin and page.
+  @dom_limit 500
 
-  @doc false
-  @spec sub_tabs() :: [String.t()]
-  def sub_tabs, do: Enum.map(@sub_tabs, &elem(&1, 0))
+  @impl Phoenix.LiveComponent
+  def mount(socket) do
+    {:ok,
+     socket
+     |> assign(lv_tab: "profiler", profile: Profile.new(), last_changed: [], prev: nil)
+     |> assign(snapshot: nil, snapshot_pending?: false, snapshot_at: nil, snapshot_timer: nil)
+     |> assign(tree: nil, tree_pending?: false, tree_timer: nil)
+     |> assign(client_count: 0, client_dropped: 0, recent_client: [])
+     |> stream_configure(:lv_events, dom_id: &dom_id/1)}
+  end
 
-  attr :tab, :string, required: true
-  attr :profile, Profile, required: true
-  attr :snapshot, :any, required: true, doc: "nil, a Truncate.snapshot/1 or {:missing, why}"
-  attr :snapshot_pending?, :boolean, required: true
-  attr :last_changed, :list, required: true, doc: "keys changed by the last callback"
-  attr :tree, :any, required: true, doc: "nil, a ComponentTree.t() or {:missing, why}"
-  attr :polling?, :boolean, required: true
-  attr :tree_pending?, :boolean, required: true
-  attr :client_dropped, :integer, required: true
-  attr :events, :any, required: true, doc: "the :lv_events stream"
-  attr :root, :string, required: true
+  ## Events from the toolbar
 
-  def section(assigns) do
-    assigns = assign(assigns, :sub_tabs, @sub_tabs)
+  # A new page: start over. The client events that announced a live navigation
+  # arrived just before it: they are shown again.
+  @impl Panel
+  def handle_reset(events, socket) do
+    socket
+    |> assign(
+      profile: Profile.new(events),
+      last_changed: Enum.reduce(events, [], &last_changed/2),
+      snapshot: nil,
+      tree: nil
+    )
+    |> stream(:lv_events, events, reset: true, limit: -@dom_limit)
+    |> reinsert_recent_client()
+  end
 
+  # The profile is folded incrementally, never rebuilt from the Store.
+  @impl Panel
+  def handle_events(events, socket) do
+    socket
+    |> assign(
+      profile: Enum.reduce(events, socket.assigns.profile, &Profile.add(&2, &1)),
+      last_changed: Enum.reduce(events, socket.assigns.last_changed, &last_changed/2)
+    )
+    |> insert_events(events)
+    |> snapshot_after(events)
+  end
+
+  # The page's LiveView changed (connected, navigated, rejoined), the tab was
+  # selected or the panel became visible.
+  @impl Panel
+  def handle_props(%{assigns: assigns} = socket) do
+    prev = assigns.prev || %{page: nil, shown?: false, visible?: false}
+    socket = assign(socket, :prev, Map.take(assigns, [:page, :shown?, :visible?]))
+
+    cond do
+      prev.page != assigns.page ->
+        socket |> drop_reads() |> snapshot_if_shown() |> tree_if_shown()
+
+      not prev.shown? and assigns.shown? ->
+        socket |> snapshot_if_shown() |> tree_if_shown()
+
+      not prev.visible? and assigns.visible? ->
+        tree_if_shown(socket)
+
+      true ->
+        socket
+    end
+  end
+
+  @impl Panel
+  def handle_info(:snapshot, socket),
+    do: socket |> assign(:snapshot_timer, nil) |> snapshot_if_shown()
+
+  def handle_info(:tree_poll, socket), do: socket |> assign(:tree_timer, nil) |> poll_tree()
+
+  # From the PdtPanel hook: a client event the loader forwarded (untrusted
+  # input). A nil event only updates the drop count.
+  def handle_info({:client, %{} = params}, socket) do
+    n = socket.assigns.client_count + 1
+    dropped = ClientEvent.dropped(params["dropped"], socket.assigns.client_dropped)
+    socket = assign(socket, :client_dropped, dropped)
+
+    case ClientEvent.build(params["event"], n) do
+      {:ok, client} ->
+        recent = ClientEvent.remember(socket.assigns.recent_client, client, now_ms())
+
+        socket
+        |> assign(client_count: n, recent_client: recent)
+        |> stream_insert(:lv_events, client, limit: -@dom_limit)
+
+      :ignore ->
+        socket
+    end
+  end
+
+  def handle_info(_message, socket), do: socket
+
+  ## Events from the panel's own buttons
+
+  @impl Phoenix.LiveComponent
+  def handle_event("lv_tab", %{"tab" => tab}, socket) do
+    case tab in LiveViewSections.sub_tabs() do
+      true -> {:noreply, socket |> assign(:lv_tab, tab) |> snapshot_if_shown() |> tree_if_shown()}
+      false -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("lv_snapshot", _params, socket), do: {:noreply, start_snapshot(socket)}
+
+  @impl Phoenix.LiveComponent
+  def handle_async(:snapshot, {:ok, snapshot}, socket),
+    do: {:noreply, assign(socket, snapshot: snapshot, snapshot_pending?: false)}
+
+  def handle_async(_key, {:exit, {:shutdown, :page_changed}}, socket), do: {:noreply, socket}
+
+  def handle_async(:snapshot, {:exit, _reason}, socket),
+    do: {:noreply, assign(socket, snapshot: {:missing, :gone}, snapshot_pending?: false)}
+
+  def handle_async(:tree, {:ok, tree}, socket),
+    do: {:noreply, socket |> assign(tree: tree, tree_pending?: false) |> schedule_tree()}
+
+  def handle_async(:tree, {:exit, _reason}, socket),
+    do: {:noreply, socket |> assign(tree_pending?: false) |> schedule_tree()}
+
+  ## Event log
+
+  defp insert_events(socket, events),
+    do: Enum.reduce(events, socket, &stream_insert(&2, :lv_events, &1, limit: -@dom_limit))
+
+  defp reinsert_recent_client(socket) do
+    socket.assigns.recent_client
+    |> ClientEvent.recent(now_ms())
+    |> Enum.reduce(socket, &stream_insert(&2, :lv_events, &1, limit: -@dom_limit))
+  end
+
+  defp dom_id(%Event{plugin: :client, data: %{n: n}}), do: "pdt-lv-client-#{n}"
+  defp dom_id(%Event{seq: seq}), do: "pdt-lv-#{seq}"
+
+  defp last_changed(%Event{kind: :callback, data: %{changes: %{keys: keys}}}, _acc), do: keys
+  defp last_changed(_event, acc), do: acc
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
+
+  ## Reads and page changes
+  #
+  # A snapshot or tree read started for the previous LiveView must not land on
+  # the new one: stop it and let the caller start a fresh read. LiveView still
+  # delivers the cancelled task's exit ({:shutdown, :page_changed}) unless a new
+  # read with the same key replaced it: handle_async ignores it.
+
+  defp drop_reads(socket) do
+    socket
+    |> cancel_async(:snapshot, {:shutdown, :page_changed})
+    |> cancel_async(:tree, {:shutdown, :page_changed})
+    |> assign(snapshot_pending?: false, tree_pending?: false)
+  end
+
+  ## Assigns snapshot
+  #
+  # Phoenix.LiveView.Debug.socket/1 is a GenServer.call to the host LiveView
+  # that copies its whole socket: it runs in a task, which also truncates, so
+  # only the bounded snapshot reaches this process (ADR 07).
+
+  defp snapshot_if_shown(%{assigns: %{shown?: true, lv_tab: "assigns"}} = socket),
+    do: start_snapshot(socket)
+
+  defp snapshot_if_shown(socket), do: socket
+
+  # New callbacks refresh a shown snapshot, at most once per @snapshot_ms; a
+  # throttled refresh is scheduled, so the last callback is never missed.
+  defp snapshot_after(
+         %{assigns: %{shown?: true, lv_tab: "assigns", visible?: true}} = socket,
+         events
+       ) do
+    case Enum.any?(events, &match?(%Event{kind: :callback}, &1)) do
+      true -> throttled_snapshot(socket, wait_ms(socket.assigns.snapshot_at))
+      false -> socket
+    end
+  end
+
+  defp snapshot_after(socket, _events), do: socket
+
+  defp wait_ms(nil), do: 0
+  defp wait_ms(at), do: max(at + @snapshot_ms - System.monotonic_time(:millisecond), 0)
+
+  defp throttled_snapshot(socket, 0), do: start_snapshot(socket)
+
+  defp throttled_snapshot(%{assigns: %{snapshot_timer: ref}} = socket, _wait) when ref != nil,
+    do: socket
+
+  defp throttled_snapshot(socket, wait) do
+    ref = Panel.send_after(__MODULE__, socket.assigns.id, :snapshot, wait)
+    assign(socket, :snapshot_timer, ref)
+  end
+
+  defp start_snapshot(%{assigns: %{snapshot_pending?: true}} = socket), do: socket
+
+  defp start_snapshot(socket) do
+    case live_view_owner(socket.assigns.page) do
+      nil ->
+        assign(socket, :snapshot, {:missing, :no_live_view})
+
+      owner ->
+        socket
+        |> assign(snapshot_pending?: true, snapshot_at: System.monotonic_time(:millisecond))
+        |> start_async(:snapshot, fn -> take_snapshot(owner) end)
+    end
+  end
+
+  defp take_snapshot(owner) do
+    case Phoenix.LiveView.Debug.socket(owner) do
+      {:ok, %{assigns: assigns}} -> Truncate.snapshot(assigns)
+      {:error, _reason} -> {:missing, :gone}
+    end
+  end
+
+  ## Component tree
+  #
+  # Polled every @tree_ms through Phoenix.LiveView.Debug, in a task, only while
+  # the Components sub-tab is shown and the panel is open and visible. Opening
+  # the sub-tab reads it once even before the hook reports visibility.
+
+  defp tree_if_shown(%{assigns: %{shown?: true, lv_tab: "components"}} = socket),
+    do: start_tree(socket)
+
+  defp tree_if_shown(socket), do: socket
+
+  defp polling?(%{assigns: %{shown?: true, lv_tab: "components", visible?: true}}), do: true
+  defp polling?(_socket), do: false
+
+  defp poll_tree(socket) do
+    case polling?(socket) do
+      true -> start_tree(socket)
+      false -> socket
+    end
+  end
+
+  defp schedule_tree(%{assigns: %{tree_timer: nil}} = socket) do
+    case polling?(socket) do
+      true ->
+        assign(
+          socket,
+          :tree_timer,
+          Panel.send_after(__MODULE__, socket.assigns.id, :tree_poll, @tree_ms)
+        )
+
+      false ->
+        socket
+    end
+  end
+
+  defp schedule_tree(socket), do: socket
+
+  defp start_tree(%{assigns: %{tree_pending?: true}} = socket), do: socket
+
+  defp start_tree(socket) do
+    case live_view_owner(socket.assigns.page) do
+      nil ->
+        assign(socket, :tree, {:missing, :no_live_view})
+
+      owner ->
+        pids = live_view_pids(socket.assigns.page)
+
+        socket
+        |> assign(:tree_pending?, true)
+        |> start_async(:tree, fn -> ComponentTree.read(owner, pids) end)
+    end
+  end
+
+  defp live_view_pids(%Page{sids: sids}),
+    do: Enum.flat_map(sids, fn sid -> safe(fn -> Store.pids_for(sid) end, []) end)
+
+  # The page's newest LiveView (read now: a rejoin changes the owner).
+  defp live_view_owner(%Page{sids: sids}) do
+    sids
+    |> Enum.reverse()
+    |> Enum.find_value(fn sid ->
+      case safe(fn -> Store.session(sid) end, :error) do
+        {:ok, %Session{kind: :live_view, owner: owner}} when is_pid(owner) -> owner
+        _other -> nil
+      end
+    end)
+  end
+
+  # The Store's tables vanish while it restarts: the panel shows what it can.
+  defp safe(fun, fallback) do
+    fun.()
+  rescue
+    ArgumentError -> fallback
+  end
+
+  @impl Phoenix.LiveComponent
+  def render(assigns) do
     ~H"""
-    <nav class="pdt-subtabs" role="tablist" aria-label="LiveView">
-      <button
-        :for={{tab, label} <- @sub_tabs}
-        id={"pdt-lv-tab-" <> tab}
-        type="button"
-        role="tab"
-        aria-selected={to_string(@tab == tab)}
-        aria-controls={"pdt-lv-" <> tab}
-        tabindex={if(@tab == tab, do: "0", else: "-1")}
-        class={["pdt-subtab", @tab == tab && "pdt-subtab--active"]}
-        phx-click="lv_tab"
-        phx-value-tab={tab}
-      >
-        {label}
-      </button>
-    </nav>
-
-    <div
-      id="pdt-lv-profiler"
-      role="tabpanel"
-      aria-labelledby="pdt-lv-tab-profiler"
-      hidden={@tab != "profiler"}
-    >
-      <.profiler profile={@profile} />
-    </div>
-
-    <div
-      id="pdt-lv-assigns"
-      role="tabpanel"
-      aria-labelledby="pdt-lv-tab-assigns"
-      hidden={@tab != "assigns"}
-    >
-      <.snapshot
+    <div id="pdt-lv">
+      <LiveViewSections.section
+        tab={@lv_tab}
+        profile={@profile}
         snapshot={@snapshot}
-        pending?={@snapshot_pending?}
+        snapshot_pending?={@snapshot_pending?}
         last_changed={@last_changed}
+        tree={@tree}
+        tree_pending?={@tree_pending?}
+        client_dropped={@client_dropped}
+        polling?={@shown? and @lv_tab == "components" and @visible?}
+        events={@streams.lv_events}
+        root={@page.root}
+        target={@myself}
       />
     </div>
-
-    <div
-      id="pdt-lv-events"
-      role="tabpanel"
-      aria-labelledby="pdt-lv-tab-events"
-      hidden={@tab != "events"}
-    >
-      <p :if={@client_dropped > 0} id="pdt-client-dropped" class="pdt-hint pdt-snapshot__more">
-        {@client_dropped} client events over the rate limit were not logged.
-      </p>
-      <ul id="pdt-lv-log" class="pdt-list" phx-update="stream">
-        <li id="pdt-lv-log-empty" class="pdt-list__empty">No LiveView callbacks yet.</li>
-        <.event_row :for={{id, event} <- @events} id={id} event={event} root={@root} />
-      </ul>
-    </div>
-
-    <div
-      id="pdt-lv-components"
-      role="tabpanel"
-      aria-labelledby="pdt-lv-tab-components"
-      hidden={@tab != "components"}
-      data-pdt-polling={if(@polling?, do: "on", else: "off")}
-      data-pdt-reading={to_string(@tree_pending?)}
-    >
-      <.tree tree={@tree} />
-    </div>
     """
   end
-
-  attr :snapshot, :any, required: true
-  attr :pending?, :boolean, required: true
-  attr :last_changed, :list, required: true
-
-  defp snapshot(assigns) do
-    ~H"""
-    <div class="pdt-snapshot-bar">
-      <button id="pdt-snapshot-refresh" type="button" class="pdt-button" phx-click="lv_snapshot">
-        Refresh
-      </button>
-      <span class="pdt-hint">
-        {if(@pending?,
-          do: "Reading…",
-          else: "Values are truncated; highlighted: changed by the last callback."
-        )}
-      </span>
-    </div>
-    <%= case @snapshot do %>
-      <% {:missing, :no_live_view} -> %>
-        <p id="pdt-snapshot-missing" class="pdt-empty">No LiveView on this page.</p>
-      <% {:missing, :gone} -> %>
-        <p id="pdt-snapshot-missing" class="pdt-empty">
-          The LiveView is not running anymore (it crashed or the page navigated away).
-        </p>
-      <% %{entries: entries, omitted: omitted} -> %>
-        <dl id="pdt-snapshot" class="pdt-snapshot">
-          <div
-            :for={{key, value} <- entries}
-            id={"pdt-snapshot-" <> key_name(key)}
-            class={["pdt-snapshot__entry", key in @last_changed && "pdt-snapshot--changed"]}
-          >
-            <dt>{key_name(key)}</dt>
-            <dd><code>{value}</code></dd>
-          </div>
-        </dl>
-        <p :if={omitted > 0} class="pdt-hint pdt-snapshot__more">+{omitted} more assigns</p>
-      <% nil -> %>
-        <p class="pdt-empty">No snapshot yet.</p>
-    <% end %>
-    """
-  end
-
-  attr :tree, :any, required: true
-
-  defp tree(%{tree: {:missing, :no_live_view}} = assigns) do
-    ~H"""
-    <p id="pdt-tree-missing" class="pdt-empty">No LiveView on this page.</p>
-    """
-  end
-
-  defp tree(%{tree: %{views: _}} = assigns) do
-    ~H"""
-    <ul id="pdt-tree" class="pdt-tree">
-      <li :for={{view, index} <- Enum.with_index(@tree.views)} id={"pdt-tree-#{index}"}>
-        <code class="pdt-tree__view">{short(view.view)}</code>
-        <span :if={view.nested?} class="pdt-tag">nested</span>
-        <span :if={view.components == []} class="pdt-hint">no components</span>
-        <.tree_nodes nodes={view.components} prefix={"pdt-tree-#{index}"} />
-      </li>
-    </ul>
-    <p :if={@tree.truncated?} class="pdt-hint pdt-snapshot__more">
-      Only the first 500 components are shown.
-    </p>
-    """
-  end
-
-  defp tree(assigns) do
-    ~H"""
-    <p class="pdt-empty">Reading the component tree…</p>
-    """
-  end
-
-  attr :nodes, :list, required: true
-  attr :prefix, :string, required: true
-
-  defp tree_nodes(assigns) do
-    ~H"""
-    <ul :if={@nodes != []}>
-      <li :for={node <- @nodes} id={"#{@prefix}-#{node.cid}"}>
-        <code>{short(node.module)}</code>
-        <span class="pdt-hint">id {node.id} · cid {node.cid}</span>
-        <.tree_nodes nodes={node.children} prefix={@prefix} />
-      </li>
-    </ul>
-    """
-  end
-
-  attr :profile, Profile, required: true
-
-  defp profiler(assigns) do
-    assigns = assign(assigns, :rows, Profile.rows(assigns.profile))
-
-    ~H"""
-    <p :if={@rows == []} class="pdt-empty">No LiveView callbacks yet.</p>
-    <table :if={@rows != []} id="pdt-profiler-table" class="pdt-table">
-      <thead>
-        <tr>
-          <th scope="col">Callback</th>
-          <th scope="col" class="pdt-num">Count</th>
-          <th scope="col" class="pdt-num">Total</th>
-          <th scope="col" class="pdt-num">Avg</th>
-          <th scope="col" class="pdt-num">Max</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr :for={{row, index} <- Enum.with_index(@rows)} id={"pdt-profile-#{index}"}>
-          <td><code>{label(row.key)}</code></td>
-          <td class="pdt-num pdt-count">{row.count}</td>
-          <td class="pdt-num">{duration(row.total_us)}</td>
-          <td class="pdt-num">{duration(div(row.total_us, max(row.count, 1)))}</td>
-          <td class="pdt-num">{duration(row.max_us)}</td>
-        </tr>
-      </tbody>
-    </table>
-    """
-  end
-
-  attr :id, :string, required: true
-  attr :event, Event, required: true
-  attr :root, :string, required: true
-
-  defp event_row(%{event: %Event{kind: :callback}} = assigns) do
-    ~H"""
-    <li id={@id} class={["pdt-row", @event.data.error && "pdt-row--error"]}>
-      <div class="pdt-row__head">
-        <code>{label(@event.data)}</code>
-        <span class="pdt-time">{duration(@event.duration)}</span>
-      </div>
-      <div class="pdt-row__meta">
-        <.phase_tag event={@event} root={@root} />
-        <.changed changes={@event.data.changes} />
-        <.pushed pushed={@event.data.pushed} />
-      </div>
-      <pre :if={@event.data.error} class="pdt-error">{@event.data.error}</pre>
-      <details :if={details?(@event.data)} class="pdt-details">
-        <summary>details</summary>
-        <dl>
-          <%= if @event.data.params do %>
-            <dt>params</dt>
-            <dd><code>{@event.data.params}</code></dd>
-          <% end %>
-          <%= for {key, value} <- changed_values(@event.data.changes) do %>
-            <dt>{key_name(key)}</dt>
-            <dd><code>{value}</code></dd>
-          <% end %>
-        </dl>
-      </details>
-    </li>
-    """
-  end
-
-  defp event_row(%{event: %Event{kind: :client}} = assigns) do
-    ~H"""
-    <li id={@id} class="pdt-row">
-      <div class="pdt-row__head">
-        <code>{@event.data.type}</code>
-      </div>
-      <div class="pdt-row__meta">
-        <span class="pdt-tag pdt-tag--client" title="Fired in the browser">client</span>
-        <span :for={{field, value} <- @event.data.fields} class="pdt-tag">{field} {to_string(value)}</span>
-      </div>
-    </li>
-    """
-  end
-
-  defp event_row(%{event: %Event{kind: :render}} = assigns) do
-    ~H"""
-    <li id={@id} class={["pdt-row", @event.data.error && "pdt-row--error"]}>
-      <div class="pdt-row__head">
-        <code>{render_label(@event.data)}</code>
-        <span class="pdt-time">{duration(@event.duration)}</span>
-      </div>
-      <div class="pdt-row__meta">
-        <.phase_tag event={@event} root={@root} />
-        <span :if={@event.data.id} class="pdt-tag" title="Component id">id {@event.data.id}</span>
-        <span :if={@event.data.force?} class="pdt-tag" title="Forced render">forced</span>
-      </div>
-      <pre :if={@event.data.error} class="pdt-error">{@event.data.error}</pre>
-    </li>
-    """
-  end
-
-  attr :event, Event, required: true
-  attr :root, :string, required: true
-
-  defp phase_tag(%{event: %Event{sid: sid}, root: sid} = assigns) do
-    ~H"""
-    <span class="pdt-tag pdt-tag--http" title="Ran during the HTTP request (dead render)">HTTP</span>
-    """
-  end
-
-  defp phase_tag(assigns) do
-    ~H"""
-    <span class="pdt-tag pdt-tag--live" title="Ran in the connected LiveView">live</span>
-    """
-  end
-
-  attr :changes, :map, default: nil
-
-  defp changed(%{changes: %{keys: _}} = assigns) do
-    ~H"""
-    <span :for={key <- @changes.keys} class="pdt-tag pdt-changed" title="Assign changed">
-      {key_name(key)}
-    </span>
-    <span :if={@changes.omitted > 0} class="pdt-tag pdt-changed">+{@changes.omitted} more</span>
-    """
-  end
-
-  defp changed(assigns), do: ~H""
-
-  attr :pushed, :any, default: nil
-
-  defp pushed(%{pushed: :unavailable} = assigns) do
-    ~H"""
-    <span
-      class="pdt-tag pdt-pushed"
-      title="This LiveView version stores pushed events differently: see the server log"
-    >
-      push_event names unavailable
-    </span>
-    """
-  end
-
-  defp pushed(%{pushed: [_ | _]} = assigns) do
-    ~H"""
-    <span :for={name <- @pushed} class="pdt-tag pdt-pushed" title="push_event">⇢ {name}</span>
-    """
-  end
-
-  defp pushed(assigns), do: ~H""
-
-  defp details?(%{params: params}) when is_binary(params), do: true
-  defp details?(%{changes: %{values: values}}) when map_size(values) > 0, do: true
-  defp details?(_data), do: false
-
-  defp changed_values(%{keys: keys, values: values}),
-    do: for(key <- keys, value = Map.get(values, key), do: {key, value})
-
-  defp changed_values(_changes), do: []
-
-  @doc false
-  @spec label(Profile.key() | map()) :: String.t()
-  def label(:other), do: "other"
-  def label({:render, component, nil}), do: render_label(%{component: component})
-
-  def label({callback, subject, event}),
-    do: label(%{callback: callback, component: subject, event: event})
-
-  def label(%{callback: callback, event: event} = data) do
-    subject = Profile.subject(data)
-
-    [subject && short(subject), Atom.to_string(callback), event && inspect(event)]
-    |> Enum.reject(&is_nil/1)
-    |> Enum.join(" ")
-  end
-
-  defp render_label(%{component: nil}), do: "render"
-  defp render_label(%{component: component}), do: short(component) <> " render"
-
-  defp short(module) when is_atom(module), do: inspect(module)
-
-  defp key_name(key) when is_atom(key), do: Atom.to_string(key)
-  defp key_name(key), do: inspect(key)
 end

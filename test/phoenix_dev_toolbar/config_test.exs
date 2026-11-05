@@ -5,7 +5,9 @@ defmodule PhoenixDevToolbar.ConfigTest do
 
   alias PhoenixDevToolbar.Config
   alias PhoenixDevToolbar.Plugins
+  alias PhoenixDevToolbar.TestPlugins.BadPanel
   alias PhoenixDevToolbar.TestPlugins.Echo
+  alias PhoenixDevToolbar.TestPlugins.HalfSummary
   alias PhoenixDevToolbar.TestPlugins.SameId
   alias PhoenixDevToolbar.TestPlugins.ThrowingId
 
@@ -61,6 +63,14 @@ defmodule PhoenixDevToolbar.ConfigTest do
       end)
 
     assert log =~ "expected {:exclude, Module}"
+  end
+
+  test "a half implemented summary or a panel that is not a Panel is skipped" do
+    log =
+      capture_log(fn -> assert Config.expand([HalfSummary, BadPanel, Echo]) == [{Echo, []}] end)
+
+    assert log =~ "HalfSummary: define all of summary_init/1, summary_add/2, badges/1 or none"
+    assert log =~ "BadPanel: panel/0 must return a module that uses PhoenixDevToolbar.Panel"
   end
 
   test "a value that is not a list falls back to :defaults" do

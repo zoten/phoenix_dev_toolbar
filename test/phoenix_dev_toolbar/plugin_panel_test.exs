@@ -8,6 +8,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
 
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Store
+  alias PhoenixDevToolbar.TestPlugins.BadgeOnly
   alias PhoenixDevToolbar.TestPlugins.Tabbed
 
   @endpoint DemoWeb.Endpoint
@@ -40,6 +41,15 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
     {host, sid}
   end
 
+  defp props(panel) do
+    panel
+    |> render()
+    |> LazyHTML.from_fragment()
+    |> LazyHTML.query("#tabbed")
+    |> LazyHTML.attribute("data-props")
+    |> then(fn [value] -> String.to_integer(value) end)
+  end
+
   defp flush(panel) do
     send(panel.pid, :pdt_flush)
     _ = render(panel)
@@ -60,9 +70,40 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
     assert has_element?(panel, "#tabbed-list li", "echo two")
     assert has_element?(panel, "#pdt-badge-tabbed", "2 echoes")
 
+    # handle_props/1 runs on a real change only, not on every parent render.
+    props = props(panel)
+    panel |> element("#pdt-tab-request") |> render_click()
+    assert props(panel) == props
+
     panel |> element("#pdt-tab-tabbed") |> render_click()
     assert has_element?(panel, "#tabbed[data-shown=true]")
+    assert props(panel) == props + 1
     refute has_element?(panel, "#pdt-section-tabbed[hidden]")
+  end
+
+  test "badges follow the configuration order; a plugin without a panel has no tab" do
+    Collector.attach(PhoenixDevToolbar.Application.plugins() ++ [BadgeOnly, {Tabbed, []}])
+    {host, sid} = visit("/demo")
+    render_hook(host, "echo", %{"value" => "x"})
+    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+
+    ids =
+      panel
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("#pdt-summary .pdt-badge")
+      |> LazyHTML.attribute("id")
+
+    assert ids == [
+             "pdt-badge-queries",
+             "pdt-badge-response",
+             "pdt-badge-live",
+             "pdt-badge-badge_only",
+             "pdt-badge-tabbed"
+           ]
+
+    assert has_element?(panel, "#pdt-badge-badge_only.pdt-badge--warn", "1 seen")
+    refute has_element?(panel, "#pdt-tab-badge_only")
   end
 
   test "live navigation resets the tab to the new page" do

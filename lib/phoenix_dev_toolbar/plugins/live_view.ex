@@ -44,6 +44,9 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
   end
 
   @impl true
+  def panel, do: PhoenixDevToolbar.Panels.LiveView
+
+  @impl true
   def summary_init(_config), do: %{callbacks: 0, slowest_us: 0}
 
   @impl true

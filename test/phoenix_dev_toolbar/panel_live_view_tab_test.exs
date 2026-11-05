@@ -9,6 +9,8 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
+  alias PhoenixDevToolbar.Panel
+  alias PhoenixDevToolbar.Panels
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
 
@@ -331,7 +333,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       flush(panel)
       # Within a second of the first snapshot the refresh is scheduled, not run:
       # deliver the scheduled message now.
-      send(panel.pid, :pdt_snapshot)
+      Panel.send_now(panel.pid, Panels.LiveView, "pdt-panel-live_view", :snapshot)
       _ = render_async(panel)
 
       assert has_element?(panel, "#pdt-snapshot-clicks", "1")
@@ -362,7 +364,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       # A suspended host keeps any read in flight, so a started read shows.
       :ok = :sys.suspend(host.pid)
 
-      send(panel.pid, :pdt_tree_poll)
+      Panel.send_now(panel.pid, Panels.LiveView, "pdt-panel-live_view", :tree_poll)
       assert has_element?(panel, ~s(#pdt-lv-components[data-pdt-reading="false"]))
 
       render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})

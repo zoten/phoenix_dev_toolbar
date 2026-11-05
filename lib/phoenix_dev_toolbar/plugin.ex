@@ -86,7 +86,8 @@ defmodule PhoenixDevToolbar.Plugin do
 
   @typedoc """
   A badge of the summary bar, shown even when the panel is collapsed. `id`
-  becomes the DOM id `pdt-badge-<id>`; `title` is the tooltip.
+  becomes the DOM id `pdt-badge-<id>`, unique in the whole panel: start it
+  with your plugin's id. `title` is the tooltip.
   """
   @type badge :: %{
           required(:id) => String.t(),

@@ -1,7 +1,7 @@
 defmodule PhoenixDevToolbar.Profile do
   @moduledoc false
   # Lifecycle profiler figures for the LiveView tab, folded incrementally from
-  # `:live_view` events in the panel process (like PhoenixDevToolbar.Summary),
+  # `:live_view` events in the panel process (like the plugins' summaries, ADR 05),
   # so they survive the Store trimming old events.
   #
   # One row per `{callback, subject, event}` (subject: the component or nested

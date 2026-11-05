@@ -47,8 +47,10 @@ defmodule PhoenixDevToolbar.Panel do
     * `@visible?`: the panel is open and the browser tab visible
 
   `c:handle_props/1` runs when only those change, for example to start or stop
-  polling. A panel can use every LiveComponent feature: `handle_event/3`,
-  `start_async/3`, `send_update_after/3`. Style it with the panel's `pdt-`
+  polling. A panel can use every LiveComponent feature except `update/2` and
+  `update_many/1`, which the toolbar defines: `handle_event/3`
+  (with `phx-target={@myself}`), `start_async/3` and `handle_async/3`. For
+  timers, `send_after/4` delivers a message to `c:handle_info/2`. Style it with the panel's `pdt-`
   classes (`pdt-list`, `pdt-row`, `pdt-tag`, `pdt-badge`): the panel
   stylesheet is the only one loaded.
 
@@ -67,7 +69,25 @@ defmodule PhoenixDevToolbar.Panel do
   @doc "`@shown?`, `@visible?` or `@page` changed. Defaults to doing nothing."
   @callback handle_props(Socket.t()) :: Socket.t()
 
-  @optional_callbacks handle_props: 1
+  @doc "A message scheduled with `send_after/4`. Defaults to ignoring it."
+  @callback handle_info(message :: term(), Socket.t()) :: Socket.t()
+
+  @optional_callbacks handle_props: 1, handle_info: 2
+
+  @doc """
+  Delivers `message` to the panel `module` with DOM id `id` (its
+  `@id`) after `ms` milliseconds, through `c:handle_info/2`. Returns the
+  timer reference. Call it from the panel's own callbacks.
+  """
+  @spec send_after(module(), String.t(), term(), non_neg_integer()) :: reference()
+  def send_after(module, id, message, ms),
+    do: Phoenix.LiveView.send_update_after(self(), module, %{id: id, pdt: {:info, message}}, ms)
+
+  @doc false
+  # Used by the toolbar to deliver a message to a panel right away.
+  @spec send_now(pid(), module(), String.t(), term()) :: :ok
+  def send_now(pid, module, id, message),
+    do: Phoenix.LiveView.send_update(pid, module, %{id: id, pdt: {:info, message}})
 
   @doc false
   defmacro __using__(_opts) do
@@ -83,8 +103,25 @@ defmodule PhoenixDevToolbar.Panel do
       @impl PhoenixDevToolbar.Panel
       def handle_props(socket), do: socket
 
-      defoverridable handle_props: 1
+      @impl PhoenixDevToolbar.Panel
+      def handle_info(_message, socket), do: socket
+
+      defoverridable handle_props: 1, handle_info: 2
+
+      @before_compile PhoenixDevToolbar.Panel
     end
+  end
+
+  @doc false
+  defmacro __before_compile__(env) do
+    if Module.defines?(env.module, {:update_many, 1}) do
+      raise CompileError,
+        file: env.file,
+        description:
+          "#{inspect(env.module)}: a PhoenixDevToolbar.Panel cannot define update_many/1"
+    end
+
+    :ok
   end
 
   @doc false
@@ -99,10 +136,20 @@ defmodule PhoenixDevToolbar.Panel do
       case delivery do
         {:reset, events} -> module.handle_reset(events, socket)
         {:events, events} -> module.handle_events(events, socket)
-        nil -> module.handle_props(socket)
+        {:info, message} -> module.handle_info(message, socket)
+        nil -> maybe_handle_props(module, socket)
       end
 
     {:ok, socket}
+  end
+
+  # LiveView calls update/2 whenever the parent re-renders the component, even
+  # with the same props: handle_props/1 only runs when one actually changed.
+  defp maybe_handle_props(module, socket) do
+    case Enum.any?([:page, :shown?, :visible?], &Phoenix.Component.changed?(socket, &1)) do
+      true -> module.handle_props(socket)
+      false -> socket
+    end
   end
 
   # The first render comes before the toolbar delivers the page's events.
