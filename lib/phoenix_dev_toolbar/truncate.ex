@@ -62,6 +62,21 @@ defmodule PhoenixDevToolbar.Truncate do
   def string(text, limit \\ @string_limit) when is_binary(text), do: cap(text, limit)
 
   @doc """
+  Formats an exception, throw or exit as a bounded one line banner.
+  `Exception.format_banner/2` inspects throw and exit reasons without limits.
+
+      iex> PhoenixDevToolbar.Truncate.banner(:error, %RuntimeError{message: "bad"})
+      "** (RuntimeError) bad"
+
+      iex> PhoenixDevToolbar.Truncate.banner(:throw, :oops)
+      "** (throw) :oops"
+
+  """
+  @spec banner(:error | :exit | :throw, term()) :: String.t()
+  def banner(:error, reason), do: :error |> Exception.format_banner(reason) |> string()
+  def banner(kind, reason), do: string("** (#{kind}) " <> inspect_value(reason))
+
+  @doc """
   Formats the first #{@frames} stacktrace frames that do not belong to the
   toolbar, to `:telemetry` or to the extra `skip` modules and namespaces (an
   Elixir module skips itself and every module nested under it).

@@ -1,0 +1,313 @@
+defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
+  # Attaches global handlers and uses the node global Store.
+  use ExUnit.Case, async: false
+
+  import Phoenix.ConnTest
+  import Phoenix.LiveViewTest
+  import PhoenixDevToolbar.ProcessHelpers
+
+  alias Phoenix.LiveView.Socket
+  alias PhoenixDevToolbar.Attribution
+  alias PhoenixDevToolbar.Collector
+  alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.Plugins.LiveView, as: LiveViewPlugin
+  alias PhoenixDevToolbar.Session
+  alias PhoenixDevToolbar.Store
+
+  @endpoint DemoWeb.Endpoint
+  @lv [:phoenix, :live_view]
+  @lc [:phoenix, :live_component]
+
+  setup do
+    Store.reset()
+    Collector.attach([LiveViewPlugin])
+
+    on_exit(fn ->
+      Collector.attach(PhoenixDevToolbar.Application.plugins())
+      Store.reset()
+    end)
+
+    %Session{sid: sid} = Store.new_session(Session.new(:live_view))
+    %{sid: sid}
+  end
+
+  defp ms(n), do: System.convert_time_unit(n, :millisecond, :native)
+
+  # Sockets come from LiveView's public API, as the real callbacks produce them.
+  defp socket(assigns \\ []),
+    do: Phoenix.Component.assign(%Socket{view: DemoWeb.PageLive}, assigns)
+
+  # Emits `events` ({name, measurements, metadata}) from a process tracked as
+  # `sid` and returns what is left of the render fold in its pdict afterwards.
+  defp emit(sid, events) do
+    {_pid, fold} =
+      in_process(fn ->
+        Attribution.track(sid)
+
+        Enum.each(events, fn {name, measurements, metadata} ->
+          :telemetry.execute(name, measurements, metadata)
+        end)
+
+        Process.get(LiveViewPlugin.fold_key())
+      end)
+
+    fold
+  end
+
+  defp callbacks(sid), do: for(%Event{kind: :callback} = e <- Store.events(sid), do: e)
+  defp renders(sid), do: for(%Event{kind: :render} = e <- Store.events(sid), do: e)
+
+  describe "callbacks" do
+    test "handle_event records the event, redacted params, the assigns diff and pushes",
+         %{sid: sid} do
+      socket =
+        socket(count: 1, password_hash: "x")
+        |> Phoenix.LiveView.push_event("highlight", %{secret: "never stored"})
+
+      emit(sid, [
+        {@lv ++ [:handle_event, :stop], %{duration: ms(3)},
+         %{socket: socket, event: "save", params: %{"password" => "hunter2", "name" => "Ada"}}}
+      ])
+
+      assert [%Event{plugin: :live_view, duration: 3000, data: data}] = callbacks(sid)
+
+      assert %{
+               callback: :handle_event,
+               view: DemoWeb.PageLive,
+               component: nil,
+               event: "save",
+               connected?: false,
+               pushed: ["highlight"],
+               changes: %{keys: [:count, :password_hash], omitted: 0, values: values}
+             } = data
+
+      assert data.params =~ "Ada"
+      refute data.params =~ "hunter2"
+      assert values.password_hash == ~s("[REDACTED]")
+      refute inspect(data) =~ "never stored"
+    end
+
+    test "mount and handle_params record their callback and params", %{sid: sid} do
+      emit(sid, [
+        {@lv ++ [:mount, :stop], %{duration: ms(1)},
+         %{socket: socket(a: 1), params: %{}, session: %{}, uri: nil}},
+        {@lv ++ [:handle_params, :stop], %{duration: ms(2)},
+         %{socket: socket(), params: %{"page" => "2"}, uri: "http://localhost/users?page=2"}}
+      ])
+
+      assert [%Event{data: mount}, %Event{data: params}] = callbacks(sid)
+      assert %{callback: :mount, changes: %{keys: [:a]}} = mount
+
+      assert %{callback: :handle_params, params: ~s(%{"page" => "2"}), changes: %{keys: []}} =
+               params
+    end
+
+    test "an exception records the error, without a diff", %{sid: sid} do
+      emit(sid, [
+        {@lv ++ [:handle_event, :exception], %{duration: ms(1)},
+         %{
+           socket: socket(),
+           event: "boom",
+           params: %{},
+           kind: :error,
+           reason: %RuntimeError{message: "bad"},
+           stacktrace: []
+         }}
+      ])
+
+      assert [%Event{data: %{callback: :handle_event, error: error} = data}] = callbacks(sid)
+      assert error =~ "RuntimeError"
+      assert error =~ "bad"
+      assert data.changes == nil
+    end
+
+    test "component handle_event names the component and diffs its assigns", %{sid: sid} do
+      # LiveView sets `myself` and `id` itself (`assign/3` refuses them).
+      component_socket = %Socket{
+        view: DemoWeb.PageLive,
+        assigns: %{
+          __changed__: %{count: true},
+          count: 2,
+          myself: %Phoenix.LiveComponent.CID{cid: 3},
+          id: "counter"
+        }
+      }
+
+      emit(sid, [
+        {@lc ++ [:handle_event, :stop], %{duration: ms(1)},
+         %{
+           socket: component_socket,
+           component: DemoWeb.CounterComponent,
+           event: "inc",
+           params: %{}
+         }}
+      ])
+
+      assert [%Event{data: data}] = callbacks(sid)
+
+      assert %{
+               callback: :handle_event,
+               component: DemoWeb.CounterComponent,
+               cid: 3,
+               id: ~s("counter")
+             } = data
+
+      assert :count in data.changes.keys
+    end
+
+    test "component update is timed, not diffed", %{sid: sid} do
+      sockets = for id <- ["a", "b"], do: {%{id: id}, socket()}
+
+      emit(sid, [
+        {@lc ++ [:update, :stop], %{duration: ms(2)},
+         %{socket: socket(), component: DemoWeb.CounterComponent, assigns_sockets: sockets}}
+      ])
+
+      assert [%Event{duration: 2000, data: data}] = callbacks(sid)
+
+      assert %{
+               callback: :update,
+               component: DemoWeb.CounterComponent,
+               count: 2,
+               id: ~s("a"),
+               changes: nil
+             } = data
+    end
+
+    test "untracked processes and $callers children record nothing", %{sid: sid} do
+      metadata = %{socket: socket(a: 1), event: "x", params: %{}}
+
+      in_process(fn ->
+        :telemetry.execute(@lv ++ [:handle_event, :stop], %{duration: 1}, metadata)
+      end)
+
+      in_process(fn ->
+        Attribution.track(sid)
+
+        task =
+          Task.async(fn ->
+            :telemetry.execute(@lv ++ [:handle_event, :stop], %{duration: 1}, metadata)
+          end)
+
+        Task.await(task)
+      end)
+
+      assert callbacks(sid) == []
+    end
+  end
+
+  describe "renders" do
+    defp component_render(cid, us) do
+      {@lv ++ [:render, :stop], %{duration: System.convert_time_unit(us, :microsecond, :native)},
+       %{
+         socket: socket(),
+         component: DemoWeb.CounterComponent,
+         id: "c#{cid}",
+         cid: cid,
+         force?: false,
+         changed?: true
+       }}
+    end
+
+    defp view_render(stage, extra \\ %{}),
+      do:
+        {@lv ++ [:render, stage], %{duration: ms(4)},
+         Map.merge(%{socket: socket(), force?: false, changed?: true}, extra)}
+
+    test "folds component renders into their LiveView render, top 10 by time", %{sid: sid} do
+      components = for cid <- 1..12, do: component_render(cid, cid * 100)
+      fold = emit(sid, [view_render(:start)] ++ components ++ [view_render(:stop)])
+
+      assert [%Event{duration: 4000, data: data}] = renders(sid)
+      assert %{view: DemoWeb.PageLive, component: nil, changed?: true} = data
+      assert length(data.components) == 10
+
+      assert hd(data.components) == %{
+               component: DemoWeb.CounterComponent,
+               cid: 12,
+               id: ~s("c12"),
+               count: 1,
+               us: 1200
+             }
+
+      assert data.rest == %{count: 2, us: 300}
+      assert fold == nil
+    end
+
+    test "a render that raises cleans the fold", %{sid: sid} do
+      fold =
+        emit(sid, [
+          view_render(:start),
+          component_render(1, 100),
+          view_render(:exception, %{kind: :error, reason: :boom, stacktrace: []})
+        ])
+
+      assert [%Event{data: %{error: error}}] = renders(sid)
+      assert error =~ "boom"
+      assert fold == nil
+    end
+
+    test "a component render outside a LiveView render is recorded on its own", %{sid: sid} do
+      emit(sid, [component_render(5, 250)])
+
+      assert [%Event{duration: 250, data: %{component: DemoWeb.CounterComponent, cid: 5}}] =
+               renders(sid)
+    end
+
+    test "untracked processes never get a fold" do
+      {_pid, keys} =
+        in_process(fn ->
+          :telemetry.execute(@lv ++ [:render, :start], %{system_time: 0}, %{
+            socket: socket(),
+            force?: false,
+            changed?: true
+          })
+
+          Process.get_keys()
+        end)
+
+      assert keys == []
+    end
+  end
+
+  describe "end to end with a real host LiveView" do
+    setup do
+      Collector.attach(PhoenixDevToolbar.Application.plugins())
+      :ok
+    end
+
+    test "records mounts, a click, a component event and its renders" do
+      conn =
+        build_conn()
+        |> Plug.Conn.put_req_header("accept", "text/html")
+        |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
+        |> get("/demo/components")
+
+      {:ok, view, _html} = live(conn)
+      view |> render_hook("click", %{})
+      view |> element("#counter-inc") |> render_click()
+
+      [session] =
+        for s <- Store.sessions(), s.kind == :live_view, s.view == DemoWeb.ComponentsLive, do: s
+
+      events = Store.events(session.sid)
+
+      callbacks =
+        for %Event{kind: :callback, data: d} <- events, do: {d.callback, d.component, d[:event]}
+
+      assert {:mount, nil, nil} in callbacks
+      assert {:handle_event, nil, "click"} in callbacks
+      assert {:handle_event, DemoWeb.CounterComponent, "inc"} in callbacks
+      assert {:update, DemoWeb.CounterComponent, nil} in callbacks
+
+      click = Enum.find(events, &(&1.kind == :callback and &1.data[:event] == "click"))
+      assert click.data.pushed == ["highlight"]
+      assert click.data.changes.keys == [:clicks]
+
+      mount = Enum.find(events, &(&1.kind == :callback and &1.data.callback == :mount))
+      assert mount.data.changes.values.api_token == ~s("[REDACTED]")
+
+      assert Enum.any?(events, &(&1.kind == :render and &1.data.component == nil))
+    end
+  end
+end

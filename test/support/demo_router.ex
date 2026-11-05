@@ -23,6 +23,7 @@ defmodule DemoWeb.Router do
     live_session :demo do
       live "/demo", DemoWeb.PageLive
       live "/demo/other", DemoWeb.PageLive
+      live "/demo/components", DemoWeb.ComponentsLive
     end
   end
 end

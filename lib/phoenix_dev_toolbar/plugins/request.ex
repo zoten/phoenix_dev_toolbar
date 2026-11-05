@@ -30,7 +30,7 @@ defmodule PhoenixDevToolbar.Plugins.Request do
     data =
       metadata
       |> route_data()
-      |> Map.put(:error, banner(metadata.kind, metadata.reason))
+      |> Map.put(:error, Truncate.banner(metadata.kind, metadata.reason))
       |> Map.put(
         :stacktrace,
         Truncate.stacktrace(metadata[:stacktrace], [Phoenix.Router, Plug])
@@ -53,12 +53,6 @@ defmodule PhoenixDevToolbar.Plugins.Request do
   end
 
   # Everything below runs in the host's request process: bounded inspects only.
-
-  # `Exception.format_banner/2` inspects throw and exit reasons without limits.
-  defp banner(:error, reason), do: :error |> Exception.format_banner(reason) |> Truncate.string()
-
-  defp banner(kind, reason),
-    do: Truncate.string("** (#{kind}) " <> Truncate.inspect_value(reason))
 
   # LiveView routes dispatch to Phoenix.LiveView.Plug: show the view instead.
   defp handler(%{phoenix_live_view: {view, action, _opts, _live_session}}),

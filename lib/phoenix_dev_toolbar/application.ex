@@ -9,7 +9,7 @@ defmodule PhoenixDevToolbar.Application do
   alias PhoenixDevToolbar.Plugins
 
   # `:defaults` expansion and plugin options arrive with the public API (ADR 05).
-  @default_plugins [Plugins.Request, Plugins.Ecto]
+  @default_plugins [Plugins.Request, Plugins.Ecto, Plugins.LiveView]
 
   @impl true
   def start(_type, _args) do
