@@ -1,0 +1,258 @@
+defmodule PhoenixDevToolbar.Plug do
+  @moduledoc """
+  Tracks page requests and injects the toolbar into HTML responses.
+
+  Add it to your endpoint, next to `Phoenix.LiveReloader`, and mount the panel
+  routes with `PhoenixDevToolbar.Router.dev_toolbar/2` at the same path:
+
+      if code_reloading? do
+        plug PhoenixDevToolbar.Plug
+      end
+
+  ## Options
+
+    * `:path` - where the toolbar is mounted, the same path given to
+      `dev_toolbar/2`. Defaults to `"/__pdt"`.
+    * `:nonce_assign` - the `conn.assigns` key holding a CSP nonce for the
+      injected script tag. Defaults to `:csp_nonce`.
+
+  The plug does nothing when the toolbar is disabled
+  (`config :phoenix_dev_toolbar, enabled: false`).
+  """
+
+  @behaviour Plug
+
+  require Logger
+
+  alias Plug.Conn
+  alias PhoenixDevToolbar.Attribution
+  alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.Notify
+  alias PhoenixDevToolbar.Session
+  alias PhoenixDevToolbar.Store
+
+  @default_path "/__pdt"
+  @assets %{
+    "loader.js" => "text/javascript",
+    "panel.js" => "text/javascript",
+    "panel.css" => "text/css"
+  }
+  # Other HTML documents that must never get a toolbar of their own.
+  @skip_prefixes [["phoenix", "live_reload"]]
+
+  @impl true
+  def init(opts) do
+    path = opts |> Keyword.get(:path, @default_path) |> String.trim_trailing("/")
+    segments = String.split(path, "/", trim: true)
+
+    case {path, segments} do
+      {"/" <> _, [_ | _]} ->
+        %{
+          path: path,
+          segments: segments,
+          nonce_assign: Keyword.get(opts, :nonce_assign, :csp_nonce)
+        }
+
+      _ ->
+        raise ArgumentError,
+              "PhoenixDevToolbar.Plug :path must be an absolute path below the root, " <>
+                "such as \"/__pdt\", got: #{inspect(path)}"
+    end
+  end
+
+  @impl true
+  def call(%Conn{} = conn, opts) do
+    case PhoenixDevToolbar.enabled?() do
+      true -> route(conn, opts)
+      false -> conn
+    end
+  end
+
+  defp route(conn, %{segments: segments} = opts) do
+    case strip_prefix(conn.path_info, segments) do
+      {:ok, ["assets", file]} -> serve_asset(conn, file)
+      # The panel itself, served by the router: never tracked, never injected.
+      {:ok, _rest} -> untracked(conn)
+      :error -> maybe_track(conn, opts)
+    end
+  end
+
+  # Already tracked: the plug is in the pipeline twice (endpoint and router).
+  defp maybe_track(%Conn{private: %{phoenix_dev_toolbar: _}} = conn, _opts), do: conn
+
+  defp maybe_track(conn, opts) do
+    case page_request?(conn) do
+      true -> track(conn, opts)
+      false -> untracked(conn)
+    end
+  end
+
+  # Connection processes serve many requests (keep-alive): a request we do not
+  # track must not inherit the previous request's sid.
+  defp untracked(conn) do
+    Attribution.untrack()
+    conn
+  end
+
+  defp track(conn, opts) do
+    session = Store.new_session(Session.new(:request, path: conn.request_path))
+    Attribution.track(session.sid)
+
+    conn
+    |> Conn.put_private(:phoenix_dev_toolbar, %{
+      sid: session.sid,
+      started_at: System.monotonic_time()
+    })
+    |> Conn.register_before_send(&before_send(&1, opts))
+  rescue
+    # Store tables missing while it restarts: serve the request untracked,
+    # without the previous request's mark.
+    ArgumentError -> untracked(conn)
+  end
+
+  defp page_request?(%Conn{method: "GET"} = conn) do
+    top_level_document?(conn) and
+      not Enum.any?(@skip_prefixes, &(strip_prefix(conn.path_info, &1) != :error))
+  end
+
+  defp page_request?(_conn), do: false
+
+  # Browsers say what the response is for: only a top level document gets a
+  # toolbar, not iframes nor fetch, htmx or Turbo partials (which also accept
+  # text/html). Without the header, fall back to the Accept header.
+  defp top_level_document?(conn) do
+    case Conn.get_req_header(conn, "sec-fetch-dest") do
+      [dest | _] ->
+        dest == "document"
+
+      [] ->
+        conn |> Conn.get_req_header("accept") |> Enum.any?(&String.contains?(&1, "text/html"))
+    end
+  end
+
+  ## Response
+
+  @doc false
+  # Runs inside the host's request process right before the response is sent:
+  # any failure leaves the response untouched.
+  @spec before_send(Conn.t(), map()) :: Conn.t()
+  def before_send(%Conn{private: %{phoenix_dev_toolbar: %{sid: sid} = info}} = conn, opts) do
+    {conn, injected?} = maybe_inject(conn, sid, opts)
+    record(conn, info, injected?)
+    # The response is done: keep the mark for `router_dispatch :stop`, but stop
+    # resolving this connection process as a `$callers` parent.
+    Attribution.forget_pid()
+    conn
+  rescue
+    exception ->
+      Logger.error(
+        "[phoenix_dev_toolbar] response hook raised:\n" <>
+          Exception.format(:error, exception, __STACKTRACE__)
+      )
+
+      conn
+  end
+
+  defp maybe_inject(%Conn{state: :set, status: 200, resp_body: body} = conn, sid, opts)
+       when body != nil do
+    with true <- html?(conn),
+         true <- identity_encoding?(conn),
+         body = IO.iodata_to_binary(body),
+         [_ | _] = matches <- :binary.matches(body, "</body>") do
+      {position, _length} = List.last(matches)
+      tag = loader_tag(conn, sid, opts)
+
+      injected =
+        [
+          binary_part(body, 0, position),
+          tag,
+          binary_part(body, position, byte_size(body) - position)
+        ]
+
+      # An ETag computed by an earlier hook no longer matches the body.
+      {%{Conn.delete_resp_header(conn, "etag") | resp_body: injected}, true}
+    else
+      _ -> {conn, false}
+    end
+  end
+
+  defp maybe_inject(conn, _sid, _opts), do: {conn, false}
+
+  # Compressed bodies are left alone (they would not contain </body> anyway).
+  defp identity_encoding?(conn) do
+    case Conn.get_resp_header(conn, "content-encoding") do
+      [] -> true
+      ["identity"] -> true
+      _ -> false
+    end
+  end
+
+  defp html?(conn) do
+    case Conn.get_resp_header(conn, "content-type") do
+      ["text/html" <> _ | _] -> true
+      _ -> false
+    end
+  end
+
+  defp loader_tag(conn, sid, %{path: path, nonce_assign: nonce_assign}) do
+    attrs = [
+      {"src", path <> "/assets/loader.js"},
+      {"data-pdt-sid", sid},
+      {"data-pdt-path", path},
+      {"nonce", nonce(conn, nonce_assign)}
+    ]
+
+    rendered =
+      for {name, value} <- attrs, is_binary(value) do
+        [" ", name, "=\"", Plug.HTML.html_escape(value), "\""]
+      end
+
+    ["<script defer", rendered, "></script>"]
+  end
+
+  defp nonce(conn, key) do
+    case conn.assigns do
+      %{^key => nonce} when is_binary(nonce) -> nonce
+      _ -> nil
+    end
+  end
+
+  defp record(conn, %{sid: sid, started_at: started_at}, injected?) do
+    data = %{
+      method: conn.method,
+      path: conn.request_path,
+      status: conn.status,
+      content_type: conn |> Conn.get_resp_header("content-type") |> List.first(),
+      injected?: injected?
+    }
+
+    event = Event.new(:request, :response, data, duration: System.monotonic_time() - started_at)
+
+    case Store.insert(sid, event) do
+      :ok -> Notify.event(sid)
+      _ -> :ok
+    end
+  end
+
+  ## Assets
+
+  defp serve_asset(conn, file) do
+    conn = untracked(conn)
+
+    with %{^file => content_type} <- @assets,
+         path = Application.app_dir(:phoenix_dev_toolbar, ["priv", "static", file]),
+         true <- File.regular?(path) do
+      conn
+      |> Conn.put_resp_content_type(content_type)
+      |> Conn.put_resp_header("cache-control", "no-cache")
+      |> Conn.send_file(200, path)
+      |> Conn.halt()
+    else
+      _ -> conn |> Conn.send_resp(404, "not found") |> Conn.halt()
+    end
+  end
+
+  defp strip_prefix(path_info, []), do: {:ok, path_info}
+  defp strip_prefix([segment | rest], [segment | prefix]), do: strip_prefix(rest, prefix)
+  defp strip_prefix(_path_info, _prefix), do: :error
+end

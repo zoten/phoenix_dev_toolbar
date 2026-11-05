@@ -12,13 +12,28 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 
 ## Decision
 
-- **Injection**: `PhoenixDevToolbar.Plug` registers a `before_send` callback that, only
-  for `text/html` 200 responses that are not chunked and contain `</body>`, inserts a
-  single `<script src="/__pdt/assets/loader.js" data-sid="..." defer>` before `</body>`
-  (the `Phoenix.LiveReloader` technique). If `conn.assigns[:csp_nonce]` (or a configured
-  key) is present it is added as `nonce`.
-- **Assets**: the plug serves `/__pdt/assets/*` from `priv/static` (prebuilt with esbuild,
-  committed to the package), so the host's asset pipeline is never involved.
+- **Page requests**: `PhoenixDevToolbar.Plug` (endpoint, before the router, options
+  `:path` default `"/__pdt"` and `:nonce_assign` default `:csp_nonce`) tracks a request as
+  a page when it is a `GET` for a top level document: `sec-fetch-dest: document`, or,
+  for clients without that header, an `Accept` containing `text/html`. Iframes, fetch,
+  htmx and Turbo partials, `/phoenix/live_reload/*` and the toolbar's own routes are not
+  pages. Any other request clears the previous request's mark from the connection
+  process (keep-alive). A conn already tracked (plug present twice) is left alone.
+- **Injection**: a `before_send` callback inserts one
+  `<script defer src="<path>/assets/loader.js" data-pdt-sid="..." data-pdt-path="<path>">`
+  before the last `</body>` (the `Phoenix.LiveReloader` technique), only for
+  `send_resp` (not chunked, not `send_file`) 200 `text/html` responses without a
+  `content-encoding` other than `identity`. The tag gets `nonce` from the assign when it
+  is a string; every attribute is HTML escaped. A stale `etag` is removed. The callback
+  also records a `:response` event (status, content type, `injected?`, total duration),
+  then drops the connection process from the `$callers` index while keeping its mark
+  for the `router_dispatch :stop` event. Any failure leaves the response untouched.
+- **Assets**: the plug serves a whitelist (`loader.js`, `panel.js`, `panel.css`) under
+  `<path>/assets/` from `priv/static` (prebuilt with esbuild, committed to the package)
+  and halts; anything else, or a missing file, is a 404. The host's asset pipeline is
+  never involved.
+- **Robustness**: `:path` must be absolute and below the root (raises in `init/1`); while
+  the Store restarts every request is served untracked.
 - **Loader** (plain JS, about 3 KB): creates a fixed, collapsible container with an
   `<iframe>` pointing to the router-mounted panel (`/__pdt/panel?sid=...`). It is
   read-only towards the host: it listens to `phx:*` window events (client event log),
