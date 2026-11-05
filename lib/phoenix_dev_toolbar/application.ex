@@ -5,8 +5,13 @@ defmodule PhoenixDevToolbar.Application do
 
   @impl true
   def start(_type, _args) do
-    children = []
-
-    Supervisor.start_link(children, strategy: :one_for_one, name: PhoenixDevToolbar.Supervisor)
+    Supervisor.start_link(children(PhoenixDevToolbar.enabled?()),
+      strategy: :one_for_one,
+      name: PhoenixDevToolbar.Supervisor
+    )
   end
+
+  # Disabled means no processes and no ETS tables at all (ADR 01).
+  defp children(false), do: []
+  defp children(true), do: [PhoenixDevToolbar.Store]
 end

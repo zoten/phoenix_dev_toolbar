@@ -13,29 +13,56 @@ serialize every query of the app behind one mailbox.
 
 ## Decision
 
-- `PhoenixDevToolbar.Store` is a GenServer that **owns** ETS tables but is not on
-  the write path:
-  - `:pdt_events`: `:ordered_set`, `:public`, `write_concurrency` + `read_concurrency`,
-    key `{sid, seq}`, value `%PhoenixDevToolbar.Event{}`. `seq` comes from a shared
-    `:atomics` counter, so per-session order is insertion order.
-  - `:pdt_sessions`: `:set`, sid metadata (owner pid, started at, event count, dropped count).
-  - `:pdt_pids`: `:set`, `pid -> sid` index for `$callers` attribution.
-- Writers (telemetry handlers) insert directly, then increment the session counter
-  with `:ets.update_counter/4`. When a session exceeds its cap, the oldest events are
-  trimmed by the Store asynchronously (a `cast` with the sid, deduplicated).
-- Limits (configurable): 500 events per session, 50 sessions overall (oldest evicted),
-  idle TTL 10 minutes, sweep every 30 seconds. The Store monitors LiveView owner pids
-  and drops their session 60 seconds after `:DOWN` (grace for reconnects).
-- Flood guard: a per-session events-per-second budget (default 200) using `:atomics`;
-  over budget, events are dropped and counted, and the panel shows "N dropped".
-- Payloads are truncated before insert: `inspect(value, limit: 50, printable_limit: 1024)`
-  for assigns and params, SQL capped at 8 KB, stacktraces at 10 frames. Keys listed in
-  `config :phoenix_dev_toolbar, redact: [...]` (default `[:password, :token, :secret]`)
-  are replaced with `"[REDACTED]"`.
+- `PhoenixDevToolbar.Store` is a GenServer that **owns** the ETS tables but is not on
+  the write path. All tables are named, `:public`, with `read_concurrency` and
+  `write_concurrency`:
+
+  | Table | Type | Row |
+  |---|---|---|
+  | `:pdt_events` | `ordered_set` | `{{sid, seq}, %Event{}}` |
+  | `:pdt_sessions` | `set` | `{sid, %Session{}, count, dropped}` |
+  | `:pdt_pids` | `set` | `{pid, sid}` (`$callers` attribution, ADR 02) |
+  | `:pdt_socket_ids` | `set` | `{socket_id, sid}` (dead render to LiveView) |
+  | `:pdt_transports` | `set` | `{transport_pid, sid}` (newest sid per browser tab) |
+  | `:pdt_rate` | `set` | `{{sid, second}, n}` (flood guard) |
+
+  `seq` comes from a shared `:atomics` counter, so per-session order is insertion order.
+- Writers (host processes) insert directly: flood check (`update_counter` on `:pdt_rate`),
+  `update_counter` of the session `count` (a missing session means `:no_session` and
+  the event is discarded), then the event row. Results: `:ok | :dropped | :no_session`.
+- Per-session cap: when `count` first exceeds `max_events` (and every 64 inserts after
+  that) the writer casts `{:trim, sid}`; the Store deletes the oldest events and loops
+  until the session is back within the cap, since inserts may race with the trim.
+- Session cap: on every new session the Store evicts the oldest sessions (by `started_at`)
+  beyond `max_sessions`.
+- LiveView sessions are monitored; `down_grace_ms` after `:DOWN` the session and its index
+  rows are deleted, unless a reconnecting LiveView claimed it in the meantime (`claim/2`).
+- TTL sweep every `sweep_ms`: sessions without a live LiveView owner (requests, orphans)
+  are deleted when their last event (or start) is older than `ttl_ms`. An idle open tab
+  keeps its data. The sweep also drops stale rate windows and orphan events.
+- Limits, overridable with `config :phoenix_dev_toolbar, limits: [...]` and kept in
+  `:persistent_term` for the write path:
+
+  | Key | Default |
+  |---|---|
+  | `max_events` | 500 per session |
+  | `max_sessions` | 50 |
+  | `events_per_second` | 200 per session |
+  | `ttl_ms` | 10 minutes |
+  | `sweep_ms` | 30 seconds |
+  | `down_grace_ms` | 60 seconds |
+
+- Payloads are truncated before insert by `PhoenixDevToolbar.Truncate`:
+  `inspect(value, limit: 50, printable_limit: 1024)` for assigns and params, SQL capped at
+  8 KB (UTF-8 safe), stacktraces at 10 frames without toolbar and `:telemetry` frames.
+  Keys whose name contains an entry of `config :phoenix_dev_toolbar, redact: [...]`
+  (default `["password", "token", "secret"]`, case insensitive) become `"[REDACTED]"`;
+  redaction is bounded in depth (6) and list length (50).
 - Live updates: our own `Registry` (`PhoenixDevToolbar.Registry`, duplicate keys) keyed
   by sid. Writers `Registry.dispatch/3` a `{:pdt_event, sid}` notification (no payload);
   the panel reads from ETS and throttles re-renders to every 100 ms. No dependency on
   the host's `Phoenix.PubSub`.
+- When the toolbar is disabled the Store does not start and no table exists.
 
 ## Consequences
 
