@@ -66,8 +66,9 @@ navigation.
   host's dispatch or error tracking), stamps `Date.now()`, allows 20 per second, buffers 50 until the panel
   loads, and posts `pdt:client` through the origin and source checked bridge, with
   the number of dropped events (also reported alone a second after a burst).
-  `panel.js` forwards to the hook (50 buffered until join); `PanelLive` accepts only
-  those types and fields, caps strings again and streams them. Nothing is stored in
+  `panel.js` forwards to the hook (50 buffered until join); `PanelLive` accepts, through
+  `PhoenixDevToolbar.ClientEvent`, only those types and fields, caps strings again
+  and streams them. Nothing is stored in
   ETS. The client events that announce a live navigation arrive just before it
   resets the log: the last 10 received in the previous 2 s are shown again after the
   reset. The pure helpers (`assets/js/client_events.mjs`) have Node unit tests

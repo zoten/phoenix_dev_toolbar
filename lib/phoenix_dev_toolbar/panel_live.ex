@@ -13,6 +13,7 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   import PhoenixDevToolbar.Components
 
+  alias PhoenixDevToolbar.ClientEvent
   alias PhoenixDevToolbar.ComponentTree
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
@@ -29,17 +30,6 @@ defmodule PhoenixDevToolbar.PanelLive do
   @snapshot_ms 1000
   # Component tree poll interval, only while shown, open and visible.
   @tree_ms 2000
-  # Client events (ADR 07): LiveView's own window events, forwarded by the
-  # loader. Only these types and scalar fields are kept, never stored in ETS.
-  @client_types ~w(phx:page-loading-start phx:page-loading-stop phx:navigate)
-  @client_fields ~w(kind to href patch pop)
-  @client_string 260
-  # Client events that announce a live navigation arrive just before it resets
-  # the log: those received in the last @client_keep_ms are shown again.
-  @client_keep_ms 2000
-  @client_keep 10
-  # Client timestamps (Date.now(), ms) outside this range are replaced by ours.
-  @client_max_ms 10_000_000_000_000
   @tabs ~w(ecto request live_view)
   @tab_labels [{"ecto", "Ecto"}, {"request", "Request"}, {"live_view", "LiveView"}]
   # Rows kept in the DOM per list; the Store keeps 500 events per session.
@@ -89,31 +79,25 @@ defmodule PhoenixDevToolbar.PanelLive do
   def handle_event("lv_snapshot", _params, socket), do: {:noreply, start_snapshot(socket)}
 
   # From the PdtPanel hook: a client event the loader forwarded (untrusted input).
-  def handle_event("pdt:client", %{"event" => %{"type" => type} = event} = params, socket)
-      when type in @client_types do
+  # A nil event only updates the drop count (the loader reports drops on its own).
+  def handle_event("pdt:client", %{} = params, socket) do
     n = socket.assigns.client_count + 1
+    dropped = ClientEvent.dropped(params["dropped"], socket.assigns.client_dropped)
+    socket = assign(socket, :client_dropped, dropped)
 
-    client = %Event{
-      plugin: :client,
-      kind: :client,
-      at: client_at(event["at"]),
-      data: client_data(event, n)
-    }
+    case ClientEvent.build(params["event"], n) do
+      {:ok, client} ->
+        recent = ClientEvent.remember(socket.assigns.recent_client, client, now_ms())
 
-    recent = Enum.take([{now_ms(), client} | socket.assigns.recent_client], @client_keep)
+        {:noreply,
+         socket
+         |> assign(client_count: n, recent_client: recent)
+         |> stream_insert(:lv_events, client, limit: -@dom_limit)}
 
-    {:noreply,
-     socket
-     |> assign(client_count: n, recent_client: recent)
-     |> assign(:client_dropped, client_dropped(params["dropped"], socket))
-     |> stream_insert(:lv_events, client, limit: -@dom_limit)}
+      :ignore ->
+        {:noreply, socket}
+    end
   end
-
-  # A drop count update without an event (the loader reports drops on its own).
-  def handle_event("pdt:client", %{"event" => nil} = params, socket),
-    do: {:noreply, assign(socket, :client_dropped, client_dropped(params["dropped"], socket))}
-
-  def handle_event("pdt:client", _params, socket), do: {:noreply, socket}
 
   # From the PdtPanel hook: the loader's open state and the browser tab's visibility.
   def handle_event("pdt:visibility", params, socket) do
@@ -234,7 +218,7 @@ defmodule PhoenixDevToolbar.PanelLive do
       last_changed: Enum.reduce(events, [], &last_changed/2),
       snapshot: nil,
       tree: nil,
-      dropped: dropped(sids)
+      gaps: gaps(sids)
     )
     |> assign(seqs: %{}, seen: MapSet.new())
     |> remember(events)
@@ -254,7 +238,7 @@ defmodule PhoenixDevToolbar.PanelLive do
 
     socket
     |> fold(events)
-    |> assign(:dropped, dropped(sids))
+    |> assign(:gaps, gaps(sids))
     |> remember(events)
     |> forget_below(lows)
     |> insert_all(events)
@@ -264,43 +248,14 @@ defmodule PhoenixDevToolbar.PanelLive do
   defp lv_dom_id(%Event{plugin: :client, data: %{n: n}}), do: "pdt-lv-client-#{n}"
   defp lv_dom_id(%Event{seq: seq}), do: "pdt-lv-#{seq}"
 
-  defp client_data(event, n) do
-    fields =
-      for field <- @client_fields,
-          value = client_value(event[field]),
-          value != nil,
-          do: {field, value}
-
-    %{type: event["type"], fields: fields, n: n}
-  end
-
-  defp client_value(value) when is_binary(value), do: Truncate.string(value, @client_string)
-  defp client_value(value) when is_boolean(value) or is_number(value), do: value
-  defp client_value(_value), do: nil
-
-  # The loader stamps Date.now() (ms); events are stamped in microseconds.
-  defp client_at(ms) when is_integer(ms) and ms > 0 and ms < @client_max_ms, do: ms * 1000
-  defp client_at(_ms), do: System.system_time(:microsecond)
-
   defp now_ms, do: System.monotonic_time(:millisecond)
 
-  # After a reset of the log: the client events of the last @client_keep_ms
-  # (the navigation's own page-loading-start and navigate), oldest first.
+  # After a reset of the log: the client events that announced the navigation.
   defp reinsert_recent_client(socket) do
-    since = now_ms() - @client_keep_ms
-
     socket.assigns.recent_client
-    |> Enum.filter(fn {at, _event} -> at >= since end)
-    |> Enum.reverse()
-    |> Enum.reduce(socket, fn {_at, event}, acc ->
-      stream_insert(acc, :lv_events, event, limit: -@dom_limit)
-    end)
+    |> ClientEvent.recent(now_ms())
+    |> Enum.reduce(socket, &stream_insert(&2, :lv_events, &1, limit: -@dom_limit))
   end
-
-  defp client_dropped(dropped, socket) when is_integer(dropped) and dropped >= 0,
-    do: max(dropped, socket.assigns.client_dropped)
-
-  defp client_dropped(_dropped, socket), do: socket.assigns.client_dropped
 
   # Summary and profile are folded incrementally, never rebuilt from the Store.
   defp fold(socket, events) do
@@ -432,13 +387,16 @@ defmodule PhoenixDevToolbar.PanelLive do
     end)
   end
 
-  # Events over the flood guard budget are counted, not stored: show the gap.
-  defp dropped(sids) do
-    # Enum.reduce, not Enum.sum_by: Elixir 1.17 is supported.
-    Enum.reduce(sids, 0, fn sid, total ->
+  # Events over the flood guard budget (dropped) and the oldest events past the
+  # per session cap (trimmed) are counted, not stored: show the gaps.
+  defp gaps(sids) do
+    Enum.reduce(sids, %{dropped: 0, trimmed: 0}, fn sid, gaps ->
       case safe(fn -> Store.session(sid) end, :error) do
-        {:ok, session} -> total + session.dropped
-        :error -> total
+        {:ok, session} ->
+          %{dropped: gaps.dropped + session.dropped, trimmed: gaps.trimmed + session.trimmed}
+
+        :error ->
+          gaps
       end
     end)
   end
@@ -540,7 +498,7 @@ defmodule PhoenixDevToolbar.PanelLive do
       <div id="pdt-bridge" phx-hook="PdtPanel" hidden></div>
       <header class="pdt-header">
         <span class="pdt-logo">dev toolbar</span>
-        <.summary_bar summary={@summary} dropped={@dropped} />
+        <.summary_bar summary={@summary} dropped={@gaps.dropped} trimmed={@gaps.trimmed} />
         <nav class="pdt-tabs" role="tablist">
           <button
             :for={{tab, label} <- @tab_labels}

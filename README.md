@@ -28,7 +28,7 @@ That's all: no router, layout or `app.js` changes. See
 
 ## Contributing
 
-Read [AGENTS.md](AGENTS.md) and the [ADR index](adr/README.md). Run `mix precommit` before pushing.
+Read [AGENTS.md](AGENTS.md) and the [ADR index](adr/README.md). Run `mix precommit` before pushing (its JS tests need Node 22 or later).
 Try your changes in a real browser with `mix dev`, a demo app at http://localhost:4000.
 
 ## License
