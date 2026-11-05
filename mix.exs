@@ -46,6 +46,7 @@ defmodule PhoenixDevToolbar.MixProject do
       {:phoenix_live_view, "~> 1.1"},
       {:telemetry, "~> 1.0"},
       {:ecto_sql, "~> 3.12", optional: true},
+      {:lazy_html, "~> 0.1", only: :test},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:jump_credo_checks, "~> 0.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

@@ -42,9 +42,21 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   everything to the iframe with `postMessage` (origin checked both ways). Page
   correlation, including live navigation, happens server side (ADR 02), so the
   toolbar keeps working when the loader cannot reach `window.liveSocket`.
-- **Panel**: `PhoenixDevToolbar.PanelLive`, mounted by the `dev_toolbar/1` router macro in
-  its own `live_session`, with its own root layout, its own LiveSocket and its own CSS.
-  It reads events from the Store, subscribes via the Registry, and renders plugins' panels.
+- **Router**: `PhoenixDevToolbar.Router.dev_toolbar/2` (default path `"/__pdt"`, option
+  `:live_socket_path` default `"/live"`) defines `<path>/panel` in its own
+  `live_session :phoenix_dev_toolbar` with the `PhoenixDevToolbar.Layouts.root/1` root
+  layout, inside the host's scope and pipeline (usually `:browser`). The root layout
+  loads only `panel.css` and `panel.js`, at URLs relative to the panel route, and passes
+  the socket path to `panel.js`; the panel uses the host's LiveView socket. The package
+  exports `locals_without_parens` for `dev_toolbar`.
+- **Panel**: `PhoenixDevToolbar.PanelLive` (`<path>/panel?sid=<request sid>`) shows one
+  page: the request and its LiveView, or only the newest LiveView after live navigation
+  in the same tab (`PhoenixDevToolbar.Page`; a duplicated tab never takes over). It reads
+  the Store, subscribes through the Registry to the root sid and the sids shown, re-reads
+  new events at most every 100 ms, and rebuilds on `{:pdt_session, _}`. Lists are LiveView
+  streams capped at 500 rows; the summary bar (status and duration, query count and
+  database time, router errors) is folded incrementally (`PhoenixDevToolbar.Summary`).
+  Tabs: Ecto, Request. An invalid or expired sid shows an explanation, not an error.
 - Collapsed by default to a small badge bar (query count, slowest callback, warnings);
   open/closed state and size persist in `localStorage` of the host origin.
 

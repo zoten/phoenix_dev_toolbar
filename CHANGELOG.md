@@ -16,3 +16,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Registry based live notifications for panel subscribers (ADR 03)
 - Built-in Request and Ecto collectors, default plugins (ADR 02)
 - `PhoenixDevToolbar.Plug`: page tracking, loader injection, asset serving (ADR 04)
+- `dev_toolbar` router macro and live panel: summary, Ecto and Request tabs (ADR 04)
