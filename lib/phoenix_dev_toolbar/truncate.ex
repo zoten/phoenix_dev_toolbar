@@ -15,6 +15,13 @@ defmodule PhoenixDevToolbar.Truncate do
   @list_items 50
   @default_redact ["password", "token", "secret"]
   @own_frames [:telemetry, PhoenixDevToolbar]
+  # Assigns diff of one callback (ADR 03): about 4 KB at most.
+  @change_keys 20
+  @change_values 10
+  @change_inspect [limit: 20, printable_limit: 256]
+  @change_bytes 360
+
+  @type changes :: %{keys: [term()], values: %{term() => String.t()}, omitted: non_neg_integer()}
 
   @doc """
   Inspects a value with the toolbar limits.
@@ -42,7 +49,7 @@ defmodule PhoenixDevToolbar.Truncate do
   def sql(sql) when is_binary(sql), do: valid_prefix(sql, @sql_limit) <> " [truncated]"
 
   @doc """
-  Caps any text (exception messages, banners) at #{@string_limit} bytes.
+  Caps any text (exception messages, banners) at `limit` bytes, #{@string_limit} by default.
 
       iex> PhoenixDevToolbar.Truncate.string("boom")
       "boom"
@@ -51,9 +58,8 @@ defmodule PhoenixDevToolbar.Truncate do
       2060
 
   """
-  @spec string(String.t()) :: String.t()
-  def string(text) when is_binary(text) and byte_size(text) <= @string_limit, do: text
-  def string(text) when is_binary(text), do: valid_prefix(text, @string_limit) <> " [truncated]"
+  @spec string(String.t(), pos_integer()) :: String.t()
+  def string(text, limit \\ @string_limit) when is_binary(text), do: cap(text, limit)
 
   @doc """
   Formats the first #{@frames} stacktrace frames that do not belong to the
@@ -102,9 +108,51 @@ defmodule PhoenixDevToolbar.Truncate do
     do_redact(value, Enum.map(keys, &(&1 |> to_string() |> String.downcase())), 0)
   end
 
+  @doc """
+  Bounded diff of the assigns changed by a callback.
+
+  Lists at most #{@change_keys} of the changed `keys` (sorted; `:all` means every
+  assign) and inspects, redacted, the values of the first #{@change_values}, each
+  capped at #{@change_bytes} bytes. `:flash` is listed without its value.
+  `omitted` counts the keys left out.
+
+      iex> PhoenixDevToolbar.Truncate.changes(%{count: 2, password: "x"}, [:count, :password])
+      %{keys: [:count, :password], values: %{count: "2", password: ~s("[REDACTED]")}, omitted: 0}
+
+  """
+  @spec changes(map(), [term()] | :all) :: changes()
+  def changes(assigns, :all) when is_map(assigns), do: changes(assigns, Map.keys(assigns))
+
+  def changes(assigns, keys) when is_map(assigns) and is_list(keys) do
+    {shown, rest} = keys |> List.delete(:__changed__) |> Enum.sort() |> Enum.split(@change_keys)
+    redact = Enum.map(redact_keys(), &(&1 |> to_string() |> String.downcase()))
+
+    values =
+      for key <- Enum.take(shown, @change_values),
+          key != :flash,
+          is_map_key(assigns, key),
+          into: %{},
+          do: {key, change_value(key, Map.fetch!(assigns, key), redact)}
+
+    %{keys: shown, values: values, omitted: length(rest)}
+  end
+
   @doc false
   @spec redact_keys() :: [String.t() | atom()]
   def redact_keys, do: Application.get_env(:phoenix_dev_toolbar, :redact, @default_redact)
+
+  defp change_value(key, value, redact) do
+    value =
+      case sensitive?(key, redact) do
+        true -> @redacted
+        false -> do_redact(value, redact, 1)
+      end
+
+    value |> inspect_value(@change_inspect) |> string(@change_bytes)
+  end
+
+  defp cap(text, limit) when byte_size(text) <= limit, do: text
+  defp cap(text, limit), do: valid_prefix(text, limit) <> " [truncated]"
 
   defp do_redact(value, _keys, depth) when depth > @max_depth, do: value
 

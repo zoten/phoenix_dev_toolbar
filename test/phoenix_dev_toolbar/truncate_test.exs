@@ -88,4 +88,57 @@ defmodule PhoenixDevToolbar.TruncateTest do
       assert get_in(Truncate.redact(deep), List.duplicate("next", 10)) == %{"password" => "p"}
     end
   end
+
+  describe "changes/2" do
+    test "inspects the changed values, sorted by key" do
+      assigns = %{__changed__: %{}, count: 2, name: "Ada", other: :untouched}
+
+      assert Truncate.changes(assigns, [:name, :count]) == %{
+               keys: [:count, :name],
+               values: %{count: "2", name: ~s("Ada")},
+               omitted: 0
+             }
+    end
+
+    test "redacts sensitive keys and nested values" do
+      assigns = %{api_token: "abc", user: %{password: "hunter2", name: "Ada"}}
+
+      %{values: values} = Truncate.changes(assigns, [:api_token, :user])
+
+      assert values.api_token == ~s("[REDACTED]")
+      assert values.user =~ "[REDACTED]"
+      refute values.user =~ "hunter2"
+    end
+
+    test ":all lists every assign except change tracking" do
+      assigns = %{__changed__: nil, a: 1, b: 2}
+
+      assert %{keys: [:a, :b]} = Truncate.changes(assigns, :all)
+    end
+
+    test "flash is listed but its value is not stored" do
+      assigns = %{flash: %{"info" => "Saved"}}
+
+      assert %{keys: [:flash], values: values} = Truncate.changes(assigns, [:flash])
+      refute Map.has_key?(values, :flash)
+    end
+
+    test "keys missing from the assigns are listed without a value" do
+      assert %{keys: [:gone], values: values} = Truncate.changes(%{}, [:gone])
+      assert values == %{}
+    end
+
+    test "is bounded: 20 keys, 10 values, about 4 KB however large the assigns" do
+      huge = Map.new(1..200, &{:"key_#{&1}", Enum.to_list(1..10_000)})
+      nested = Enum.reduce(1..50, :leaf, &%{level: &1, inner: &2, list: Enum.to_list(1..100)})
+      assigns = Map.put(huge, :key_1, nested)
+
+      changes = Truncate.changes(assigns, Map.keys(assigns))
+
+      assert length(changes.keys) == 20
+      assert changes.omitted == 180
+      assert map_size(changes.values) == 10
+      assert changes |> :erlang.term_to_binary() |> byte_size() < 4_500
+    end
+  end
 end
