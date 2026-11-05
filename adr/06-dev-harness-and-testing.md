@@ -22,9 +22,15 @@ correctness and boundedness need tests, not just eyeballing.
   `handle_event/3`, a slow handler, a failing query), Task.async (`Task.async_stream`
   queries attributed through `$callers`), Components (LiveComponents with events and
   `send_update`, a nested LiveView, a `push_event`), Assigns (large, nested and
-  sensitive assigns, a per keystroke diff, a slow `handle_params`), and a dead Plug page. Phoenix and LiveView JS
+  sensitive assigns, a per keystroke diff, a slow `handle_params`), Oban jobs (the example
+  plugin, `examples/oban`: Oban on the SQLite repo with the Lite engine, inserts, an
+  `insert_all`, a unique conflict, an invalid insert), Plugin errors (a demo plugin that
+  fails on demand in its collector, summary, tab callbacks or template, to check
+  quarantine and Re-enable), and a dead Plug page. Phoenix and LiveView JS
   come from `deps/` through `Plug.Static`, so the harness has no build step.
-  `ecto_sqlite3`, `bandit` and `jason` are `only: :dev` (`jason` also `:test`). Because
+  `ecto_sqlite3`, `bandit` and `jason` are `only: :dev` (`jason` also `:test`), `oban`
+  `only: [:dev, :test]`: the example plugins in `examples/` are compiled in tests
+  (`elixirc_paths`) and loaded by `dev.exs`, never shipped (the package lists `lib/`). Because
   `Demo.Repo` only exists once the script runs, `dev.exs` attaches the collector again
   after defining it; host apps do not need this, their repo modules are loadable when the
   toolbar starts. New panels add a harness page that demonstrates them.
@@ -35,7 +41,9 @@ correctness and boundedness need tests, not just eyeballing.
   - Plug: `Plug.Test` for injection rules (content type, status, chunked, missing `</body>`, nonce).
   - LiveView: `Phoenix.LiveViewTest` against a test endpoint in `test/support` for the
     panel and for real LiveView telemetry end to end (host LiveViews with a component,
-    driven through `DemoWeb.Endpoint`).
+    driven through `DemoWeb.Endpoint`). Plugin API: test plugins in `test/support`
+    (a tab and badge, one that fails on demand everywhere its code runs) and the Oban
+    example drive the public API through a real host LiveView.
   - JS: the loader's pure helpers (`assets/js/client_events.mjs`) have unit tests run by
     `node --test` (`mix test.js`, Node built-ins only, part of `mix precommit`, so
     contributors need Node 22+; CI runs it in the latest row). The wiring (listeners, `postMessage`, hooks) is checked by hand.

@@ -62,5 +62,5 @@ No change to the router, `root.html.heex` or `app.js` is required.
 
 ## Open limits
 
-- An Igniter installer (`mix igniter.install phoenix_dev_toolbar`) is planned for Phase 3.
+- An Igniter installer (`mix igniter.install phoenix_dev_toolbar`) is planned, in a phase of its own.
 - Hosts using a custom endpoint without `code_reloading?` must guard manually.

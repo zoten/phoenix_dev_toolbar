@@ -42,7 +42,7 @@ Next free number: **08**.
 
 | ADR | Title | Status |
 |---|---|---|
-| 05 | [Plugin Behaviour](./05-plugin-behaviour.md) | Accepted |
+| 05 | [Plugin Behaviour](./05-plugin-behaviour.md) | Implemented (2026-11-05) |
 
 ## Testing
 

@@ -16,8 +16,10 @@ running code in the host page. Both must stay cheap and read only.
 
 ## Decision
 
-One `LiveView` tab in `PhoenixDevToolbar.PanelLive` with four WAI-ARIA sub-tabs
-(`PhoenixDevToolbar.Panels.LiveView`): Profiler, Assigns, Events, Components.
+One `LiveView` tab, the `PhoenixDevToolbar.Plugins.LiveView` plugin's panel component
+(`PhoenixDevToolbar.Panels.LiveView`, on the public plugin API, ADR 05; its markup in
+`Panels.LiveViewSections`) with four WAI-ARIA sub-tabs: Profiler, Assigns, Events,
+Components. Its state (profile, reads, timers, client events) lives in the component.
 Like the other tabs it shows the page (`PhoenixDevToolbar.Page`) and follows live
 navigation.
 
@@ -46,7 +48,11 @@ navigation.
   `children_cids`: 500 nodes at most for the page. Read when the sub-tab opens, then
   polled every 2 s only while the sub-tab is shown and the panel is open and
   visible. Nested LiveViews are listed under the page's LiveView.
-- **Reads and page changes**: one snapshot and one tree read at a time. When the
+- **Timers**: the throttled snapshot and the tree poll are `Panel.send_after/4`
+  messages (`send_update_after`) to the component.
+- **Reads and page changes**: one snapshot and one tree read at a time; each read
+  returns the owner it read, and a result for another owner than the page's current
+  one is dropped (a read that finished just before a page change). When the
   page's LiveView changes (connected, navigated, rejoined) reads in flight are
   cancelled (`cancel_async/3`) and restarted for the new LiveView, so a result
   never lands on the wrong page.
@@ -66,7 +72,8 @@ navigation.
   host's dispatch or error tracking), stamps `Date.now()`, allows 20 per second, buffers 50 until the panel
   loads, and posts `pdt:client` through the origin and source checked bridge, with
   the number of dropped events (also reported alone a second after a burst).
-  `panel.js` forwards to the hook (50 buffered until join); `PanelLive` accepts, through
+  `panel.js` forwards to the hook (50 buffered until join); `PanelLive` forwards them
+  to the LiveView tab's component, which accepts, through
   `PhoenixDevToolbar.ClientEvent`, only those types and fields, caps strings again
   and streams them. Nothing is stored in
   ETS. The client events that announce a live navigation arrive just before it
@@ -100,3 +107,7 @@ navigation.
   iframe reloads, are lost without being counted as dropped.
 - Client timestamps come from the browser clock; they are kept but not used for
   ordering (rows are in arrival order).
+- The dead render shows empty sub-tabs ("No LiveView callbacks yet"): the plugin's
+  events reach the component once the panel connects.
+- Without `Plugins.LiveView` (`{:exclude, ...}`) there is no LiveView tab and client
+  events are dropped.

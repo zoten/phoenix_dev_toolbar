@@ -91,13 +91,15 @@ host's hot path).
   calls them from a task of its own, never from a handler; ADR 07). Process metrics via
   `Process.info/2`. Both polled by the panel only while it is open.
 
-**Built-in collectors** (default `plugins`, `PhoenixDevToolbar.Plugins.*`):
+**Built-in collectors** (`:defaults` in `plugins`, `PhoenixDevToolbar.Plugins.*`, on the
+public plugin behaviour, ADR 05):
 
 - `Request`: `router_dispatch` `:stop` and `:exception`: method, path, route pattern,
   handler (the LiveView module and action for live routes, else plug and options),
   status, redacted path params, duration; on exception also the error banner and the
   stacktrace without router and Plug frames.
-- `Ecto`: `telemetry_prefix ++ [:query]` of each repo in `repos`, the prefix read from
+- `Ecto`: `telemetry_prefix ++ [:query]` of each repo in its `repos:` option (default:
+  the top level `repos` config), the prefix read from
   `repo.config/0` (a module that is not a repo is skipped with a warning). Records repo,
   SQL, redacted params (`cast_params` when present), source, result (`{:ok, rows}` or
   `{:error, message}`), the four timings in microseconds, the origin stacktrace without
@@ -114,15 +116,20 @@ host's hot path).
 
 **Handler rules**: `PhoenixDevToolbar.Collector` attaches one handler per event name
 (id `{PhoenixDevToolbar.Collector, event}`, an external function capture) that fans out
-to the plugins declaring that event. The body is wrapped in `rescue` (a raising handler
-is detached by `:telemetry`) and each plugin call in `catch`: a plugin that raises,
-throws, exits or returns something other than `{:record, %Event{}}` or `:skip` is
-quarantined (skipped until the next `attach/1`) and logged once. Only the plugin's
-own call can quarantine it: Store and Notify failures are caught by the handler level
-`catch` (every class, logged once per error type). No synchronous
-GenServer calls, no I/O on the normal path; payloads are truncated before leaving the
-plugin. Plugins come from `config :phoenix_dev_toolbar, plugins: [...]`; handlers are
-attached when the application starts and detached in `prep_stop/1`.
+to the plugins declaring that event. The handler config holds module names only
+(`:telemetry` copies it into every emitting process); a tracked process reads the
+plugins' configs from persistent_term, without copying, into `Context.config`. The body
+is wrapped in `catch` (every class: a raising handler is detached by `:telemetry`) and
+each plugin call in `catch`: a plugin that raises, throws, exits or returns something
+other than `{:record, %Event{}}` or `:skip` is quarantined: a bounded error banner is
+stored in persistent_term (shown in the panel, ADR 05), the error logged once and the
+page notified; it is skipped until the panel's Re-enable button or the next `attach/1`.
+Only the plugin's own call can quarantine it: Store and Notify failures are caught by
+the handler level `catch` (logged once per error type). No synchronous GenServer calls,
+no I/O on the normal path; payloads are truncated before leaving the plugin. Plugins
+come from `config :phoenix_dev_toolbar, plugins: [...]`, expanded and validated by
+`PhoenixDevToolbar.Config` (ADR 05); `init/1` runs and handlers are attached when the
+application starts, and detached in `prep_stop/1`.
 
 ## Consequences
 
