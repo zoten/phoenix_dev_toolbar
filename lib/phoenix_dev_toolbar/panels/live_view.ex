@@ -24,6 +24,9 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
 
   attr :tab, :string, required: true
   attr :profile, Profile, required: true
+  attr :snapshot, :any, required: true, doc: "nil, a Truncate.snapshot/1 or {:missing, why}"
+  attr :snapshot_pending?, :boolean, required: true
+  attr :last_changed, :list, required: true, doc: "keys changed by the last callback"
   attr :events, :any, required: true, doc: "the :lv_events stream"
   attr :root, :string, required: true
 
@@ -63,7 +66,11 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
       aria-labelledby="pdt-lv-tab-assigns"
       hidden={@tab != "assigns"}
     >
-      <p class="pdt-empty">No snapshot yet.</p>
+      <.snapshot
+        snapshot={@snapshot}
+        pending?={@snapshot_pending?}
+        last_changed={@last_changed}
+      />
     </div>
 
     <div
@@ -86,6 +93,48 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
     >
       <p class="pdt-empty">No components yet.</p>
     </div>
+    """
+  end
+
+  attr :snapshot, :any, required: true
+  attr :pending?, :boolean, required: true
+  attr :last_changed, :list, required: true
+
+  defp snapshot(assigns) do
+    ~H"""
+    <div class="pdt-snapshot-bar">
+      <button id="pdt-snapshot-refresh" type="button" class="pdt-button" phx-click="lv_snapshot">
+        Refresh
+      </button>
+      <span class="pdt-hint">
+        {if(@pending?,
+          do: "Reading…",
+          else: "Values are truncated; highlighted: changed by the last callback."
+        )}
+      </span>
+    </div>
+    <%= case @snapshot do %>
+      <% {:missing, :no_live_view} -> %>
+        <p id="pdt-snapshot-missing" class="pdt-empty">No LiveView on this page.</p>
+      <% {:missing, :gone} -> %>
+        <p id="pdt-snapshot-missing" class="pdt-empty">
+          The LiveView is not running anymore (it crashed or the page navigated away).
+        </p>
+      <% %{entries: entries, omitted: omitted} -> %>
+        <dl id="pdt-snapshot" class="pdt-snapshot">
+          <div
+            :for={{key, value} <- entries}
+            id={"pdt-snapshot-" <> key_name(key)}
+            class={["pdt-snapshot__entry", key in @last_changed && "pdt-snapshot--changed"]}
+          >
+            <dt>{key_name(key)}</dt>
+            <dd><code>{value}</code></dd>
+          </div>
+        </dl>
+        <p :if={omitted > 0} class="pdt-hint pdt-snapshot__more">+{omitted} more assigns</p>
+      <% nil -> %>
+        <p class="pdt-empty">No snapshot yet.</p>
+    <% end %>
     """
   end
 

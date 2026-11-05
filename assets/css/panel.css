@@ -288,3 +288,35 @@ body.pdt {
 
 .pdt-changed { font-family: var(--pdt-mono); color: var(--pdt-code); }
 .pdt-pushed { color: var(--pdt-accent); border-color: color-mix(in srgb, var(--pdt-accent) 40%, transparent); }
+
+.pdt-snapshot-bar { display: flex; align-items: center; gap: 10px; padding: 6px 12px; }
+
+.pdt-button {
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--pdt-border);
+  border-radius: 4px;
+  background: var(--pdt-bg);
+  color: var(--pdt-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pdt-button:hover { background: var(--pdt-bg-alt); }
+.pdt-button:focus-visible { outline: 2px solid var(--pdt-accent); outline-offset: 1px; }
+
+.pdt-snapshot { margin: 0; }
+
+.pdt-snapshot__entry {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) 1fr;
+  gap: 12px;
+  padding: 3px 12px;
+  border-bottom: 1px solid var(--pdt-border);
+}
+
+.pdt-snapshot__entry dt { font: 11.5px var(--pdt-mono); color: var(--pdt-muted); }
+.pdt-snapshot__entry dd { margin: 0; min-width: 0; }
+.pdt-snapshot__entry code { font: 11.5px/1.5 var(--pdt-mono); color: var(--pdt-code); overflow-wrap: anywhere; }
+.pdt-snapshot--changed { box-shadow: inset 3px 0 0 var(--pdt-accent); background: color-mix(in srgb, var(--pdt-accent) 6%, transparent); }
+.pdt-snapshot__more { padding: 4px 12px; }

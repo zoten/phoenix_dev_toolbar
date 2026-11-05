@@ -25,6 +25,7 @@ defmodule PhoenixDevToolbar.Truncate do
   @preview_nodes 200
   @preview_width 20
   @cut "…"
+  @snapshot_keys 100
 
   @type changes :: %{keys: [term()], values: %{term() => String.t()}, omitted: non_neg_integer()}
 
@@ -166,6 +167,33 @@ defmodule PhoenixDevToolbar.Truncate do
       true -> inspect_value(@redacted)
       false -> preview(value, @change_bytes, redact)
     end
+  end
+
+  @doc """
+  Bounded, redacted view of a whole assigns map for the assigns inspector: at
+  most #{@snapshot_keys} assigns (sorted by key), each through `preview/3`.
+  Runs in the panel's task, never in a host process.
+  """
+  @spec snapshot(map()) :: %{entries: [{term(), String.t()}], omitted: non_neg_integer()}
+  def snapshot(assigns) when is_map(assigns) do
+    redact = lowered_redact_keys()
+
+    {shown, rest} =
+      assigns
+      |> Map.keys()
+      |> List.delete(:__changed__)
+      |> Enum.sort()
+      |> Enum.split(@snapshot_keys)
+
+    entries =
+      for key <- shown do
+        case sensitive?(key, redact) do
+          true -> {key, inspect_value(@redacted)}
+          false -> {key, preview(Map.fetch!(assigns, key), @change_bytes, redact)}
+        end
+      end
+
+    %{entries: entries, omitted: length(rest)}
   end
 
   @doc """

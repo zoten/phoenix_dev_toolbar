@@ -168,6 +168,31 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
     assert has_element?(view, "#pdt-profile-0", "inc")
   end
 
+  describe "assigns snapshot" do
+    test "explains when the page has no LiveView" do
+      Store.reset()
+      dead = Store.new_session(Session.new(:request, path: "/plain"))
+
+      view = open(dead.sid) |> open_tab("assigns")
+      _ = render_async(view)
+
+      assert has_element?(view, "#pdt-snapshot-missing", "No LiveView")
+    end
+
+    test "explains when the LiveView is gone", %{request: request, live: live} do
+      {:ok, session} = Store.session(live)
+      gone = spawn(fn -> :ok end)
+      ref = Process.monitor(gone)
+      assert_receive {:DOWN, ^ref, :process, ^gone, _reason}
+      Store.claim(live, gone, session.transport)
+
+      view = open(request) |> open_tab("assigns")
+      _ = render_async(view)
+
+      assert has_element?(view, "#pdt-snapshot-missing", "not running")
+    end
+  end
+
   describe "end to end with a real host LiveView" do
     setup do
       PhoenixDevToolbar.Collector.attach(PhoenixDevToolbar.Application.plugins())
@@ -177,12 +202,13 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       end)
     end
 
-    test "profiles the host LiveView and its component" do
+    # Loads a host page as a browser would: its LiveView and the injected sid.
+    defp visit(path) do
       conn =
         build_conn()
         |> Plug.Conn.put_req_header("accept", "text/html")
         |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
-        |> get("/demo/components")
+        |> get(path)
 
       [sid] =
         conn
@@ -192,6 +218,11 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
         |> LazyHTML.attribute("data-pdt-sid")
 
       {:ok, host, _html} = live(conn)
+      {host, sid}
+    end
+
+    test "profiles the host LiveView and its component" do
+      {host, sid} = visit("/demo/components")
       panel = open(sid) |> open_tab("profiler")
 
       host |> element("#counter-inc") |> render_click()
@@ -207,6 +238,26 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
       panel |> element("#pdt-lv-tab-events") |> render_click()
       assert has_element?(panel, "#pdt-lv-events .pdt-changed", "count")
+    end
+
+    test "snapshots the host LiveView's assigns, redacted, and refreshes after callbacks" do
+      {host, sid} = visit("/demo/components")
+      panel = open(sid) |> open_tab("assigns")
+      _ = render_async(panel)
+
+      assert has_element?(panel, "#pdt-snapshot-clicks", "0")
+      assert has_element?(panel, "#pdt-snapshot-api_token", "[REDACTED]")
+      refute render(panel) =~ "s3cret"
+
+      host |> render_hook("click", %{})
+      flush(panel)
+      # Within a second of the first snapshot the refresh is scheduled, not run:
+      # deliver the scheduled message now.
+      send(panel.pid, :pdt_snapshot)
+      _ = render_async(panel)
+
+      assert has_element?(panel, "#pdt-snapshot-clicks", "1")
+      assert has_element?(panel, "#pdt-snapshot-clicks.pdt-snapshot--changed")
     end
   end
 end

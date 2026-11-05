@@ -142,6 +142,28 @@ defmodule PhoenixDevToolbar.TruncateTest do
     end
   end
 
+  describe "snapshot/1" do
+    test "previews every assign, sorted, redacted, without change tracking" do
+      assigns = %{__changed__: %{}, count: 1, api_token: "abc", user: %{name: "Ada"}}
+
+      assert Truncate.snapshot(assigns) == %{
+               entries: [
+                 {:api_token, ~s("[REDACTED]")},
+                 {:count, "1"},
+                 {:user, ~s(%{name: "Ada"})}
+               ],
+               omitted: 0
+             }
+    end
+
+    test "keeps at most 100 assigns" do
+      assigns = Map.new(1..150, &{:"key_#{&1}", &1})
+
+      assert %{entries: entries, omitted: 50} = Truncate.snapshot(assigns)
+      assert length(entries) == 100
+    end
+  end
+
   describe "preview/3" do
     test "cost and size are bounded however deep the value" do
       deep = Enum.reduce(1..5, :leaf, fn _level, acc -> List.duplicate(acc, 20) end)

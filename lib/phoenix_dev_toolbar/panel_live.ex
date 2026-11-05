@@ -18,10 +18,14 @@ defmodule PhoenixDevToolbar.PanelLive do
   alias PhoenixDevToolbar.Page
   alias PhoenixDevToolbar.Panels
   alias PhoenixDevToolbar.Profile
+  alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
   alias PhoenixDevToolbar.Summary
+  alias PhoenixDevToolbar.Truncate
 
   @flush_ms 100
+  # At most one assigns snapshot per second while the Assigns sub-tab is shown.
+  @snapshot_ms 1000
   @tabs ~w(ecto request live_view)
   @tab_labels [{"ecto", "Ecto"}, {"request", "Request"}, {"live_view", "LiveView"}]
   # Rows kept in the DOM per list; the Store keeps 500 events per session.
@@ -41,6 +45,8 @@ defmodule PhoenixDevToolbar.PanelLive do
     socket =
       socket
       |> assign(root: root, tab: "ecto", lv_tab: "profiler", flush: nil, subscribed: [])
+      |> assign(snapshot: nil, snapshot_pending?: false, snapshot_at: nil, snapshot_timer: nil)
+      |> assign(last_changed: [])
       |> stream_configure(:queries, dom_id: &"pdt-query-#{&1.seq}")
       |> stream_configure(:requests, dom_id: &"pdt-request-#{&1.seq}")
       |> stream_configure(:lv_events, dom_id: &"pdt-lv-#{&1.seq}")
@@ -53,16 +59,18 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   @impl true
   def handle_event("tab", %{"tab" => tab}, socket) when tab in @tabs,
-    do: {:noreply, assign(socket, :tab, tab)}
+    do: {:noreply, socket |> assign(:tab, tab) |> snapshot_if_shown()}
 
   def handle_event("tab", _params, socket), do: {:noreply, socket}
 
   def handle_event("lv_tab", %{"tab" => tab}, socket) do
     case tab in Panels.LiveView.sub_tabs() do
-      true -> {:noreply, assign(socket, :lv_tab, tab)}
+      true -> {:noreply, socket |> assign(:lv_tab, tab) |> snapshot_if_shown()}
       false -> {:noreply, socket}
     end
   end
+
+  def handle_event("lv_snapshot", _params, socket), do: {:noreply, start_snapshot(socket)}
 
   @impl true
   def handle_info({:pdt_event, _sid}, %{assigns: %{flush: nil}} = socket),
@@ -81,7 +89,17 @@ defmodule PhoenixDevToolbar.PanelLive do
     end
   end
 
+  def handle_info(:pdt_snapshot, socket),
+    do: {:noreply, socket |> assign(:snapshot_timer, nil) |> snapshot_if_shown()}
+
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_async(:snapshot, {:ok, snapshot}, socket),
+    do: {:noreply, assign(socket, snapshot: snapshot, snapshot_pending?: false)}
+
+  def handle_async(:snapshot, {:exit, _reason}, socket),
+    do: {:noreply, assign(socket, snapshot: {:missing, :gone}, snapshot_pending?: false)}
 
   ## Loading
 
@@ -109,6 +127,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     |> fold(events)
     |> remember(events)
     |> insert_all(events)
+    |> snapshot_if_shown()
   end
 
   # Live navigation: a new page in the same tab replaces everything.
@@ -117,9 +136,11 @@ defmodule PhoenixDevToolbar.PanelLive do
     |> unsubscribe(socket.assigns.page.sids -- [socket.assigns.root])
     |> subscribe(sids)
     |> show(page, read_all(sids))
+    |> snapshot_if_shown()
   end
 
-  defp apply_change(socket, :rejoined, %Page{} = page), do: assign(socket, :page, page)
+  defp apply_change(socket, :rejoined, %Page{} = page),
+    do: socket |> assign(:page, page) |> snapshot_if_shown()
 
   defp show(socket, %Page{sids: sids} = page, events) do
     socket
@@ -128,6 +149,8 @@ defmodule PhoenixDevToolbar.PanelLive do
       missing?: sids == [],
       summary: Summary.new(events),
       profile: Profile.new(events),
+      last_changed: Enum.reduce(events, [], &last_changed/2),
+      snapshot: nil,
       dropped: dropped(sids)
     )
     |> assign(seqs: %{}, seen: MapSet.new())
@@ -152,14 +175,85 @@ defmodule PhoenixDevToolbar.PanelLive do
     |> remember(events)
     |> forget_below(lows)
     |> insert_all(events)
+    |> snapshot_after(events)
   end
 
   # Summary and profile are folded incrementally, never rebuilt from the Store.
   defp fold(socket, events) do
     assign(socket,
       summary: Enum.reduce(events, socket.assigns.summary, &Summary.add(&2, &1)),
-      profile: Enum.reduce(events, socket.assigns.profile, &Profile.add(&2, &1))
+      profile: Enum.reduce(events, socket.assigns.profile, &Profile.add(&2, &1)),
+      last_changed: Enum.reduce(events, socket.assigns.last_changed, &last_changed/2)
     )
+  end
+
+  defp last_changed(%Event{kind: :callback, data: %{changes: %{keys: keys}}}, _acc), do: keys
+  defp last_changed(_event, acc), do: acc
+
+  ## Assigns snapshot
+  #
+  # Phoenix.LiveView.Debug.socket/1 is a GenServer.call to the host LiveView
+  # that copies its whole socket: it runs in a task (start_async), which also
+  # truncates, so only the bounded snapshot reaches this process (ADR 07).
+
+  defp snapshot_if_shown(%{assigns: %{tab: "live_view", lv_tab: "assigns"}} = socket),
+    do: start_snapshot(socket)
+
+  defp snapshot_if_shown(socket), do: socket
+
+  # New callbacks refresh a shown snapshot, at most once per @snapshot_ms; a
+  # throttled refresh is scheduled, so the last callback is never missed.
+  defp snapshot_after(%{assigns: %{tab: "live_view", lv_tab: "assigns"}} = socket, events) do
+    case Enum.any?(events, &match?(%Event{plugin: :live_view, kind: :callback}, &1)) do
+      true -> throttled_snapshot(socket, wait_ms(socket.assigns.snapshot_at))
+      false -> socket
+    end
+  end
+
+  defp snapshot_after(socket, _events), do: socket
+
+  defp wait_ms(nil), do: 0
+  defp wait_ms(at), do: max(at + @snapshot_ms - System.monotonic_time(:millisecond), 0)
+
+  defp throttled_snapshot(socket, 0), do: start_snapshot(socket)
+
+  defp throttled_snapshot(%{assigns: %{snapshot_timer: ref}} = socket, _wait) when ref != nil,
+    do: socket
+
+  defp throttled_snapshot(socket, wait),
+    do: assign(socket, :snapshot_timer, Process.send_after(self(), :pdt_snapshot, wait))
+
+  defp start_snapshot(%{assigns: %{snapshot_pending?: true}} = socket), do: socket
+
+  defp start_snapshot(socket) do
+    case live_view_owner(socket.assigns.page) do
+      nil ->
+        assign(socket, :snapshot, {:missing, :no_live_view})
+
+      owner ->
+        socket
+        |> assign(snapshot_pending?: true, snapshot_at: System.monotonic_time(:millisecond))
+        |> start_async(:snapshot, fn -> take_snapshot(owner) end)
+    end
+  end
+
+  defp take_snapshot(owner) do
+    case Phoenix.LiveView.Debug.socket(owner) do
+      {:ok, %{assigns: assigns}} -> Truncate.snapshot(assigns)
+      {:error, _reason} -> {:missing, :gone}
+    end
+  end
+
+  # The page's newest LiveView (read now: a rejoin changes the owner).
+  defp live_view_owner(%Page{sids: sids}) do
+    sids
+    |> Enum.reverse()
+    |> Enum.find_value(fn sid ->
+      case safe(fn -> Store.session(sid) end, :error) do
+        {:ok, %Session{kind: :live_view, owner: owner}} when is_pid(owner) -> owner
+        _other -> nil
+      end
+    end)
   end
 
   # Events over the flood guard budget are counted, not stored: show the gap.
@@ -344,6 +438,9 @@ defmodule PhoenixDevToolbar.PanelLive do
         <Panels.LiveView.section
           tab={@lv_tab}
           profile={@profile}
+          snapshot={@snapshot}
+          snapshot_pending?={@snapshot_pending?}
+          last_changed={@last_changed}
           events={@streams.lv_events}
           root={@page.root}
         />
