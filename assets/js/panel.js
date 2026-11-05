@@ -1,9 +1,13 @@
 // phoenix_dev_toolbar panel (ADR 04): runs inside the iframe only.
 // Connects PhoenixDevToolbar.PanelLive through the host's LiveView socket and
 // talks to the loader in the parent page with origin-checked postMessage.
+//
+// Phoenix and LiveView are not bundled: the layout loads the host's own
+// installed clients first (window.Phoenix, window.LiveView), so the client
+// always matches the host's server version.
 
-import {Socket} from "phoenix"
-import {LiveSocket} from "phoenix_live_view"
+const {Socket} = window.Phoenix
+const {LiveSocket} = window.LiveView
 
 const script =
   document.currentScript || document.querySelector("script[data-socket-path]")

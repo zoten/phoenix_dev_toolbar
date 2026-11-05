@@ -38,10 +38,15 @@ defmodule PhoenixDevToolbar.Plug do
   alias PhoenixDevToolbar.Store
 
   @default_path "/__pdt"
+  # Served name => {application, file under its priv/static, content type}. The
+  # Phoenix and LiveView clients are the host's own installed builds, so the
+  # panel's JS always matches the host's server versions (ADR 04).
   @assets %{
-    "loader.js" => "text/javascript",
-    "panel.js" => "text/javascript",
-    "panel.css" => "text/css"
+    "loader.js" => {:phoenix_dev_toolbar, "loader.js", "text/javascript"},
+    "panel.js" => {:phoenix_dev_toolbar, "panel.js", "text/javascript"},
+    "panel.css" => {:phoenix_dev_toolbar, "panel.css", "text/css"},
+    "phoenix.js" => {:phoenix, "phoenix.min.js", "text/javascript"},
+    "live_view.js" => {:phoenix_live_view, "phoenix_live_view.min.js", "text/javascript"}
   }
   # Other HTML documents that must never get a toolbar of their own.
   @skip_prefixes [["phoenix", "live_reload"]]
@@ -269,8 +274,8 @@ defmodule PhoenixDevToolbar.Plug do
   defp serve_asset(conn, file) do
     conn = untracked(conn)
 
-    with %{^file => content_type} <- @assets,
-         path = Application.app_dir(:phoenix_dev_toolbar, ["priv", "static", file]),
+    with %{^file => {app, source, content_type}} <- @assets,
+         path = Application.app_dir(app, ["priv", "static", source]),
          true <- File.regular?(path) do
       conn
       |> Conn.put_resp_content_type(content_type)

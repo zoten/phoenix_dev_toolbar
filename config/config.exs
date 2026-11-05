@@ -4,18 +4,14 @@ import Config
 
 if config_env() == :dev do
   # `mix assets.build` writes the committed bundles in priv/static (ADR 04).
-  # NODE_PATH lets panel.js import the phoenix and phoenix_live_view JS from deps.
   assets = Path.expand("../assets", __DIR__)
   common = ~w(--bundle --minify --target=es2020 --format=iife)
 
   config :esbuild,
     version: "0.25.10",
     loader: [args: ["js/loader.js", "--outfile=../priv/static/loader.js" | common], cd: assets],
-    panel: [
-      args: ["js/panel.js", "--outfile=../priv/static/panel.js" | common],
-      cd: assets,
-      env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
-    ],
+    # Phoenix and LiveView are not bundled: the panel loads the host's own clients.
+    panel: [args: ["js/panel.js", "--outfile=../priv/static/panel.js" | common], cd: assets],
     panel_css: [
       args: ~w(css/panel.css --bundle --minify --outfile=../priv/static/panel.css),
       cd: assets

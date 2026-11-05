@@ -29,14 +29,16 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   also records a `:response` event (status, content type, `injected?`, total duration),
   then drops the connection process from the `$callers` index while keeping its mark
   for the `router_dispatch :stop` event. Any failure leaves the response untouched.
-- **Assets**: the plug serves a whitelist (`loader.js`, `panel.js`, `panel.css`) under
-  `<path>/assets/` from `priv/static` and halts; anything else, or a missing file, is a
-  404. The host's asset pipeline is never involved. Sources live in `assets/`;
-  `mix assets.build` (esbuild, a dev only dependency, `--bundle --minify --target=es2020
-  --format=iife`) writes the bundles, which are committed and shipped in the package.
-  CI rebuilds them and fails when `priv/static` differs. `panel.js` bundles the
-  `phoenix` and `phoenix_live_view` JS from `deps/` (NODE_PATH); `panel.css` is hand
-  written, no CSS framework.
+- **Assets**: the plug serves a whitelist under `<path>/assets/` and halts; anything
+  else, or a missing file, is a 404. Ours (`loader.js`, `panel.js`, `panel.css`) come from
+  our `priv/static`; `phoenix.js` and `live_view.js` are the host's own installed
+  `phoenix.min.js` and `phoenix_live_view.min.js` (UMD builds shipped by both packages
+  since LiveView 1.1), so the panel's JS client always matches the host's server
+  versions: the LiveView client warns on any version mismatch with the server. The
+  host's asset pipeline is never involved. Sources live in `assets/`; `mix assets.build`
+  (esbuild, a dev only dependency, `--bundle --minify --target=es2020 --format=iife`)
+  writes our bundles, which are committed and shipped in the package. CI rebuilds them
+  and fails when `priv/static` differs. `panel.css` is hand written, no CSS framework.
 - **Robustness**: `:path` must be absolute and below the root (raises in `init/1`); while
   the Store restarts every request is served untracked.
 - **Loader** (plain JS, under 2 KB minified): runs only in the top window and once per
@@ -54,13 +56,11 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   `window.liveSocket.getSocket().ping/1` when it exists, both read only. Page
   correlation, including live navigation, happens server side (ADR 02), so the
   toolbar keeps working when the loader cannot reach `window.liveSocket`.
-- **Panel JS**: `panel.js` connects the panel through the host's LiveView socket (path
-  from the layout's `data-socket-path`, CSRF token from the host page, see Panel route)
-  and runs the `postMessage` side of the bridge. It bundles the `phoenix` and
-  `phoenix_live_view` JS clients of the versions locked here (LiveView 1.2), whatever
-  LiveView the host runs on the server. LiveView 1.1 and 1.2 speak the same socket
-  protocol (`vsn=2.0.0`), so this pairing is supported; a host on a LiveView with a
-  different protocol version is not, until we rebuild and pin per range.
+- **Panel JS**: the root layout loads, deferred and in order, `phoenix.js`, `live_view.js`
+  and `panel.js` (about 1 KB: no client bundled). `panel.js` takes `window.Phoenix` and
+  `window.LiveView`, connects the panel through the host's LiveView socket (path from the
+  layout's `data-socket-path`, CSRF token from the host page, see Panel route) and runs
+  the `postMessage` side of the bridge.
 - **Panel route**: there is no router integration (ADR 01). The plug answers
   `GET <path>/panel?sid=...` itself with `Phoenix.LiveView.Controller.live_render/3`
   (other methods get a 405), passing the sid in the signed LiveView session, with the
@@ -111,8 +111,8 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 
 ## Open limits
 
-- The bundled JS client is only exercised against the locked server LiveView (by hand in
-  `mix dev`); CI's LiveView 1.1 row covers the server side through `LiveViewTest`, which
-  does not run the JS client.
+- The panel's JS runs only in a real browser (checked by hand in `mix dev`); CI's
+  LiveView 1.1 row covers the server side through `LiveViewTest` and checks that the
+  host client files exist, but does not execute them.
 - Strict CSP without a nonce (or `frame-src` restrictions) blocks the toolbar silently.
 - Pages that are not HTML responses from Plug (static files) get no toolbar.

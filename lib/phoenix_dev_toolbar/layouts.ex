@@ -21,6 +21,12 @@ defmodule PhoenixDevToolbar.Layouts do
         <meta name="csrf-token" content={Phoenix.Controller.get_csrf_token()} />
         <title>Dev Toolbar</title>
         <link rel="stylesheet" href={@base <> "/assets/panel.css"} />
+        <%!-- The host's own Phoenix and LiveView clients, then our glue: deferred
+             scripts run in document order. --%>
+        <script defer src={@base <> "/assets/phoenix.js"}>
+        </script>
+        <script defer src={@base <> "/assets/live_view.js"}>
+        </script>
         <script defer src={@base <> "/assets/panel.js"} data-socket-path={@socket_path}>
         </script>
       </head>

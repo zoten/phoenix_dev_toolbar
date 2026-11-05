@@ -16,6 +16,22 @@ defmodule PhoenixDevToolbar.LayoutsTest do
     |> LazyHTML.from_document()
   end
 
+  # Deferred scripts run in document order: panel.js needs window.Phoenix and
+  # window.LiveView, from the host's own installed clients.
+  test "loads the host's Phoenix and LiveView clients before the panel script" do
+    sources =
+      "/__pdt/panel"
+      |> render_root()
+      |> LazyHTML.query("script[defer]")
+      |> LazyHTML.attribute("src")
+
+    assert sources == [
+             "/__pdt/assets/phoenix.js",
+             "/__pdt/assets/live_view.js",
+             "/__pdt/assets/panel.js"
+           ]
+  end
+
   # `//__pdt/panel` reaches the panel too; a base derived from the request path
   # would be `//__pdt`, a protocol relative URL to another host.
   test "builds asset URLs from the configured path, never from the request path" do

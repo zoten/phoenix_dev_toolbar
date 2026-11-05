@@ -235,7 +235,10 @@ defmodule PhoenixDevToolbar.PlugTest do
       for {file, type, marker} <- [
             {"loader.js", "text/javascript", "data-pdt-sid"},
             {"panel.js", "text/javascript", "LiveSocket"},
-            {"panel.css", "text/css", ".pdt-header"}
+            {"panel.css", "text/css", ".pdt-header"},
+            # The host's own installed clients, not copies bundled by the toolbar.
+            {"phoenix.js", "text/javascript", "var Phoenix"},
+            {"live_view.js", "text/javascript", "var LiveView"}
           ] do
         conn = :get |> conn("/__pdt/assets/#{file}") |> ToolbarPlug.call(@opts)
 

@@ -24,4 +24,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bounded exception banners and plug options; panel asset URLs from the plug path (ADR 03, ADR 04)
 - Toolbar disables itself, with a warning, in releases unless explicitly enabled (ADR 01)
 - Panel UX: hide to a corner pill, HTTP/live query tags, timings, dropped badge, ARIA tabs (ADR 04)
-- CI tests the minimum stack with LiveView 1.1; JS client version pairing documented (ADR 04, ADR 06)
+- CI tests the minimum stack with LiveView 1.1 (ADR 06)
+- Panel loads the host's own Phoenix and LiveView JS clients: no version skew, 1 KB panel.js (ADR 04)
