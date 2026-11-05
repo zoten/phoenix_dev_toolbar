@@ -24,13 +24,20 @@ const ownValue = (object, field) => {
   return descriptor && "value" in descriptor ? descriptor.value : undefined
 }
 
+// A Proxy detail runs its getOwnPropertyDescriptor trap (host code), which may
+// throw: keep what was read so far, never let it escape into the host's
+// error handlers.
 export const sanitize = (type, detail, at) => {
   const event = {type, at}
   if (!detail || typeof detail !== "object") return event
 
-  for (const field of FIELDS) {
-    const value = scalar(ownValue(detail, field))
-    if (value !== undefined) event[field] = value
+  try {
+    for (const field of FIELDS) {
+      const value = scalar(ownValue(detail, field))
+      if (value !== undefined) event[field] = value
+    }
+  } catch (_error) {
+    // Unreadable detail: the event is still logged, without fields.
   }
   return event
 }

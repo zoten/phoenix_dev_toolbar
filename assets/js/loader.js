@@ -125,9 +125,14 @@ const mount = () => {
     window.addEventListener(
       name,
       (event) => {
-        const now = Date.now()
-        if (limiter.allow(now)) queue.push(sanitize(name, event.detail, now))
-        else reportDrops()
+        // Runs inside the host's event dispatch: never throw from here.
+        try {
+          const now = Date.now()
+          if (limiter.allow(now)) queue.push(sanitize(name, event.detail, now))
+          else reportDrops()
+        } catch (_error) {
+          // Dropped silently: the toolbar must not show up in host error tracking.
+        }
       },
       {passive: true},
     ),

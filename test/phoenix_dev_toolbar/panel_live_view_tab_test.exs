@@ -388,5 +388,20 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       assert has_element?(panel, "#pdt-tree-0", "DemoWeb.ComponentsLive")
       assert has_element?(panel, "#pdt-tree-0 li", "DemoWeb.CounterComponent")
     end
+
+    test "live navigation keeps the client events that announced it" do
+      {host, sid} = visit("/demo")
+      panel = open(sid) |> open_tab("events")
+
+      render_hook(panel, "pdt:client", %{
+        "event" => %{"type" => "phx:page-loading-start", "at" => 1, "kind" => "redirect"},
+        "dropped" => 0
+      })
+
+      {:ok, _next, _html} = live_redirect(host, to: "/demo/other")
+      _ = render(panel)
+
+      assert has_element?(panel, "#pdt-lv-client-1", "phx:page-loading-start")
+    end
   end
 end

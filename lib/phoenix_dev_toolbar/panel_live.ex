@@ -34,6 +34,12 @@ defmodule PhoenixDevToolbar.PanelLive do
   @client_types ~w(phx:page-loading-start phx:page-loading-stop phx:navigate)
   @client_fields ~w(kind to href patch pop)
   @client_string 260
+  # Client events that announce a live navigation arrive just before it resets
+  # the log: those received in the last @client_keep_ms are shown again.
+  @client_keep_ms 2000
+  @client_keep 10
+  # Client timestamps (Date.now(), ms) outside this range are replaced by ours.
+  @client_max_ms 10_000_000_000_000
   @tabs ~w(ecto request live_view)
   @tab_labels [{"ecto", "Ecto"}, {"request", "Request"}, {"live_view", "LiveView"}]
   # Rows kept in the DOM per list; the Store keeps 500 events per session.
@@ -59,7 +65,7 @@ defmodule PhoenixDevToolbar.PanelLive do
       |> stream_configure(:queries, dom_id: &"pdt-query-#{&1.seq}")
       |> stream_configure(:requests, dom_id: &"pdt-request-#{&1.seq}")
       |> stream_configure(:lv_events, dom_id: &lv_dom_id/1)
-      |> assign(client_count: 0, client_dropped: 0)
+      |> assign(client_count: 0, client_dropped: 0, recent_client: [])
       # Subscribe before reading: a LiveView announced between the read and the
       # subscription would otherwise never reach the panel.
       |> subscribe(List.wrap(root))
@@ -94,9 +100,12 @@ defmodule PhoenixDevToolbar.PanelLive do
       data: client_data(event, n)
     }
 
+    recent = Enum.take([{now_ms(), client} | socket.assigns.recent_client], @client_keep)
+
     {:noreply,
      socket
-     |> assign(client_count: n, client_dropped: client_dropped(params["dropped"], socket))
+     |> assign(client_count: n, recent_client: recent)
+     |> assign(:client_dropped, client_dropped(params["dropped"], socket))
      |> stream_insert(:lv_events, client, limit: -@dom_limit)}
   end
 
@@ -147,6 +156,8 @@ defmodule PhoenixDevToolbar.PanelLive do
   def handle_async(:snapshot, {:ok, snapshot}, socket),
     do: {:noreply, assign(socket, snapshot: snapshot, snapshot_pending?: false)}
 
+  def handle_async(_key, {:exit, {:shutdown, :page_changed}}, socket), do: {:noreply, socket}
+
   def handle_async(:snapshot, {:exit, _reason}, socket),
     do: {:noreply, assign(socket, snapshot: {:missing, :gone}, snapshot_pending?: false)}
 
@@ -193,6 +204,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     |> unsubscribe(socket.assigns.page.sids -- [socket.assigns.root])
     |> subscribe(sids)
     |> show(page, read_all(sids))
+    |> reinsert_recent_client()
     |> drop_reads()
     |> snapshot_if_shown()
     |> tree_if_shown()
@@ -202,8 +214,9 @@ defmodule PhoenixDevToolbar.PanelLive do
     do: socket |> assign(:page, page) |> drop_reads() |> snapshot_if_shown() |> tree_if_shown()
 
   # A snapshot or tree read started for the previous LiveView must not land on
-  # the new one: stop it (unlinked first, so no exit message arrives) and let
-  # the caller start a fresh read.
+  # the new one: stop it and let the caller start a fresh read. LiveView still
+  # delivers the cancelled task's exit ({:shutdown, :page_changed}) unless a new
+  # read with the same key replaced it: handle_async ignores it.
   defp drop_reads(socket) do
     socket
     |> cancel_async(:snapshot, {:shutdown, :page_changed})
@@ -266,8 +279,23 @@ defmodule PhoenixDevToolbar.PanelLive do
   defp client_value(_value), do: nil
 
   # The loader stamps Date.now() (ms); events are stamped in microseconds.
-  defp client_at(ms) when is_integer(ms), do: ms * 1000
+  defp client_at(ms) when is_integer(ms) and ms > 0 and ms < @client_max_ms, do: ms * 1000
   defp client_at(_ms), do: System.system_time(:microsecond)
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
+
+  # After a reset of the log: the client events of the last @client_keep_ms
+  # (the navigation's own page-loading-start and navigate), oldest first.
+  defp reinsert_recent_client(socket) do
+    since = now_ms() - @client_keep_ms
+
+    socket.assigns.recent_client
+    |> Enum.filter(fn {at, _event} -> at >= since end)
+    |> Enum.reverse()
+    |> Enum.reduce(socket, fn {_at, event}, acc ->
+      stream_insert(acc, :lv_events, event, limit: -@dom_limit)
+    end)
+  end
 
   defp client_dropped(dropped, socket) when is_integer(dropped) and dropped >= 0,
     do: max(dropped, socket.assigns.client_dropped)

@@ -49,6 +49,15 @@ test("sanitize never runs host getters", () => {
   assert.equal(called, false)
 })
 
+test("sanitize survives a throwing or revoked Proxy", () => {
+  const throwing = new Proxy({}, {getOwnPropertyDescriptor: () => { throw new Error("host trap") }})
+  const {proxy, revoke} = Proxy.revocable({to: "/x"}, {})
+  revoke()
+
+  assert.deepEqual(sanitize("phx:navigate", throwing, 1), {type: "phx:navigate", at: 1})
+  assert.deepEqual(sanitize("phx:navigate", proxy, 1), {type: "phx:navigate", at: 1})
+})
+
 test("the limiter allows N per second and counts the rest", () => {
   const limiter = createLimiter(2)
 

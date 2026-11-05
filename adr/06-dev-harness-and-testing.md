@@ -37,8 +37,8 @@ correctness and boundedness need tests, not just eyeballing.
     panel and for real LiveView telemetry end to end (host LiveViews with a component,
     driven through `DemoWeb.Endpoint`).
   - JS: the loader's pure helpers (`assets/js/client_events.mjs`) have unit tests run by
-    `node --test` (`mix test.js`, Node built-ins only, part of `mix precommit`; CI runs it
-    in the latest row). The wiring (listeners, `postMessage`, hooks) is checked by hand.
+    `node --test` (`mix test.js`, Node built-ins only, part of `mix precommit`, so
+    contributors need Node 22+; CI runs it in the latest row). The wiring (listeners, `postMessage`, hooks) is checked by hand.
   - Overhead benchmark (manual, `bench/`): handler cost for untracked processes stays
     within a few hundred nanoseconds.
 - **Prod guarantee**: `fixtures/host_app` installs the package exactly as the README says

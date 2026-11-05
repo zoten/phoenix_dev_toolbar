@@ -61,13 +61,16 @@ navigation.
   `phx:page-loading-start`, `phx:page-loading-stop` and `phx:navigate` (a fixed
   list: there is no wildcard listener, so `push_event` names are logged server side
   instead, ADR 02). It copies only own data properties `kind`, `to`, `href`,
-  `patch`, `pop` holding scalars (strings capped at 256 characters; host getters
-  never run), stamps `Date.now()`, allows 20 per second, buffers 50 until the panel
+  `patch`, `pop` holding scalars (strings capped at 256 characters; accessor getters
+  never run, and a throwing Proxy trap is caught: the listener never throws into the
+  host's dispatch or error tracking), stamps `Date.now()`, allows 20 per second, buffers 50 until the panel
   loads, and posts `pdt:client` through the origin and source checked bridge, with
   the number of dropped events (also reported alone a second after a burst).
   `panel.js` forwards to the hook (50 buffered until join); `PanelLive` accepts only
   those types and fields, caps strings again and streams them. Nothing is stored in
-  ETS. The pure helpers (`assets/js/client_events.mjs`) have Node unit tests
+  ETS. The client events that announce a live navigation arrive just before it
+  resets the log: the last 10 received in the previous 2 s are shown again after the
+  reset. The pure helpers (`assets/js/client_events.mjs`) have Node unit tests
   (`mix test.js`).
 
 ## Consequences
@@ -92,3 +95,7 @@ navigation.
   nesting is flattened.
 - The snapshot is the page's main LiveView only, not nested LiveViews or
   components.
+- Client events pushed while the panel socket is disconnected, or posted while the
+  iframe reloads, are lost without being counted as dropped.
+- Client timestamps come from the browser clock; they are kept but not used for
+  ordering (rows are in arrival order).
