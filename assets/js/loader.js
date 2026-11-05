@@ -1,28 +1,34 @@
 // phoenix_dev_toolbar loader (ADR 04).
 //
 // Injected by PhoenixDevToolbar.Plug before </body>. It only adds one element
-// to the host page: a shadow-DOM host holding the panel iframe, so host CSS
-// cannot reach the toolbar and the toolbar's CSS cannot reach the host. It is
-// read-only towards the host page and never touches window.liveSocket's state.
+// to the host page: a shadow-DOM host holding the panel iframe (and, when the
+// toolbar is hidden, a corner pill), so host CSS cannot reach the toolbar and
+// the toolbar's CSS cannot reach the host. It is read-only towards the host
+// page and never touches window.liveSocket's state.
 
-const STORAGE_KEY = "pdt:open"
+const STORAGE_KEY = "pdt:state"
+const LEGACY_KEY = "pdt:open"
+const STATES = ["open", "collapsed", "hidden"]
 const COLLAPSED_PX = 34
 const MESSAGE_PREFIX = "pdt:"
 
 const script =
   document.currentScript || document.querySelector("script[data-pdt-sid]")
 
-const readOpen = () => {
+const readState = () => {
   try {
-    return window.localStorage.getItem(STORAGE_KEY) === "1"
+    const stored = window.localStorage.getItem(STORAGE_KEY)
+    if (STATES.includes(stored)) return stored
+    return window.localStorage.getItem(LEGACY_KEY) === "1" ? "open" : "collapsed"
   } catch (_error) {
-    return false
+    return "collapsed"
   }
 }
 
-const writeOpen = (open) => {
+const writeState = (state) => {
   try {
-    window.localStorage.setItem(STORAGE_KEY, open ? "1" : "0")
+    window.localStorage.setItem(STORAGE_KEY, state)
+    window.localStorage.removeItem(LEGACY_KEY)
   } catch (_error) {
     // Storage may be disabled: the state just will not persist.
   }
@@ -38,7 +44,20 @@ const STYLE = `
     transition: height 120ms ease-out;
   }
   .frame.open { height: min(45vh, 520px); }
-  @media (prefers-reduced-motion: reduce) { .frame { transition: none; } }
+  .frame.hidden { display: none; }
+  .pill {
+    position: fixed; right: 12px; bottom: 12px; z-index: 2147483000;
+    display: none; align-items: center; gap: 6px;
+    height: 28px; padding: 0 12px; border: 0; border-radius: 14px;
+    background: #1f2330; color: #fd4f00; cursor: pointer;
+    font: 600 12px/28px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, .3);
+    transition: transform 120ms ease;
+  }
+  .pill:hover { transform: translateY(-1px); }
+  .pill:focus-visible { outline: 2px solid #fd4f00; outline-offset: 2px; }
+  .pill.visible { display: inline-flex; }
+  @media (prefers-reduced-motion: reduce) { .frame, .pill { transition: none; } }
 `
 
 const mount = () => {
@@ -58,34 +77,44 @@ const mount = () => {
   frame.title = "Phoenix dev toolbar"
   frame.src = `${path}/panel?sid=${encodeURIComponent(sid)}`
 
-  root.append(style, frame)
+  const pill = document.createElement("button")
+  pill.className = "pill"
+  pill.type = "button"
+  pill.textContent = "dev toolbar"
+  pill.title = "Show the dev toolbar"
+
+  root.append(style, frame, pill)
   document.body.appendChild(host)
 
-  let open = readOpen()
+  let state = readState()
   const post = (type, payload = {}) =>
     frame.contentWindow &&
     frame.contentWindow.postMessage({type: MESSAGE_PREFIX + type, ...payload}, window.location.origin)
 
-  const setOpen = (value) => {
-    open = value
-    frame.classList.toggle("open", open)
-    writeOpen(open)
-    post("state", {open})
+  const setState = (next) => {
+    state = next
+    frame.classList.toggle("open", state === "open")
+    frame.classList.toggle("hidden", state === "hidden")
+    pill.classList.toggle("visible", state === "hidden")
+    writeState(state)
+    post("state", {open: state === "open"})
   }
 
-  frame.addEventListener("load", () => post("state", {open}))
+  pill.addEventListener("click", () => setState("collapsed"))
+  frame.addEventListener("load", () => post("state", {open: state === "open"}))
 
   // Only our own iframe, on our own origin, may drive the container.
   window.addEventListener("message", (event) => {
     if (event.origin !== window.location.origin || event.source !== frame.contentWindow) return
     const type = event.data && event.data.type
 
-    if (type === "pdt:toggle") setOpen(!open)
-    if (type === "pdt:open") setOpen(true)
-    if (type === "pdt:close") setOpen(false)
+    if (type === "pdt:toggle") setState(state === "open" ? "collapsed" : "open")
+    if (type === "pdt:open") setState("open")
+    if (type === "pdt:close") setState("collapsed")
+    if (type === "pdt:hide") setState("hidden")
   })
 
-  setOpen(open)
+  setState(state)
 }
 
 // Never inside iframes (including our own panel) and never twice per page.

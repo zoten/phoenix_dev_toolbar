@@ -95,6 +95,59 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     assert has_element?(view, "#pdt-badge-queries", "2 queries")
     assert has_element?(view, "#pdt-query-#{dead.seq}", "SELECT 1")
     assert has_element?(view, "#pdt-query-#{connected.seq}", "SELECT 2")
+    # Which phase ran each query: the HTTP dead render or the connected LiveView.
+    assert has_element?(view, "#pdt-query-#{dead.seq} .pdt-tag--http")
+    assert has_element?(view, "#pdt-query-#{connected.seq} .pdt-tag--live")
+  end
+
+  test "says how many events the flood guard dropped", %{conn: conn, request: request} do
+    Store.put_limits(events_per_second: 1)
+    event = Event.new(:test, :ping, %{}, at: 0)
+    for _ <- 1..3, do: Store.insert(request, event, 1_000)
+
+    view = open(conn, request)
+
+    assert has_element?(view, "#pdt-badge-dropped", "+2 dropped")
+  end
+
+  test "hints at stacktrace: true when a query has no origin", %{conn: conn, request: request} do
+    :ok =
+      Store.insert(
+        request,
+        Event.new(
+          :ecto,
+          :query,
+          %{
+            repo: DemoWeb.FakeRepo,
+            sql: "SELECT 1",
+            params: "[]",
+            source: nil,
+            result: {:ok, 1},
+            times: %{query_time: 900, queue_time: 100},
+            stacktrace: [],
+            caller?: false
+          },
+          at: 0
+        )
+      )
+
+    [event] = Store.events(request)
+    view = open(conn, request)
+
+    assert has_element?(view, "#pdt-query-#{event.seq} .pdt-hint", "stacktrace: true")
+    assert has_element?(view, "#pdt-query-#{event.seq} .pdt-timings", "queue")
+  end
+
+  test "ties tabs to their panels for assistive technology", %{conn: conn, request: request} do
+    view = open(conn, request)
+
+    assert has_element?(view, ~s(#pdt-tab-ecto[aria-controls="pdt-section-ecto"][tabindex="0"]))
+    assert has_element?(view, ~s(#pdt-tab-request[tabindex="-1"]))
+
+    assert has_element?(
+             view,
+             ~s(#pdt-section-ecto[role="tabpanel"][aria-labelledby="pdt-tab-ecto"])
+           )
   end
 
   test "switches between the Ecto and Request tabs", %{conn: conn, request: request} do

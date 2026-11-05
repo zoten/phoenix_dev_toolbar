@@ -111,7 +111,12 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   defp show(socket, %Page{sids: sids} = page, events) do
     socket
-    |> assign(page: page, missing?: sids == [], summary: Summary.new(events))
+    |> assign(
+      page: page,
+      missing?: sids == [],
+      summary: Summary.new(events),
+      dropped: dropped(sids)
+    )
     |> assign(seqs: %{}, seen: MapSet.new())
     |> remember(events)
     |> stream(:queries, Enum.filter(events, &query?/1), reset: true, limit: -@dom_limit)
@@ -129,9 +134,21 @@ defmodule PhoenixDevToolbar.PanelLive do
 
     socket
     |> assign(:summary, Enum.reduce(events, socket.assigns.summary, &Summary.add(&2, &1)))
+    |> assign(:dropped, dropped(sids))
     |> remember(events)
     |> forget_below(lows)
     |> insert_all(events)
+  end
+
+  # Events over the flood guard budget are counted, not stored: show the gap.
+  defp dropped(sids) do
+    # Enum.reduce, not Enum.sum_by: Elixir 1.17 is supported.
+    Enum.reduce(sids, 0, fn sid, total ->
+      case safe(fn -> Store.session(sid) end, :error) do
+        {:ok, session} -> total + session.dropped
+        :error -> total
+      end
+    end)
   end
 
   defp read_all(sids) do
@@ -221,7 +238,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     <div id="pdt-panel" class="pdt-panel">
       <header class="pdt-header">
         <span class="pdt-logo">dev toolbar</span>
-        <.summary_bar summary={@summary} />
+        <.summary_bar summary={@summary} dropped={@dropped} />
         <nav class="pdt-tabs" role="tablist">
           <button
             :for={{tab, label} <- [{"ecto", "Ecto"}, {"request", "Request"}]}
@@ -229,6 +246,8 @@ defmodule PhoenixDevToolbar.PanelLive do
             type="button"
             role="tab"
             aria-selected={to_string(@tab == tab)}
+            aria-controls={"pdt-section-" <> tab}
+            tabindex={if(@tab == tab, do: "0", else: "-1")}
             class={["pdt-tab", @tab == tab && "pdt-tab--active"]}
             phx-click="tab"
             phx-value-tab={tab}
@@ -236,6 +255,16 @@ defmodule PhoenixDevToolbar.PanelLive do
             {label}
           </button>
         </nav>
+        <button
+          id="pdt-hide"
+          type="button"
+          class="pdt-hide"
+          data-pdt-hide
+          aria-label="Hide the toolbar to a corner badge"
+          title="Hide"
+        >
+          <span aria-hidden="true">&times;</span>
+        </button>
         <button
           id="pdt-toggle"
           type="button"
@@ -251,14 +280,26 @@ defmodule PhoenixDevToolbar.PanelLive do
         No data for this page: it expired or the toolbar restarted. Reload the page.
       </p>
 
-      <section id="pdt-section-ecto" class="pdt-section" hidden={@tab != "ecto"}>
+      <section
+        id="pdt-section-ecto"
+        class="pdt-section"
+        role="tabpanel"
+        aria-labelledby="pdt-tab-ecto"
+        hidden={@tab != "ecto"}
+      >
         <ul id="pdt-queries" class="pdt-list" phx-update="stream">
           <li id="pdt-queries-empty" class="pdt-list__empty">No queries yet.</li>
-          <.query_row :for={{id, event} <- @streams.queries} id={id} event={event} />
+          <.query_row :for={{id, event} <- @streams.queries} id={id} event={event} root={@page.root} />
         </ul>
       </section>
 
-      <section id="pdt-section-request" class="pdt-section" hidden={@tab != "request"}>
+      <section
+        id="pdt-section-request"
+        class="pdt-section"
+        role="tabpanel"
+        aria-labelledby="pdt-tab-request"
+        hidden={@tab != "request"}
+      >
         <ul id="pdt-requests" class="pdt-list" phx-update="stream">
           <li id="pdt-requests-empty" class="pdt-list__empty">No requests yet.</li>
           <.request_row :for={{id, event} <- @streams.requests} id={id} event={event} />

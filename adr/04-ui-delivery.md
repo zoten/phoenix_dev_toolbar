@@ -42,11 +42,14 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 - **Loader** (plain JS, under 2 KB minified): runs only in the top window and once per
   page. It appends a single `div#phoenix-dev-toolbar` (`data-phx-update="ignore"`) to
   `<body>` whose open shadow root holds its style and the panel `<iframe>`
-  (`<path>/panel?sid=...`), so host CSS and toolbar CSS cannot meet. The iframe is fixed
-  at the bottom: 34px collapsed (the panel header), `min(45vh, 520px)` open; the state
-  persists in the host origin's `localStorage` (`pdt:open`). The iframe asks for
-  `pdt:toggle` (toggle button) and `pdt:open` (a tab was picked); the loader answers
-  with `pdt:state`. Both sides check `event.origin` and `event.source`. Later phases add
+  (`<path>/panel?sid=...`) and a corner pill, so host CSS and toolbar CSS cannot meet.
+  Three states, persisted in the host origin's `localStorage` (`pdt:state`; the old
+  `pdt:open` key is migrated): `collapsed` (default: the iframe is a 34px bar, the panel
+  header, fixed at the bottom), `open` (`min(45vh, 520px)`), `hidden` (no iframe, only a
+  small "dev toolbar" pill in the bottom right corner, so the bar never permanently
+  covers the host page; clicking it collapses again). The iframe asks for `pdt:toggle`
+  (toggle button), `pdt:open` (a tab was picked) and `pdt:hide` (hide button); the
+  loader answers with `pdt:state`. Both sides check `event.origin` and `event.source`. Later phases add
   `phx:*` window events (client event log) and host socket RTT through
   `window.liveSocket.getSocket().ping/1` when it exists, both read only. Page
   correlation, including live navigation, happens server side (ADR 02), so the
@@ -82,11 +85,14 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   100 ms, including a window of 64 seqs below the last one seen (seqs are allocated
   before their row is written, so concurrent writers can land out of order), skipping
   seqs already shown. Lists are LiveView streams capped at 500 rows; the summary bar
-  (status and duration, query count and database time, router errors) is folded
-  incrementally (`PhoenixDevToolbar.Summary`). Tabs: Ecto, Request. An invalid or
+  (status and duration, query count and database time, router errors, and "+N dropped"
+  when the flood guard discarded events, so counts are never silently low) is folded
+  incrementally (`PhoenixDevToolbar.Summary`). Tabs: Ecto, Request, as WAI-ARIA tabs
+  (`aria-controls`, `tabpanel`, roving `tabindex`, arrow keys in `panel.js`). Each query
+  row says where it ran (`HTTP` for the dead render, `live` for the connected LiveView)
+  and its details show params, repo, the queue/query/decode/idle timings and the origin
+  stacktrace, or a hint to enable `stacktrace: true` in the repo config. An invalid or
   expired sid, or the Store restarting, shows an explanation, not an error.
-- Collapsed by default to the header bar (status, query count and time, errors);
-  the open state persists in `localStorage` of the host origin.
 
 - **Access**: the sid is the only key to a page's data. It is 96 random bits, never
   listed or enumerable, and reaches the panel only through the injected tag and the

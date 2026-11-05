@@ -116,7 +116,23 @@ body.pdt {
   cursor: pointer;
 }
 
-.pdt-toggle:hover { background: rgba(255, 255, 255, .08); }
+.pdt-toggle:hover, .pdt-hide:hover { background: rgba(255, 255, 255, .08); }
+
+.pdt-hide {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: 16px/1 var(--pdt-sans);
+  opacity: .7;
+  cursor: pointer;
+}
+
+.pdt-hide:hover { opacity: 1; }
 
 .pdt-toggle__icon {
   width: 8px;
@@ -129,7 +145,8 @@ body.pdt {
 
 .pdt-open .pdt-toggle__icon { transform: translateY(-2px) rotate(225deg); }
 
-.pdt-tab:focus-visible, .pdt-toggle:focus-visible, .pdt-details summary:focus-visible {
+.pdt-tab:focus-visible, .pdt-toggle:focus-visible, .pdt-hide:focus-visible,
+.pdt-details summary:focus-visible {
   outline: 2px solid var(--pdt-accent);
   outline-offset: 1px;
 }
@@ -189,7 +206,15 @@ body.pdt {
   font-size: 11px;
 }
 
+/* Where the event ran: the HTTP dead render or the connected LiveView. */
+.pdt-tag--http { color: var(--pdt-muted); }
+.pdt-tag--live { color: var(--pdt-ok); border-color: color-mix(in srgb, var(--pdt-ok) 45%, transparent); }
+
 .pdt-origin { font: 11px var(--pdt-mono); overflow-wrap: anywhere; }
+
+.pdt-timings { display: flex; flex-wrap: wrap; gap: 4px 12px; font: 11px var(--pdt-mono); }
+
+.pdt-hint { color: var(--pdt-muted); }
 
 .pdt-details { margin-top: 3px; }
 

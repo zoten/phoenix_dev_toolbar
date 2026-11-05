@@ -23,3 +23,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Panel keeps following a tab after older sessions expire; no missed or out of order events (ADR 04)
 - Bounded exception banners and plug options; panel asset URLs from the plug path (ADR 03, ADR 04)
 - Toolbar disables itself, with a warning, in releases unless explicitly enabled (ADR 01)
+- Panel UX: hide to a corner pill, HTTP/live query tags, timings, dropped badge, ARIA tabs (ADR 04)

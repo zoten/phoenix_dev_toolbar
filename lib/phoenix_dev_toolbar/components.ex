@@ -9,6 +9,7 @@ defmodule PhoenixDevToolbar.Components do
   alias PhoenixDevToolbar.Summary
 
   attr :summary, Summary, required: true
+  attr :dropped, :integer, default: 0, doc: "events over the flood guard budget, not recorded"
 
   def summary_bar(assigns) do
     ~H"""
@@ -31,12 +32,21 @@ defmodule PhoenixDevToolbar.Components do
       <span :if={@summary.errors > 0} id="pdt-badge-errors" class="pdt-badge pdt-badge--error">
         {@summary.errors} {if(@summary.errors == 1, do: "error", else: "errors")}
       </span>
+      <span
+        :if={@dropped > 0}
+        id="pdt-badge-dropped"
+        class="pdt-badge pdt-badge--warn"
+        title="Events over the per second limit were not recorded: counts are lower than reality"
+      >
+        +{@dropped} dropped
+      </span>
     </div>
     """
   end
 
   attr :id, :string, required: true
   attr :event, Event, required: true
+  attr :root, :string, required: true, doc: "the request sid: its events ran in the dead render"
 
   def query_row(assigns) do
     ~H"""
@@ -46,6 +56,7 @@ defmodule PhoenixDevToolbar.Components do
         <span class="pdt-time" title={times_title(@event.data.times)}>{duration(@event.duration)}</span>
       </div>
       <div class="pdt-row__meta">
+        <.phase_tag event={@event} root={@root} />
         <span :if={@event.data.source} class="pdt-tag">{@event.data.source}</span>
         <span class="pdt-tag">{result(@event.data.result)}</span>
         <span :if={@event.data.caller?} class="pdt-tag" title="Run by a Task.async child of the page">task</span>
@@ -58,13 +69,36 @@ defmodule PhoenixDevToolbar.Components do
           <dd><code>{@event.data.params}</code></dd>
           <dt>repo</dt>
           <dd><code>{inspect(@event.data.repo)}</code></dd>
-          <dt :if={@event.data.stacktrace != []}>stacktrace</dt>
+          <dt>timings</dt>
+          <dd class="pdt-timings">
+            <span :for={{key, us} <- timings(@event.data.times)}>{key} {duration(us)}</span>
+          </dd>
+          <dt>origin</dt>
           <dd :if={@event.data.stacktrace != []}>
             <pre>{Enum.join(@event.data.stacktrace, "\n")}</pre>
+          </dd>
+          <dd :if={@event.data.stacktrace == []} class="pdt-hint">
+            Unknown: set <code>stacktrace: true</code>
+            in your repo config to see where queries come from.
           </dd>
         </dl>
       </details>
     </li>
+    """
+  end
+
+  attr :event, Event, required: true
+  attr :root, :string, required: true
+
+  defp phase_tag(%{event: %Event{sid: sid}, root: sid} = assigns) do
+    ~H"""
+    <span class="pdt-tag pdt-tag--http" title="Ran during the HTTP request (dead render)">HTTP</span>
+    """
+  end
+
+  defp phase_tag(assigns) do
+    ~H"""
+    <span class="pdt-tag pdt-tag--live" title="Ran in the connected LiveView">live</span>
     """
   end
 
@@ -150,6 +184,26 @@ defmodule PhoenixDevToolbar.Components do
   defp origin(_event), do: nil
 
   defp times_title(times) do
-    Enum.map_join(times, ", ", fn {key, us} -> "#{key}: #{duration(us)}" end)
+    Enum.map_join(timings(times), ", ", fn {key, us} -> "#{key}: #{duration(us)}" end)
+  end
+
+  # Ecto's timings in a stable, readable order: where the time went.
+  @timing_labels [
+    queue_time: "queue",
+    query_time: "query",
+    decode_time: "decode",
+    idle_time: "idle"
+  ]
+
+  @doc """
+  Orders and labels the Ecto timings of a query, skipping missing ones.
+
+      iex> PhoenixDevToolbar.Components.timings(%{query_time: 30, queue_time: 5, total_time: 35})
+      [{"queue", 5}, {"query", 30}]
+
+  """
+  @spec timings(map()) :: [{String.t(), non_neg_integer()}]
+  def timings(times) do
+    for {key, label} <- @timing_labels, us = times[key], do: {label, us}
   end
 end
