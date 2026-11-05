@@ -5,6 +5,12 @@
 // toolbar is hidden, a corner pill), so host CSS cannot reach the toolbar and
 // the toolbar's CSS cannot reach the host. It is read-only towards the host
 // page and never touches window.liveSocket's state.
+//
+// Client event log (ADR 07): passive listeners on LiveView's own window events
+// forward a sanitized copy to the panel through the same origin checked
+// postMessage bridge, rate limited and buffered until the panel loads.
+
+import {BUFFER, EVENTS, PER_SECOND, createLimiter, createQueue, sanitize} from "./client_events.mjs"
 
 const STORAGE_KEY = "pdt:state"
 const LEGACY_KEY = "pdt:open"
@@ -100,8 +106,38 @@ const mount = () => {
     post("state", {open: state === "open"})
   }
 
+  const limiter = createLimiter(PER_SECOND)
+  const dropped = () => limiter.dropped() + queue.dropped()
+  const queue = createQueue(BUFFER, (event) => post("client", {event, dropped: dropped()}))
+
+  // Drops are reported with the next event, or on their own a second later
+  // when no event follows (the end of a burst).
+  let dropTimer = null
+  const reportDrops = () => {
+    if (dropTimer) return
+    dropTimer = setTimeout(() => {
+      dropTimer = null
+      post("client", {event: null, dropped: dropped()})
+    }, 1000)
+  }
+
+  EVENTS.forEach((name) =>
+    window.addEventListener(
+      name,
+      (event) => {
+        const now = Date.now()
+        if (limiter.allow(now)) queue.push(sanitize(name, event.detail, now))
+        else reportDrops()
+      },
+      {passive: true},
+    ),
+  )
+
   pill.addEventListener("click", () => setState("collapsed"))
-  frame.addEventListener("load", () => post("state", {open: state === "open"}))
+  frame.addEventListener("load", () => {
+    post("state", {open: state === "open"})
+    queue.ready()
+  })
 
   // Only our own iframe, on our own origin, may drive the container.
   window.addEventListener("message", (event) => {

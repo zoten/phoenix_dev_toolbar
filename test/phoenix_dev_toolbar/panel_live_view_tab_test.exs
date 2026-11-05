@@ -179,6 +179,23 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       assert has_element?(view, "#pdt-snapshot-missing", "No LiveView")
     end
 
+    test "a read in flight is dropped when the LiveView rejoins", %{request: request, live: live} do
+      # The owner never answers Debug.socket/1: the first read stays in flight.
+      view = open(request) |> open_tab("assigns")
+
+      {:ok, session} = Store.session(live)
+      gone = spawn(fn -> :ok end)
+      ref = Process.monitor(gone)
+      assert_receive {:DOWN, ^ref, :process, ^gone, _reason}
+      {:ok, rejoined} = Store.claim(live, gone, session.transport)
+      Notify.session(rejoined)
+      _ = render(view)
+
+      # Without cancelling, this would wait for the stuck read (5 s timeout).
+      _ = render_async(view)
+      assert has_element?(view, "#pdt-snapshot-missing", "not running")
+    end
+
     test "explains when the LiveView is gone", %{request: request, live: live} do
       {:ok, session} = Store.session(live)
       gone = spawn(fn -> :ok end)
@@ -190,6 +207,55 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       _ = render_async(view)
 
       assert has_element?(view, "#pdt-snapshot-missing", "not running")
+    end
+  end
+
+  describe "client events" do
+    test "logs LiveView's window events forwarded by the loader", %{request: request} do
+      view = open(request) |> open_tab("events")
+
+      render_hook(view, "pdt:client", %{
+        "event" => %{
+          "type" => "phx:page-loading-start",
+          "at" => 1_700_000_000_000,
+          "kind" => "patch",
+          "to" => "/posts"
+        },
+        "dropped" => 0
+      })
+
+      assert has_element?(view, "#pdt-lv-client-1", "phx:page-loading-start")
+      assert has_element?(view, "#pdt-lv-client-1 .pdt-tag", "/posts")
+      assert has_element?(view, "#pdt-lv-client-1 .pdt-tag--client")
+    end
+
+    test "ignores unknown events and fields, caps strings, shows drops", %{request: request} do
+      view = open(request) |> open_tab("events")
+
+      render_hook(view, "pdt:client", %{
+        "event" => %{"type" => "phx:custom", "at" => 1},
+        "dropped" => 0
+      })
+
+      render_hook(view, "pdt:client", %{"event" => "nope", "dropped" => "x"})
+      render_hook(view, "pdt:client", %{"event" => nil, "dropped" => 3})
+      assert has_element?(view, "#pdt-client-dropped", "3")
+      refute has_element?(view, "[id^=pdt-lv-client-]")
+
+      render_hook(view, "pdt:client", %{
+        "event" => %{
+          "type" => "phx:navigate",
+          "at" => 2,
+          "href" => String.duplicate("h", 5000),
+          "evil" => "x"
+        },
+        "dropped" => 7
+      })
+
+      assert has_element?(view, "#pdt-lv-client-1", "phx:navigate")
+      refute render(view) =~ "evil"
+      refute render(view) =~ String.duplicate("h", 300)
+      assert has_element?(view, "#pdt-client-dropped", "7")
     end
   end
 
@@ -286,6 +352,25 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
       render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => false})
       assert has_element?(panel, ~s(#pdt-lv-components[data-pdt-polling="off"]))
+    end
+
+    test "a poll reads the host only while visible" do
+      {host, sid} = visit("/demo/components")
+      panel = open(sid) |> open_tab("components")
+      _ = render_async(panel)
+
+      # A suspended host keeps any read in flight, so a started read shows.
+      :ok = :sys.suspend(host.pid)
+
+      send(panel.pid, :pdt_tree_poll)
+      assert has_element?(panel, ~s(#pdt-lv-components[data-pdt-reading="false"]))
+
+      render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
+      assert has_element?(panel, ~s(#pdt-lv-components[data-pdt-reading="true"]))
+
+      :ok = :sys.resume(host.pid)
+      _ = render_async(panel)
+      assert has_element?(panel, ~s(#pdt-lv-components[data-pdt-reading="false"]))
     end
 
     test "the tree follows live navigation" do

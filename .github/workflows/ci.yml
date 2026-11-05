@@ -51,6 +51,12 @@ jobs:
       - if: matrix.lint
         run: mix deps.unlock --check-unused
       - if: matrix.lint
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - if: matrix.lint
+        run: mix test.js
+      - if: matrix.lint
         run: mix credo --strict
       - if: matrix.lint
         run: mix dialyzer

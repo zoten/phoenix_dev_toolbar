@@ -75,11 +75,14 @@ defmodule PhoenixDevToolbar.MixProject do
       dev: "run --no-halt dev.exs",
       "assets.setup": ["esbuild.install --if-missing"],
       "assets.build": ["esbuild loader", "esbuild panel", "esbuild panel_css"],
+      # Unit tests of the loader's pure JS helpers: Node built-ins only (ADR 06).
+      "test.js": ["cmd node --test assets/js/test/*.test.mjs"],
       precommit: [
         "compile --warnings-as-errors",
         "deps.unlock --unused",
         "format",
         "test --warnings-as-errors",
+        "test.js",
         "credo --strict",
         "dialyzer",
         "docs --warnings-as-errors"

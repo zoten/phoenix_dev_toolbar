@@ -42,7 +42,9 @@ let panelHook = null
 
 const pushVisibility = () => {
   if (panelHook) {
-    panelHook.pushEvent("pdt:visibility", {open, visible: document.visibilityState === "visible"})
+    // The callback form: a push while disconnected is dropped, not rejected
+    // (reconnected() re-sends the state).
+    panelHook.pushEvent("pdt:visibility", {open, visible: document.visibilityState === "visible"}, () => {})
   }
 }
 
@@ -52,18 +54,33 @@ const setOpen = (next) => {
   pushVisibility()
 }
 
+// Client events from the loader wait (at most CLIENT_BUFFER) until the hook joins.
+const CLIENT_BUFFER = 50
+let clientBuffer = []
+
+const pushClient = (payload) => {
+  if (panelHook) panelHook.pushEvent("pdt:client", payload, () => {})
+  else if (clientBuffer.length < CLIENT_BUFFER) clientBuffer.push(payload)
+}
+
 window.addEventListener("message", (event) => {
   if (event.origin !== window.location.origin || event.source !== window.parent) return
-  if (event.data && event.data.type === "pdt:state") setOpen(Boolean(event.data.open))
+  const data = event.data
+  if (data && data.type === "pdt:state") setOpen(Boolean(data.open))
+  if (data && data.type === "pdt:client") pushClient({event: data.event, dropped: data.dropped})
 })
 
 document.addEventListener("visibilitychange", pushVisibility)
 
-// On #pdt-panel: reports visibility on join and after reconnects.
+// On #pdt-bridge: reports visibility on join and after reconnects, and
+// forwards client events.
 const PdtPanel = {
   mounted() {
     panelHook = this
     pushVisibility()
+    const pending = clientBuffer
+    clientBuffer = []
+    pending.forEach(pushClient)
   },
   reconnected() {
     pushVisibility()

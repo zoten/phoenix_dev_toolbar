@@ -29,6 +29,8 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
   attr :last_changed, :list, required: true, doc: "keys changed by the last callback"
   attr :tree, :any, required: true, doc: "nil, a ComponentTree.t() or {:missing, why}"
   attr :polling?, :boolean, required: true
+  attr :tree_pending?, :boolean, required: true
+  attr :client_dropped, :integer, required: true
   attr :events, :any, required: true, doc: "the :lv_events stream"
   attr :root, :string, required: true
 
@@ -81,6 +83,9 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
       aria-labelledby="pdt-lv-tab-events"
       hidden={@tab != "events"}
     >
+      <p :if={@client_dropped > 0} id="pdt-client-dropped" class="pdt-hint pdt-snapshot__more">
+        {@client_dropped} client events over the rate limit were not logged.
+      </p>
       <ul id="pdt-lv-log" class="pdt-list" phx-update="stream">
         <li id="pdt-lv-log-empty" class="pdt-list__empty">No LiveView callbacks yet.</li>
         <.event_row :for={{id, event} <- @events} id={id} event={event} root={@root} />
@@ -93,6 +98,7 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
       aria-labelledby="pdt-lv-tab-components"
       hidden={@tab != "components"}
       data-pdt-polling={if(@polling?, do: "on", else: "off")}
+      data-pdt-reading={to_string(@tree_pending?)}
     >
       <.tree tree={@tree} />
     </div>
@@ -246,6 +252,20 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
           <% end %>
         </dl>
       </details>
+    </li>
+    """
+  end
+
+  defp event_row(%{event: %Event{kind: :client}} = assigns) do
+    ~H"""
+    <li id={@id} class="pdt-row">
+      <div class="pdt-row__head">
+        <code>{@event.data.type}</code>
+      </div>
+      <div class="pdt-row__meta">
+        <span class="pdt-tag pdt-tag--client" title="Fired in the browser">client</span>
+        <span :for={{field, value} <- @event.data.fields} class="pdt-tag">{field} {to_string(value)}</span>
+      </div>
     </li>
     """
   end

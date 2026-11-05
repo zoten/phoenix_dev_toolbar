@@ -328,3 +328,4 @@ body.pdt {
 .pdt-tree code { font: 11.5px var(--pdt-mono); color: var(--pdt-code); }
 .pdt-tree__view { font-weight: 600; }
 .pdt-tree .pdt-hint { margin-left: 6px; font-size: 11px; }
+.pdt-tag--client { color: var(--pdt-accent); border-color: color-mix(in srgb, var(--pdt-accent) 40%, transparent); }

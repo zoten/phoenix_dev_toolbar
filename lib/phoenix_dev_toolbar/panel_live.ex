@@ -29,6 +29,11 @@ defmodule PhoenixDevToolbar.PanelLive do
   @snapshot_ms 1000
   # Component tree poll interval, only while shown, open and visible.
   @tree_ms 2000
+  # Client events (ADR 07): LiveView's own window events, forwarded by the
+  # loader. Only these types and scalar fields are kept, never stored in ETS.
+  @client_types ~w(phx:page-loading-start phx:page-loading-stop phx:navigate)
+  @client_fields ~w(kind to href patch pop)
+  @client_string 260
   @tabs ~w(ecto request live_view)
   @tab_labels [{"ecto", "Ecto"}, {"request", "Request"}, {"live_view", "LiveView"}]
   # Rows kept in the DOM per list; the Store keeps 500 events per session.
@@ -53,7 +58,8 @@ defmodule PhoenixDevToolbar.PanelLive do
       |> assign(tree: nil, tree_pending?: false, tree_timer: nil)
       |> stream_configure(:queries, dom_id: &"pdt-query-#{&1.seq}")
       |> stream_configure(:requests, dom_id: &"pdt-request-#{&1.seq}")
-      |> stream_configure(:lv_events, dom_id: &"pdt-lv-#{&1.seq}")
+      |> stream_configure(:lv_events, dom_id: &lv_dom_id/1)
+      |> assign(client_count: 0, client_dropped: 0)
       # Subscribe before reading: a LiveView announced between the read and the
       # subscription would otherwise never reach the panel.
       |> subscribe(List.wrap(root))
@@ -75,6 +81,30 @@ defmodule PhoenixDevToolbar.PanelLive do
   end
 
   def handle_event("lv_snapshot", _params, socket), do: {:noreply, start_snapshot(socket)}
+
+  # From the PdtPanel hook: a client event the loader forwarded (untrusted input).
+  def handle_event("pdt:client", %{"event" => %{"type" => type} = event} = params, socket)
+      when type in @client_types do
+    n = socket.assigns.client_count + 1
+
+    client = %Event{
+      plugin: :client,
+      kind: :client,
+      at: client_at(event["at"]),
+      data: client_data(event, n)
+    }
+
+    {:noreply,
+     socket
+     |> assign(client_count: n, client_dropped: client_dropped(params["dropped"], socket))
+     |> stream_insert(:lv_events, client, limit: -@dom_limit)}
+  end
+
+  # A drop count update without an event (the loader reports drops on its own).
+  def handle_event("pdt:client", %{"event" => nil} = params, socket),
+    do: {:noreply, assign(socket, :client_dropped, client_dropped(params["dropped"], socket))}
+
+  def handle_event("pdt:client", _params, socket), do: {:noreply, socket}
 
   # From the PdtPanel hook: the loader's open state and the browser tab's visibility.
   def handle_event("pdt:visibility", params, socket) do
@@ -152,6 +182,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     |> fold(events)
     |> remember(events)
     |> insert_all(events)
+    |> drop_reads()
     |> snapshot_if_shown()
     |> tree_if_shown()
   end
@@ -162,12 +193,23 @@ defmodule PhoenixDevToolbar.PanelLive do
     |> unsubscribe(socket.assigns.page.sids -- [socket.assigns.root])
     |> subscribe(sids)
     |> show(page, read_all(sids))
+    |> drop_reads()
     |> snapshot_if_shown()
     |> tree_if_shown()
   end
 
   defp apply_change(socket, :rejoined, %Page{} = page),
-    do: socket |> assign(:page, page) |> snapshot_if_shown()
+    do: socket |> assign(:page, page) |> drop_reads() |> snapshot_if_shown() |> tree_if_shown()
+
+  # A snapshot or tree read started for the previous LiveView must not land on
+  # the new one: stop it (unlinked first, so no exit message arrives) and let
+  # the caller start a fresh read.
+  defp drop_reads(socket) do
+    socket
+    |> cancel_async(:snapshot, {:shutdown, :page_changed})
+    |> cancel_async(:tree, {:shutdown, :page_changed})
+    |> assign(snapshot_pending?: false, tree_pending?: false)
+  end
 
   defp show(socket, %Page{sids: sids} = page, events) do
     socket
@@ -205,6 +247,32 @@ defmodule PhoenixDevToolbar.PanelLive do
     |> insert_all(events)
     |> snapshot_after(events)
   end
+
+  defp lv_dom_id(%Event{plugin: :client, data: %{n: n}}), do: "pdt-lv-client-#{n}"
+  defp lv_dom_id(%Event{seq: seq}), do: "pdt-lv-#{seq}"
+
+  defp client_data(event, n) do
+    fields =
+      for field <- @client_fields,
+          value = client_value(event[field]),
+          value != nil,
+          do: {field, value}
+
+    %{type: event["type"], fields: fields, n: n}
+  end
+
+  defp client_value(value) when is_binary(value), do: Truncate.string(value, @client_string)
+  defp client_value(value) when is_boolean(value) or is_number(value), do: value
+  defp client_value(_value), do: nil
+
+  # The loader stamps Date.now() (ms); events are stamped in microseconds.
+  defp client_at(ms) when is_integer(ms), do: ms * 1000
+  defp client_at(_ms), do: System.system_time(:microsecond)
+
+  defp client_dropped(dropped, socket) when is_integer(dropped) and dropped >= 0,
+    do: max(dropped, socket.assigns.client_dropped)
+
+  defp client_dropped(_dropped, socket), do: socket.assigns.client_dropped
 
   # Summary and profile are folded incrementally, never rebuilt from the Store.
   defp fold(socket, events) do
@@ -437,7 +505,11 @@ defmodule PhoenixDevToolbar.PanelLive do
     assigns = assign(assigns, :tab_labels, @tab_labels)
 
     ~H"""
-    <div id="pdt-panel" class="pdt-panel" phx-hook="PdtPanel">
+    <div id="pdt-panel" class="pdt-panel">
+      <%!-- The hook lives on its own empty element: LiveView locks a hook's
+           element while its pushEvent is in flight, and a diff landing in a
+           locked tree loses its stream resets (seen on live navigation). --%>
+      <div id="pdt-bridge" phx-hook="PdtPanel" hidden></div>
       <header class="pdt-header">
         <span class="pdt-logo">dev toolbar</span>
         <.summary_bar summary={@summary} dropped={@dropped} />
@@ -522,6 +594,8 @@ defmodule PhoenixDevToolbar.PanelLive do
           snapshot_pending?={@snapshot_pending?}
           last_changed={@last_changed}
           tree={@tree}
+          tree_pending?={@tree_pending?}
+          client_dropped={@client_dropped}
           polling?={@tab == "live_view" and @lv_tab == "components" and @visible?}
           events={@streams.lv_events}
           root={@page.root}
