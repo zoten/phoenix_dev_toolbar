@@ -166,6 +166,7 @@ defmodule Demo.Layouts do
           <.link navigate="/assigns">Assigns</.link>
           <.link navigate="/jobs">Oban jobs</.link>
           <.link navigate="/plugins">Plugin errors</.link>
+<.link navigate="/memory">Memory</.link>
           <a href="/plain">Dead page</a>
         </nav>
         {@inner_content}
@@ -234,6 +235,61 @@ defmodule Demo.PostsLive do
     <ul>
       <li :for={post <- @posts}>{post.title} by {post.user.name}</li>
     </ul>
+    """
+  end
+end
+
+defmodule Demo.MemoryLive do
+  @moduledoc false
+  # The Process tab (ADR 09): grow assigns, make garbage, back up the message
+  # queue, start a task, and watch the sparklines move.
+  use Phoenix.LiveView
+
+  def mount(_params, _session, socket), do: {:ok, assign(socket, blob: [], queued: 0, task: nil)}
+
+  def handle_event("grow", _params, socket),
+    do: {:noreply, assign(socket, :blob, Enum.to_list(1..100_000) ++ socket.assigns.blob)}
+
+  def handle_event("shrink", _params, socket), do: {:noreply, assign(socket, :blob, [])}
+
+  # Built and dropped: garbage on the heap until a collection.
+  def handle_event("garbage", _params, socket) do
+    _ = Enum.map(1..300_000, &Integer.to_string/1) |> length()
+    {:noreply, socket}
+  end
+
+  # Each message takes 2 ms: 2000 of them drain in about 4 s.
+  def handle_event("flood", _params, socket) do
+    for n <- 1..2000, do: send(self(), {:work, n})
+    {:noreply, socket}
+  end
+
+  def handle_event("task", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:task, :running)
+     |> start_async(:nap, fn -> Process.sleep(10_000) end)}
+  end
+
+  def handle_info({:work, _n}, socket) do
+    Process.sleep(2)
+    {:noreply, update(socket, :queued, &(&1 + 1))}
+  end
+
+  def handle_async(:nap, _result, socket), do: {:noreply, assign(socket, :task, :done)}
+
+  def render(assigns) do
+    ~H"""
+    <h1>Memory</h1>
+    <p>Open the toolbar's Process tab, then:</p>
+    <button id="grow" phx-click="grow">Grow assigns (+100k items)</button>
+    <button id="shrink" phx-click="shrink">Drop them</button>
+    <button id="garbage" phx-click="garbage">Make garbage</button>
+    <button id="flood" phx-click="flood">Flood the queue (2000 slow messages)</button>
+    <button id="task" phx-click="task">Start a 10 s task</button>
+    <p>
+      {length(@blob)} items held · {@queued} messages handled · task: {@task || "none"}
+    </p>
     """
   end
 end
@@ -586,6 +642,7 @@ defmodule Demo.Router do
       live "/assigns", Demo.AssignsLive
       live "/jobs", Demo.JobsLive
       live "/plugins", Demo.PluginsLive
+      live "/memory", Demo.MemoryLive
     end
 
     get "/plain", Demo.PlainPage, []

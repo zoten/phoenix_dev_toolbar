@@ -400,6 +400,9 @@ body.pdt {
 .pdt-process__details dd { margin: 0; overflow-wrap: anywhere; }
 .pdt-process__relations { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 12px; padding: 0 12px 8px; border-top: 1px solid var(--pdt-border); }
 .pdt-process__title { margin: 8px 0 4px; font-size: 12px; }
-.pdt-process__relation { display: flex; justify-content: flex-start; gap: 8px; align-items: center; padding: 3px 0; }
+.pdt-process__relations > div { min-width: 0; }
+.pdt-process__relation { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; padding: 3px 0; }
+.pdt-process__relation code { flex: none; }
+.pdt-process__relation span { min-width: 0; overflow-wrap: anywhere; }
 .pdt-process__paused { padding: 0 12px; }
 #pdt-process-select { display: flex; gap: 6px; align-items: center; }

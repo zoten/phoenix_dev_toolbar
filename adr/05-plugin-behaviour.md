@@ -33,7 +33,7 @@ atom other than the reserved `:client` and the name a string):
 
 - **Registration**: `config :phoenix_dev_toolbar, plugins: [:defaults, {Mod, opts},
   {:exclude, Mod}]` (`PhoenixDevToolbar.Config`). `:defaults` expands in place to Ecto,
-  Request, LiveView; a module listed twice keeps its first position and its last
+  Request, LiveView, Process (ADR 09); a module listed twice keeps its first position and its last
   options (so a built-in listed with options overrides it); `{:exclude, Mod}` removes
   it. Validation never raises during the host's boot: an entry that is not a module or
   `{module, opts}`, a module that is missing, does not implement the callbacks, defines

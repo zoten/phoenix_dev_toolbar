@@ -36,6 +36,9 @@ config :phoenix_dev_toolbar,
   plugins: [:defaults, {MyApp.Toolbar.Jobs, queues: [:default]}],
   # The Ecto tab flags an N+1 at 5 repeats in one callback: change it, or false
   # plugins: [:defaults, {PhoenixDevToolbar.Plugins.Ecto, n_plus_one: 10}],
+  # The Process tab reads the page's LiveView every second (60 points kept) and
+  # its links and monitors every 5 seconds, only while the tab is open:
+  # plugins: [:defaults, {PhoenixDevToolbar.Plugins.Process, sample_ms: 1000, samples: 60, relations_ms: 5000}],
   # Values of keys containing these words are shown as [REDACTED]
   redact: ["password", "token", "secret"],
   # Memory bounds (ADR 03), these are the defaults. A session is one request

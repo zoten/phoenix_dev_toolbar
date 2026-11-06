@@ -26,7 +26,8 @@ correctness and boundedness need tests, not just eyeballing.
   plugin, `examples/oban`: Oban on the SQLite repo with the Lite engine, inserts, an
   `insert_all`, a unique conflict, an invalid insert), Plugin errors (a demo plugin that
   fails on demand in its collector, summary, tab callbacks or template, to check
-  quarantine and Re-enable), and a dead Plug page. Phoenix and LiveView JS
+  quarantine and Re-enable), Memory (grows assigns, makes garbage, floods the message
+  queue and starts a task, for the Process tab), and a dead Plug page. Phoenix and LiveView JS
   come from `deps/` through `Plug.Static`, so the harness has no build step.
   `ecto_sqlite3`, `bandit` and `jason` are `only: :dev` (`jason` also `:test`), `oban`
   `only: [:dev, :test]`: the example plugins in `examples/` are compiled in tests
