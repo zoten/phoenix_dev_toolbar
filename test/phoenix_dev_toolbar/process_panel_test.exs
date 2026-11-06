@@ -106,6 +106,20 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     assert samples(panel) == 3
   end
 
+  test "GC now collects the selected process, at most once a second" do
+    {_host, sid} = visit("/demo")
+    panel = open(sid)
+    visible(panel)
+
+    panel |> element("#pdt-process-gc") |> render_click()
+    _ = render_async(panel)
+    assert has_element?(panel, "#pdt-process-gc-result")
+
+    # A second click within the second is ignored: no new collection starts.
+    panel |> element("#pdt-process-gc") |> render_click()
+    refute has_element?(panel, "#pdt-process-gc", "collecting")
+  end
+
   test "a dead target says so" do
     {host, sid} = visit("/demo")
     panel = open(sid)

@@ -83,6 +83,21 @@ defmodule PhoenixDevToolbar.ProcessInfo do
     end
   end
 
+  @doc """
+  Garbage collects `pid` (a full sweep) and returns its memory before and after,
+  or :dead. Runs in the caller: call it from a task.
+  """
+  @spec collect(pid()) :: {:ok, non_neg_integer(), non_neg_integer()} | :dead
+  def collect(pid) when is_pid(pid) do
+    with {:memory, before} <- Process.info(pid, :memory),
+         true <- :erlang.garbage_collect(pid),
+         {:memory, after_gc} <- Process.info(pid, :memory) do
+      {:ok, before, after_gc}
+    else
+      _dead -> :dead
+    end
+  end
+
   @doc "Reductions per second between two samples of one process."
   @spec reductions_per_second(sample(), sample()) :: non_neg_integer()
   def reductions_per_second(%{at: t0, reductions: r0}, %{at: t1, reductions: r1}) when t1 > t0,

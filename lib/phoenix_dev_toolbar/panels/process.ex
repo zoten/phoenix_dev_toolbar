@@ -22,12 +22,14 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
   # Nested LiveViews of one page listed at most.
   @max_targets 10
+  # At most one garbage collection per second, on the selected process only.
+  @gc_every_ms 1000
 
   @impl Phoenix.LiveComponent
   def mount(socket) do
     {:ok,
      socket
-     |> assign(prev: nil, targets: [], selected: nil, timers: %{})
+     |> assign(prev: nil, targets: [], selected: nil, timers: %{}, gc: nil, gc_at: nil)
      |> assign(about: nil, sample: nil, relations: nil, series: empty_series())}
   end
 
@@ -90,6 +92,37 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
   def handle_event("select", _params, socket), do: {:noreply, socket}
 
+  # The only thing the toolbar does to a host process (ADR 09): a garbage
+  # collection, to tell retained memory from garbage. In a task, so a target
+  # busy in a long NIF never blocks the panel.
+  def handle_event("gc", _params, %{assigns: %{selected: pid, gc: gc}} = socket)
+      when is_pid(pid) and gc != :running do
+    case gc_allowed?(socket) do
+      true ->
+        {:noreply,
+         socket
+         |> assign(gc: :running, gc_at: System.monotonic_time(:millisecond))
+         |> start_async(:gc, fn -> {pid, ProcessInfo.collect(pid)} end)}
+
+      false ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("gc", _params, socket), do: {:noreply, socket}
+
+  @impl Phoenix.LiveComponent
+  def handle_async(:gc, {:ok, {pid, result}}, %{assigns: %{selected: pid}} = socket),
+    do: {:noreply, socket |> assign(:gc, result) |> read_sample()}
+
+  # The target changed meanwhile.
+  def handle_async(:gc, _result, socket), do: {:noreply, assign(socket, :gc, nil)}
+
+  defp gc_allowed?(%{assigns: %{gc_at: nil}}), do: true
+
+  defp gc_allowed?(%{assigns: %{gc_at: at}}),
+    do: System.monotonic_time(:millisecond) - at >= @gc_every_ms
+
   ## Targets
 
   # A new target (nil: the page's LiveView, the first of the list): its data
@@ -97,6 +130,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
   defp select(socket, pid) do
     assign(socket,
       selected: pid,
+      gc: nil,
       about: nil,
       sample: nil,
       relations: nil,
@@ -290,6 +324,24 @@ defmodule PhoenixDevToolbar.Panels.Process do
           started in <code>{@about.initial_call}</code>
           <span :if={@about.trap_exit}> · traps exits</span>
         </span>
+        <button
+          :if={is_map(@sample)}
+          id="pdt-process-gc"
+          type="button"
+          class="pdt-button pdt-button--small"
+          phx-click="gc"
+          phx-target={@myself}
+          aria-busy={to_string(@gc == :running)}
+          title="Run a garbage collection on this process: what is left is memory it really holds"
+        >
+          {if(@gc == :running, do: "collecting…", else: "GC now")}
+        </button>
+        <span :if={match?({:ok, _, _}, @gc)} id="pdt-process-gc-result" class="pdt-hint" role="status">
+          {gc_result(@gc)}
+        </span>
+        <span :if={@gc == :dead} id="pdt-process-gc-result" class="pdt-hint" role="status">
+          The process exited.
+        </span>
       </div>
       <p :if={@targets != [] and not (@shown? and @visible?)} class="pdt-hint pdt-process__paused">
         Paused while the panel is hidden.
@@ -414,4 +466,9 @@ defmodule PhoenixDevToolbar.Panels.Process do
   end
 
   defp words(words), do: bytes(words * :erlang.system_info(:wordsize))
+
+  defp gc_result({:ok, before, after_gc}) when before > after_gc,
+    do: "freed #{bytes(before - after_gc)}: #{bytes(before)} → #{bytes(after_gc)}"
+
+  defp gc_result({:ok, _before, after_gc}), do: "nothing to free: #{bytes(after_gc)} held"
 end

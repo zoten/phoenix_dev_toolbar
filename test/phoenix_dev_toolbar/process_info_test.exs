@@ -123,6 +123,29 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
     assert length(links) == 50
   end
 
+  test "collect/1 garbage collects and reports memory before and after" do
+    test = self()
+
+    pid =
+      spawn(fn ->
+        # Garbage: a big list built and dropped, left on the heap until a GC.
+        _ = Enum.to_list(1..200_000) |> length()
+        send(test, :garbage)
+        idle()
+      end)
+
+    assert_receive :garbage
+    on_exit(fn -> send(pid, :stop) end)
+
+    assert {:ok, before, after_gc} = ProcessInfo.collect(pid)
+    assert after_gc < before
+
+    dead = spawn(fn -> :ok end)
+    ref = Process.monitor(dead)
+    assert_receive {:DOWN, ^ref, :process, ^dead, _reason}
+    assert ProcessInfo.collect(dead) == :dead
+  end
+
   test "a dead process reads as dead, never raises" do
     pid = spawn(fn -> :ok end)
     ref = Process.monitor(pid)
