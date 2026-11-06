@@ -13,7 +13,8 @@
       color: true,
       checks: %{
         disabled: [
-          # Too noisy for test files where inline module references are common
+          # Too noisy for Phoenix style code and test files where inline module
+          # references are common
           {Credo.Check.Design.AliasUsage, []},
           # Explicit last `with` clause keeps the chain readable
           {Credo.Check.Refactor.RedundantWithClauseResult, false}
@@ -29,9 +30,11 @@
           {Jump.CredoChecks.AssertElementSelectorCanNeverFail, []},
           {Jump.CredoChecks.AvoidFunctionLevelElse, []},
           {Jump.CredoChecks.AvoidLoggerConfigureInTest, []},
+          # Default exclusion list is empty
           {Jump.CredoChecks.AvoidSocketAssignsInTest, []},
           {Jump.CredoChecks.DoctestIExExamples,
            [
+             # Tells Credo where to look for the `doctest` call.
              derive_test_path: fn filename ->
                filename
                |> String.replace_leading("lib/", "test/")
@@ -44,13 +47,20 @@
               "Use Plug.Crypto.non_executable_binary_to_term/2 instead."},
              {String, :to_atom, "Never create atoms from runtime input (ADR 03)."}
            ]},
+          {Jump.CredoChecks.LiveViewFormCanBeRehydrated, []},
+          # Ecto migrations only (none here today); default start_after is "0"
+          {Jump.CredoChecks.PreferTextColumns, []},
           {Jump.CredoChecks.TestHasNoAssertions, []},
+          # Default max_assertions is 20
           {Jump.CredoChecks.TooManyAssertions, [max_assertions: 20]},
           {Jump.CredoChecks.TopLevelAliasImportRequire, []},
           {Jump.CredoChecks.VacuousTest,
            [
+             # When true (default), tests that destructure setup context
+             # (3-arity test blocks) are considered not vacuous.
              ignore_setup_only_tests?: true,
-             library_modules: [Ecto, Phoenix, Plug]
+             # Library namespaces whose calls do not count as production code
+             library_modules: [Ecto, Jason, Oban, Phoenix, Plug]
            ]},
           {Jump.CredoChecks.WeakAssertion, []}
         ]
