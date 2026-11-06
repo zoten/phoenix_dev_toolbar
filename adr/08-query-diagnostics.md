@@ -104,8 +104,10 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
   (the export carries it too).
 - Copy starts the clipboard write in the click, with the text promised for when the
   export arrives (`ClipboardItem`), so a slow export keeps the click's user activation.
-  A browser without `ClipboardItem` writes on arrival and can refuse a slow export:
-  the tab says so, Download still works.
+  Outside a secure context (plain http on a LAN IP) there is no Clipboard API: the
+  export is copied with `execCommand("copy")` on arrival, which browsers allow only
+  within about 5 s of the click; past it the export is held for a minute and the tab
+  asks for a second Copy click, which copies it without a new export.
 - The busy state (one EXPLAIN at a time) is not covered by a test: SQLite answers too
   fast to observe it.
 - The planner may evaluate functions marked IMMUTABLE with constant arguments; MySQL

@@ -113,20 +113,60 @@ const PdtSummaryMore = {
 // - Download: the blob URL stays alive until the next download (or a minute):
 //   with "ask where to save", the browser reads it after its dialog closes.
 // - Copy: the export arrives after a round trip (and EXPLAINs), too late for
-//   the click's user activation. Where ClipboardItem exists, the write starts in
-//   the click itself with a promised blob, resolved when the export arrives.
+//   the click's user activation. Where ClipboardItem exists (secure contexts:
+//   https or localhost), the write starts in the click itself with a promised
+//   blob, resolved when the export arrives. Elsewhere (plain http on a LAN IP)
+//   there is no Clipboard API: execCommand("copy") on arrival, and when the
+//   activation has expired the JSON is held and the next Copy click copies it.
 const EXPORT_WAIT_MS = 60000
 const URL_TTL_MS = 60000
+const HELD_MS = 60000
+
+// The pre Clipboard API copy: works without a secure context, within the
+// click's user activation only. Focus goes back where it was.
+const execCopy = (text) => {
+  const focused = document.activeElement
+  const area = document.createElement("textarea")
+  area.value = text
+  area.readOnly = true
+  area.setAttribute("aria-hidden", "true")
+  area.style.cssText = "position:fixed;top:0;left:-9999px;opacity:0"
+  document.body.appendChild(area)
+  area.select()
+  let copied = false
+  try {
+    copied = document.execCommand("copy")
+  } catch (_error) {
+    copied = false
+  }
+  area.remove()
+  if (focused && focused.focus) focused.focus()
+  return copied
+}
 
 const PdtExport = {
   mounted() {
     this.result = this.el.querySelector("#pdt-export-result")
     this.url = null
     this.pending = null
+    this.held = null
     this.onClick = (event) => {
-      if (event.target.closest("#pdt-export-copy")) this.startCopy()
+      if (!event.target.closest("#pdt-export-copy")) return
+      if (this.held) {
+        // The held export, copied in this click: no new export.
+        event.preventDefault()
+        event.stopPropagation()
+        const json = this.held.json
+        this.drop()
+        this.say(execCopy(json) ? "Copied" : "Copy failed: use Download")
+      } else {
+        this.startCopy()
+      }
     }
-    this.el.addEventListener("click", this.onClick)
+    // A new choice: the held export no longer matches the form.
+    this.onChange = () => this.drop()
+    this.el.addEventListener("click", this.onClick, true)
+    this.el.addEventListener("change", this.onChange)
     this.handleEvent("pdt:export", ({action, filename, payload}) => {
       const json = JSON.stringify(payload, null, 2)
       if (action === "copy") this.copy(json)
@@ -134,12 +174,24 @@ const PdtExport = {
     })
   },
   destroyed() {
-    this.el.removeEventListener("click", this.onClick)
+    this.el.removeEventListener("click", this.onClick, true)
+    this.el.removeEventListener("change", this.onChange)
+    this.drop()
     this.settle(null)
     this.revoke()
   },
   say(text) {
     if (this.result) this.result.textContent = text
+  },
+  hold(json) {
+    this.drop()
+    const timer = setTimeout(() => this.drop(), HELD_MS)
+    this.held = {json, timer}
+    this.say("Export ready: click Copy again")
+  },
+  drop() {
+    if (this.held) clearTimeout(this.held.timer)
+    this.held = null
   },
   revoke() {
     if (this.url) URL.revokeObjectURL(this.url)
@@ -186,11 +238,13 @@ const PdtExport = {
   copy(json) {
     if (this.settle(json)) return
     const clipboard = navigator.clipboard
-    if (!clipboard || !clipboard.writeText) {
-      this.say("Copy is not available here: use Download")
-      return
+    if (clipboard && clipboard.writeText) {
+      clipboard.writeText(json).then(() => this.say("Copied"), (error) => this.copyFailed(error))
+    } else if (execCopy(json)) {
+      this.say("Copied")
+    } else {
+      this.hold(json)
     }
-    clipboard.writeText(json).then(() => this.say("Copied"), (error) => this.copyFailed(error))
   },
   copyFailed(error) {
     const why = (error && (error.name || error.message)) || "refused"
