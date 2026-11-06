@@ -51,6 +51,19 @@ config :phoenix_dev_toolbar,
   ]
 ```
 
+### Turning it off for one run
+
+Keep the dependency and the plug, and drive `enabled` from an environment variable:
+
+```elixir
+# config/dev.exs
+config :phoenix_dev_toolbar, enabled: System.get_env("DEV_TOOLBAR") != "0"
+```
+
+Then `DEV_TOOLBAR=0 mix phx.server` boots without the toolbar: no telemetry handlers,
+no supervised processes, and the plug passes requests through untouched. The value is
+read at boot, so restart to switch it.
+
 ## Contributing
 
 Read [AGENTS.md](AGENTS.md) and the [ADR index](adr/README.md). Run `mix precommit` before pushing (its JS tests need Node 22 or later).

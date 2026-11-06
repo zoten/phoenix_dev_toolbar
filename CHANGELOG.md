@@ -58,3 +58,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Breaking: the plug's `:live_socket_path` option is gone (ADR 04)
 - Panel socket review fixes: decoded join check, stale on unknown panels, host socket options (ADR 04)
 - Panel: disconnected state, shorter cannot connect notice, inert tabs; Process tab wording (ADR 04, ADR 09)
+- Docs: per-run disable recipe through `DEV_TOOLBAR=0` (ADR 01)

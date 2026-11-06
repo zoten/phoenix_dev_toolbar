@@ -31,7 +31,9 @@ Three layers keep production clean:
    everything into a no-op, for example in `:test` of the host app). When `enabled` is
    not configured and the application starts without `Mix` loaded (a release, so the
    dependency was installed without `only: :dev`), it disables itself and logs a
-   warning; `enabled: true` forces it on.
+   warning; `enabled: true` forces it on. To skip the toolbar for a single dev run, the
+   host reads `enabled` from an environment variable in `config/dev.exs` (README,
+   "Turning it off for one run"); it is settled at boot, so switching needs a restart.
 
 Installation:
 
