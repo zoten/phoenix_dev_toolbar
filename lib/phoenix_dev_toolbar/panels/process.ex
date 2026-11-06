@@ -6,8 +6,8 @@ defmodule PhoenixDevToolbar.Panels.Process do
   # the sparklines, links and monitors every `relations_ms`.
   #
   # The browser picks a process by its index in this page's list, never by pid.
-  # Every read is tagged with the pid it read: a result for another process (the
-  # page changed meanwhile) is dropped.
+  # Each timer carries a token: a tick that is not the pending timer of its
+  # kind (replaced meanwhile) is dropped, so there is one loop per kind.
 
   use PhoenixDevToolbar.Panel
 
@@ -27,8 +27,8 @@ defmodule PhoenixDevToolbar.Panels.Process do
   def mount(socket) do
     {:ok,
      socket
-     |> assign(prev: nil, targets: [], selected: 0, about: nil, sample: nil, relations: nil)
-     |> assign(series: empty_series(), sample_timer: nil, relations_timer: nil)}
+     |> assign(prev: nil, targets: [], selected: nil, timers: %{})
+     |> assign(about: nil, sample: nil, relations: nil, series: empty_series())}
   end
 
   @impl Panel
@@ -45,41 +45,46 @@ defmodule PhoenixDevToolbar.Panels.Process do
     socket = assign(socket, :prev, Map.take(assigns, [:page, :shown?, :visible?]))
 
     cond do
-      prev.page != assigns.page -> socket |> retarget(0) |> poll_now()
-      not (prev.shown? and prev.visible?) and polling?(socket) -> poll_now(socket)
-      true -> socket
+      # The list itself is only Store reads: the host process is read once polling.
+      prev.page != assigns.page ->
+        socket |> cancel_timers() |> select(nil) |> refresh_targets() |> poll_now()
+
+      not (prev.shown? and prev.visible?) and polling?(socket) ->
+        poll_now(socket)
+
+      true ->
+        socket
     end
   end
 
+  # A tick is honoured only if it is the pending timer of its kind: one loop per
+  # kind, whatever raced (a tick already queued when its timer was replaced).
   @impl Panel
-  def handle_info({:sample, pid}, socket) do
-    socket = assign(socket, :sample_timer, nil)
+  def handle_info({kind, token}, socket) when kind in [:sample, :relations] do
+    case socket.assigns.timers do
+      %{^kind => {_ref, ^token}} ->
+        socket = update(socket, :timers, &Map.delete(&1, kind))
 
-    case current?(socket, pid) and polling?(socket) do
-      true -> socket |> read_sample() |> schedule(:sample)
-      false -> socket
-    end
-  end
+        case polling?(socket) do
+          true -> socket |> tick(kind) |> schedule(kind)
+          false -> socket
+        end
 
-  def handle_info({:relations, pid}, socket) do
-    socket = assign(socket, :relations_timer, nil)
-
-    case current?(socket, pid) and polling?(socket) do
-      true -> socket |> read_relations() |> schedule(:relations)
-      false -> socket
+      _stale ->
+        socket
     end
   end
 
   def handle_info(_message, socket), do: socket
 
+  # The index is into the list the user saw (rendered), never recomputed first.
   @impl Phoenix.LiveComponent
   def handle_event("select", %{"index" => index}, socket) when is_binary(index) do
-    case Integer.parse(index) do
-      {index, ""} when index >= 0 and index < length(socket.assigns.targets) ->
-        {:noreply, socket |> retarget(index) |> poll_now()}
-
-      _other ->
-        {:noreply, socket}
+    with {index, ""} <- Integer.parse(index),
+         %{pid: pid} <- index >= 0 && Enum.at(socket.assigns.targets, index) do
+      {:noreply, socket |> cancel_timers() |> select(pid) |> poll_now()}
+    else
+      _other -> {:noreply, socket}
     end
   end
 
@@ -87,47 +92,55 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
   ## Targets
 
-  # The page's LiveView first, then the other processes of its sids (nested
-  # LiveViews), at most @max_targets.
-  defp retarget(socket, index) do
-    targets = targets(socket.assigns.page)
-    pid = Enum.at(targets, index, %{pid: nil}).pid
-
-    socket
-    |> cancel_timers()
-    |> assign(
-      targets: targets,
-      selected: index,
-      about: pid && ProcessInfo.about(pid),
+  # A new target (nil: the page's LiveView, the first of the list): its data
+  # starts over.
+  defp select(socket, pid) do
+    assign(socket,
+      selected: pid,
+      about: nil,
       sample: nil,
       relations: nil,
       series: empty_series()
     )
   end
 
-  # A pending read of the previous target would otherwise keep a second loop.
-  defp cancel_timers(socket) do
-    for key <- [:sample_timer, :relations_timer],
-        ref = socket.assigns[key],
-        do: Process.cancel_timer(ref)
+  # The list is refreshed when polling starts and on every relations tick: a
+  # nested LiveView mounts after its parent (same sid, so the page does not
+  # change). A selected process that left the list gives way to the first.
+  defp refresh_targets(socket) do
+    targets = targets(socket.assigns.page)
+    selected = socket.assigns.selected
 
-    assign(socket, sample_timer: nil, relations_timer: nil)
+    socket = assign(socket, :targets, targets)
+
+    case Enum.any?(targets, &(&1.pid == selected)) do
+      true -> socket
+      false -> select(socket, first_pid(targets))
+    end
   end
 
+  defp first_pid([%{pid: pid} | _rest]), do: pid
+  defp first_pid([]), do: nil
+
+  # The page's LiveView first, then the other live processes of its sids
+  # (nested LiveViews), at most @max_targets. Exited pids linger in the index
+  # until the Store's sweep: they are skipped.
   defp targets(%Page{sids: sids}) do
     owners =
       for sid <- Enum.reverse(sids),
           {:ok, %Session{kind: :live_view, owner: owner, view: view}} <- [session(sid)],
-          is_pid(owner),
+          is_pid(owner) and Process.alive?(owner),
           do: %{pid: owner, label: label(view)}
+
+    owner_pids = Enum.map(owners, & &1.pid)
 
     nested =
       for sid <- sids,
           pid <- pids_for(sid),
-          pid not in Enum.map(owners, & &1.pid),
+          pid not in owner_pids and Process.alive?(pid),
           do: %{pid: pid, label: "nested LiveView"}
 
-    Enum.take(owners ++ nested, @max_targets)
+    Enum.take(owners ++ Enum.uniq_by(nested, & &1.pid), @max_targets)
   end
 
   defp label(nil), do: "LiveView"
@@ -143,15 +156,6 @@ defmodule PhoenixDevToolbar.Panels.Process do
     ArgumentError -> default
   end
 
-  defp target(socket) do
-    case Enum.at(socket.assigns.targets, socket.assigns.selected) do
-      %{pid: pid} -> pid
-      nil -> nil
-    end
-  end
-
-  defp current?(socket, pid), do: pid == target(socket)
-
   ## Polling
 
   defp polling?(%{assigns: %{shown?: true, visible?: true}}), do: true
@@ -160,9 +164,11 @@ defmodule PhoenixDevToolbar.Panels.Process do
   defp config(socket), do: Plugins.Process.config(socket.assigns[:config])
 
   defp poll_now(socket) do
-    case polling?(socket) and target(socket) != nil do
+    case polling?(socket) do
       true ->
         socket
+        |> refresh_targets()
+        |> read_about()
         |> read_sample()
         |> read_relations()
         |> schedule(:sample)
@@ -173,22 +179,44 @@ defmodule PhoenixDevToolbar.Panels.Process do
     end
   end
 
-  defp schedule(socket, kind) do
-    timer = :"#{kind}_timer"
-    pid = target(socket)
+  defp tick(socket, :sample), do: read_sample(socket)
 
-    case socket.assigns[timer] do
-      nil when is_pid(pid) ->
-        every = Map.fetch!(config(socket), :"#{kind}_ms")
-        assign(socket, timer, Panel.send_after(__MODULE__, socket.assigns.id, {kind, pid}, every))
+  defp tick(socket, :relations),
+    do: socket |> refresh_targets() |> read_about() |> read_relations()
 
-      _scheduled_or_none ->
+  # Replaces any pending timer of that kind. Nothing is scheduled without a
+  # live target: a dead one stops the loop (a page change or a select restarts it).
+  defp schedule(%{assigns: %{selected: pid, sample: sample}} = socket, kind)
+       when is_pid(pid) and sample != :dead do
+    socket = cancel_timer(socket, kind)
+    token = make_ref()
+    every = Map.fetch!(config(socket), :"#{kind}_ms")
+    ref = Panel.send_after(__MODULE__, socket.assigns.id, {kind, token}, every)
+    update(socket, :timers, &Map.put(&1, kind, {ref, token}))
+  end
+
+  defp schedule(socket, kind), do: cancel_timer(socket, kind)
+
+  defp cancel_timers(socket), do: socket |> cancel_timer(:sample) |> cancel_timer(:relations)
+
+  defp cancel_timer(socket, kind) do
+    case socket.assigns.timers do
+      %{^kind => {ref, _token}} ->
+        _ = Process.cancel_timer(ref)
+        update(socket, :timers, &Map.delete(&1, kind))
+
+      _none ->
         socket
     end
   end
 
-  defp read_sample(socket) do
-    case ProcessInfo.sample(target(socket)) do
+  defp read_about(%{assigns: %{selected: pid, about: nil}} = socket) when is_pid(pid),
+    do: assign(socket, :about, ProcessInfo.about(pid))
+
+  defp read_about(socket), do: socket
+
+  defp read_sample(%{assigns: %{selected: pid}} = socket) when is_pid(pid) do
+    case ProcessInfo.sample(pid) do
       {:ok, sample} ->
         rate = rate(socket.assigns.sample, sample)
         samples = config(socket).samples
@@ -202,8 +230,12 @@ defmodule PhoenixDevToolbar.Panels.Process do
     end
   end
 
-  defp read_relations(socket),
-    do: assign(socket, :relations, ProcessInfo.relations(target(socket)))
+  defp read_sample(socket), do: socket
+
+  defp read_relations(%{assigns: %{selected: pid}} = socket) when is_pid(pid),
+    do: assign(socket, :relations, ProcessInfo.relations(pid))
+
+  defp read_relations(socket), do: socket
 
   defp rate(%{at: _at} = previous, sample),
     do: ProcessInfo.reductions_per_second(previous, sample)
@@ -245,7 +277,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
             <option
               :for={{target, index} <- Enum.with_index(@targets)}
               value={index}
-              selected={index == @selected}
+              selected={target.pid == @selected}
             >
               {target.label} {inspect(target.pid)}
             </option>

@@ -11,7 +11,7 @@ ExUnit.after_suite(fn _result ->
   for suffix <- ["", "-shm", "-wal"], do: File.rm(database <> suffix)
 end)
 
-Application.put_env(:phoenix_dev_toolbar, DemoWeb.SQLiteRepo, database: database, pool_size: 2)
+Application.put_env(:phoenix_dev_toolbar, DemoWeb.SQLiteRepo, database: database, pool_size: 1)
 {:ok, _} = DemoWeb.SQLiteRepo.start_link()
 DemoWeb.SQLiteRepo.query!("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
 DemoWeb.SQLiteRepo.query!("INSERT INTO users (name) VALUES ('Ada'), ('Grace')")

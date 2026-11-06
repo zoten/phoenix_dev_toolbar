@@ -58,9 +58,16 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     |> then(fn [n] -> String.to_integer(n) end)
   end
 
-  defp tick(panel, host_pid) do
-    Panel.send_now(panel.pid, Panels.Process, "pdt-panel-process", {:sample, host_pid})
+  # A tick that is not the pending timer (a stale or forged token) is dropped.
+  defp stale_tick(panel) do
+    Panel.send_now(panel.pid, Panels.Process, "pdt-panel-process", {:sample, make_ref()})
     _ = render(panel)
+  end
+
+  # Showing the panel again reads at once.
+  defp reshow(panel) do
+    hidden(panel)
+    visible(panel)
   end
 
   test "the host LiveView's vital signs and relations, once the panel is visible" do
@@ -80,32 +87,62 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     _ = host
   end
 
-  test "it samples only while shown and visible" do
-    {host, sid} = visit("/demo")
-    panel = open(sid)
-    visible(panel)
-    assert samples(panel) == 1
-
-    tick(panel, host.pid)
-    assert samples(panel) == 2
-
-    hidden(panel)
-    tick(panel, host.pid)
-    assert samples(panel) == 2
-
-    panel |> element("#pdt-tab-ecto") |> render_click()
-    visible(panel)
-    tick(panel, host.pid)
-    refute has_element?(panel, "#pdt-process-vitals[data-samples='3']")
-  end
-
-  test "a read for another process (an older target) is ignored" do
+  test "it samples only while shown and visible, one loop at a time" do
     {_host, sid} = visit("/demo")
     panel = open(sid)
     visible(panel)
-
-    tick(panel, spawn(fn -> :ok end))
     assert samples(panel) == 1
+
+    reshow(panel)
+    assert samples(panel) == 2
+
+    stale_tick(panel)
+    assert samples(panel) == 2
+
+    # Another tab selected: nothing is read, even when the panel shows again.
+    panel |> element("#pdt-tab-ecto") |> render_click()
+    reshow(panel)
+    panel |> element("#pdt-tab-process") |> render_click()
+    assert samples(panel) == 3
+  end
+
+  test "a dead target says so" do
+    {host, sid} = visit("/demo")
+    panel = open(sid)
+    visible(panel)
+
+    # The test is linked to the host LiveView (live/2).
+    Process.flag(:trap_exit, true)
+    ref = Process.monitor(host.pid)
+    Process.exit(host.pid, :kill)
+    assert_receive {:DOWN, ^ref, :process, _pid, :killed}
+
+    reshow(panel)
+    refute has_element?(panel, "#pdt-process-vitals")
+    assert has_element?(panel, "#pdt-process-none")
+  end
+
+  test "a nested LiveView shows up even when the panel was open before it connected" do
+    conn =
+      build_conn()
+      |> Plug.Conn.put_req_header("accept", "text/html")
+      |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
+      |> get("/demo/nested")
+
+    [sid] =
+      conn
+      |> html_response(200)
+      |> LazyHTML.from_document()
+      |> LazyHTML.query("script[data-pdt-sid]")
+      |> LazyHTML.attribute("data-pdt-sid")
+
+    panel = open(sid)
+    visible(panel)
+    {:ok, _host, _html} = live(conn)
+    _ = render(panel)
+
+    reshow(panel)
+    assert has_element?(panel, "#pdt-process-target option", "nested LiveView")
   end
 
   test "a nested LiveView can be picked by index; a tampered index is ignored" do

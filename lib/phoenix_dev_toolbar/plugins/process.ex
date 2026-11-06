@@ -15,6 +15,17 @@ defmodule PhoenixDevToolbar.Plugins.Process do
 
   @impl true
   def init(opts) do
+    case Keyword.keys(opts) -- Keyword.keys(@defaults) do
+      [] ->
+        validate(opts)
+
+      unknown ->
+        {:error,
+         "unknown options #{inspect(unknown)}, expected #{inspect(Keyword.keys(@defaults))}"}
+    end
+  end
+
+  defp validate(opts) do
     Enum.reduce_while(@defaults, {:ok, %{}}, fn {key, default}, {:ok, config} ->
       {min, max} = @bounds[key]
 
