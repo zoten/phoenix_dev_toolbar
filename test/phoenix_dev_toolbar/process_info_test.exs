@@ -3,25 +3,30 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
 
   alias PhoenixDevToolbar.ProcessInfo
 
-  # A process that links a Task child, monitors another process, and waits.
+  defp idle, do: receive(do: (:stop -> :ok))
+
+  # A process that links a Task child (started: its $callers is set), monitors
+  # another process, and waits.
   defp subject do
     test = self()
 
     pid =
       spawn(fn ->
-        child = Task.async(fn -> receive(do: (:stop -> :ok)) end)
-        stranger = spawn(fn -> receive(do: (:stop -> :ok)) end)
+        child =
+          Task.async(fn ->
+            send(test, {:child_started, self()})
+            idle()
+          end)
+
+        stranger = spawn(fn -> idle() end)
         Process.monitor(stranger)
         send(test, {:ready, child.pid, stranger})
-        receive(do: (:stop -> :ok))
+        idle()
       end)
 
     assert_receive {:ready, child, stranger}
-
-    on_exit(fn ->
-      for p <- [pid, child, stranger], do: send(p, :stop)
-    end)
-
+    assert_receive {:child_started, ^child}
+    on_exit(fn -> for p <- [pid, child, stranger], do: send(p, :stop) end)
     {pid, child, stranger}
   end
 
@@ -53,55 +58,74 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
 
     # Task.async links and monitors its child; the stranger is only monitored.
     assert %{links: links, monitors: monitors, more: %{links: 0}} = ProcessInfo.relations(pid)
-    assert %{kind: :process, child?: true} = Enum.find(links, &(&1.id == inspect(child)))
+
+    assert %{kind: :process, child?: true, name: name} =
+             Enum.find(links, &(&1.id == inspect(child)))
+
     assert %{child?: true} = Enum.find(monitors, &(&1.id == inspect(child)))
-    assert %{child?: false, name: name} = Enum.find(monitors, &(&1.id == inspect(stranger)))
-    assert is_binary(name) and name != ""
+
+    assert %{child?: false, name: stranger_name} =
+             Enum.find(monitors, &(&1.id == inspect(stranger)))
+
+    # A Task is named after its function, a plain spawn after what it runs now.
+    assert name =~ "ProcessInfoTest"
+    refute name =~ "Task.Supervised"
+    refute stranger_name == ":erlang.apply/2"
   end
 
-  test "a proc_lib process's entry point is read from $initial_call" do
-    {pid, _child, _stranger} = subject()
-    assert %{initial_call: initial_call, trap_exit: false} = ProcessInfo.about(pid)
-    assert initial_call == ":erlang.apply/2"
-
+  test "a GenServer is named after $initial_call, not proc_lib" do
     agent = start_supervised!({Agent, fn -> :state end})
     {:initial_call, {:proc_lib, :init_p, _arity}} = Process.info(agent, :initial_call)
-    assert ProcessInfo.about(agent).initial_call =~ "in PhoenixDevToolbar.ProcessInfoTest"
+    assert %{initial_call: name, trap_exit: false} = ProcessInfo.about(agent)
+    assert name =~ "in PhoenixDevToolbar.ProcessInfoTest"
+  end
+
+  test "a linked port is listed as a port" do
+    test = self()
+
+    pid =
+      spawn(fn ->
+        port = Port.open({:spawn, "cat"}, [])
+        send(test, {:port, port})
+        idle()
+      end)
+
+    assert_receive {:port, port}
+    on_exit(fn -> Process.exit(pid, :kill) end)
+
+    assert %{links: [%{kind: :port, id: id, name: name, child?: false}]} =
+             ProcessInfo.relations(pid)
+
+    assert id == inspect(port)
+    assert name =~ "cat"
   end
 
   test "relations are capped at 50 of each, the rest counted" do
-    pid = spawn(fn -> receive(do: (:stop -> :ok)) end)
-    others = for _n <- 1..60, do: spawn(fn -> receive(do: (:stop -> :ok)) end)
-    for other <- others, do: send(pid, {:noop, other})
+    others = for _n <- 1..60, do: spawn(fn -> idle() end)
+    test = self()
 
     linker =
       spawn(fn ->
         for other <- others, do: Process.link(other)
-        receive(do: (:stop -> :ok))
+        send(test, :linked)
+        idle()
       end)
 
-    wait_links(linker, 60)
+    assert_receive :linked
+    on_exit(fn -> for p <- [linker | others], do: Process.exit(p, :kill) end)
 
     assert %{links: links, more: %{links: 10}} = ProcessInfo.relations(linker)
     assert length(links) == 50
-
-    for p <- [pid, linker | others], do: Process.exit(p, :kill)
   end
 
   test "a dead process reads as dead, never raises" do
     pid = spawn(fn -> :ok end)
     ref = Process.monitor(pid)
-    assert_receive {:DOWN, ^ref, :process, ^pid, :normal}
+    # :noproc when it exited before the monitor was set.
+    assert_receive {:DOWN, ^ref, :process, ^pid, _normal_or_noproc}
 
     assert ProcessInfo.sample(pid) == :dead
     assert ProcessInfo.about(pid) == nil
     assert ProcessInfo.relations(pid) == nil
-  end
-
-  defp wait_links(pid, count) do
-    case Process.info(pid, :links) do
-      {:links, links} when length(links) >= count -> :ok
-      _not_yet -> wait_links(pid, count)
-    end
   end
 end

@@ -1,7 +1,8 @@
 defmodule PhoenixDevToolbar.ProcessInfo do
   @moduledoc false
   # Reads a host process for the Process tab (ADR 09), with `Process.info/2`
-  # and explicit key lists: a BIF that never waits on the target. It never
+  # and explicit key lists. The read is a signal the target answers: a target
+  # busy in a long NIF delays the panel, never the reverse. It never
   # reads `:messages`, `:binary` or the whole `:dictionary`, which copy
   # unbounded data (the dictionary holds assigns sized terms); only two
   # dictionary keys are read, one at a time. Every read of a dead process is
@@ -93,13 +94,13 @@ defmodule PhoenixDevToolbar.ProcessInfo do
   @spec about(pid()) ::
           %{initial_call: String.t(), name: String.t() | nil, trap_exit: boolean()} | nil
   def about(pid) when is_pid(pid) do
-    case Process.info(pid, [:initial_call, :registered_name, :trap_exit]) do
+    case Process.info(pid, [:initial_call, :registered_name, :trap_exit, :current_function]) do
       nil ->
         nil
 
       info ->
         %{
-          initial_call: initial_call(pid, info[:initial_call]),
+          initial_call: initial_call(pid, info[:initial_call], info[:current_function]),
           name: registered(info[:registered_name]),
           trap_exit: info[:trap_exit]
         }
@@ -149,15 +150,28 @@ defmodule PhoenixDevToolbar.ProcessInfo do
     do: %{id: inspect(port), kind: :port, name: port_name(port), child?: false}
 
   # A monitor by name ({name, node}) or a NIF resource.
+  defp relation({name, node} = other, _owner) when is_atom(name) and is_atom(node),
+    do: %{id: inspect(other), kind: :other, name: inspect(name), child?: false}
+
   defp relation(other, _owner),
     do: %{id: inspect(other, limit: 5), kind: :other, name: "", child?: false}
 
+  # Process.info/2 and Port.info/2 raise on another node's pid or port: those
+  # are only named by their node.
+  defp name(pid) when node(pid) != node(), do: "on #{node(pid)}"
+
   defp name(pid) do
-    case Process.info(pid, [:registered_name, :initial_call]) do
-      nil -> "exited"
-      info -> registered(info[:registered_name]) || initial_call(pid, info[:initial_call])
+    case Process.info(pid, [:registered_name, :initial_call, :current_function]) do
+      nil ->
+        "exited"
+
+      info ->
+        registered(info[:registered_name]) ||
+          initial_call(pid, info[:initial_call], info[:current_function])
     end
   end
+
+  defp port_name(port) when node(port) != node(), do: "on #{node(port)}"
 
   defp port_name(port) do
     case Port.info(port, :name) do
@@ -170,16 +184,18 @@ defmodule PhoenixDevToolbar.ProcessInfo do
   defp registered(name) when is_atom(name), do: inspect(name)
   defp registered(_other), do: nil
 
-  # proc_lib processes (GenServers, Tasks) start in proc_lib: their real
-  # entry point is in `$initial_call`.
-  defp initial_call(pid, {:proc_lib, :init_p, _arity} = fallback) do
+  # GenServers and Tasks keep their real entry point in `$initial_call` (their
+  # `initial_call` is proc_lib's or Task.Supervised's). A plain spawn starts in
+  # :erlang.apply/2: what it runs now says more.
+  defp initial_call(pid, initial_call, current_function) do
     case dictionary(pid, :"$initial_call") do
       {_m, _f, _a} = mfa -> mfa(mfa)
-      _missing -> mfa(fallback)
+      _missing when initial_call == {:erlang, :apply, 2} -> mfa(current_function)
+      _missing -> mfa(initial_call)
     end
   end
 
-  defp initial_call(_pid, mfa), do: mfa(mfa)
+  defp child?(pid, _owner) when node(pid) != node(), do: false
 
   defp child?(pid, owner) do
     case dictionary(pid, :"$callers") do
@@ -189,14 +205,42 @@ defmodule PhoenixDevToolbar.ProcessInfo do
   end
 
   # One dictionary key, never the whole dictionary: `{:dictionary, key}` needs
-  # OTP 26.2; on an older OTP it is a badarg and the key reads as missing.
+  # OTP 26.2. Whether this OTP has it is checked once, then cached.
   defp dictionary(pid, key) do
+    case dictionary_key?() do
+      true -> dictionary_key(pid, key)
+      false -> nil
+    end
+  end
+
+  defp dictionary_key(pid, key) do
     case :erlang.process_info(pid, {:dictionary, key}) do
       {{:dictionary, ^key}, value} -> value
       _dead -> nil
     end
   rescue
     ArgumentError -> nil
+  end
+
+  @capability {__MODULE__, :dictionary_key?}
+
+  defp dictionary_key? do
+    case :persistent_term.get(@capability, nil) do
+      nil ->
+        supported? = supported?()
+        :persistent_term.put(@capability, supported?)
+        supported?
+
+      supported? ->
+        supported?
+    end
+  end
+
+  defp supported? do
+    _ = :erlang.process_info(self(), {:dictionary, :pdt_probe})
+    true
+  rescue
+    ArgumentError -> false
   end
 
   defp mfa({m, f, a}) when is_atom(m) and is_atom(f) and is_integer(a),
