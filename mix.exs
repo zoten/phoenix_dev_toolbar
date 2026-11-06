@@ -123,9 +123,7 @@ defmodule PhoenixDevToolbar.MixProject do
           PhoenixDevToolbar.Event,
           PhoenixDevToolbar.Truncate
         ]
-      ],
-      # README links to repo files (ADRs, AGENTS.md) that are not part of the docs
-      skip_undefined_reference_warnings_on: ["README.md"]
+      ]
     ]
   end
 end

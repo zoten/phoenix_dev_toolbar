@@ -1,17 +1,19 @@
 # PhoenixDevToolbar
 
+[![CI](https://github.com/zoten/phoenix_dev_toolbar/actions/workflows/ci.yml/badge.svg)](https://github.com/zoten/phoenix_dev_toolbar/actions/workflows/ci.yml)
+
 A dev-only, BEAM-native debug toolbar for Phoenix LiveView applications, in the
 spirit of `django-debug-toolbar`: Ecto queries, LiveView assigns and lifecycle
 timings, process diagnostics and a plugin API, shown as an overlay on the page
 you are working on.
 
-> Status: early development, not yet published. See the [roadmap](docs/2026-11-05-roadmap.md).
+> Status: early development, not on Hex yet. See the [roadmap](https://github.com/zoten/phoenix_dev_toolbar/blob/main/docs/2026-11-05-roadmap.md).
 
-## Installation (planned)
+## Installation
 
 ```elixir
-# mix.exs
-{:phoenix_dev_toolbar, "~> 0.1", only: :dev}
+# mix.exs: from GitHub until the first Hex release
+{:phoenix_dev_toolbar, github: "zoten/phoenix_dev_toolbar", only: :dev}
 
 # config/dev.exs
 config :phoenix_dev_toolbar, repos: [MyApp.Repo]
@@ -24,7 +26,7 @@ end
 ```
 
 That's all: no router, layout or `app.js` changes. See
-[ADR 01](adr/01-zero-prod-footprint-and-installation.md) for why it never reaches production.
+[ADR 01](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/01-zero-prod-footprint-and-installation.md) for why it never reaches production.
 
 ## Configuration
 
@@ -51,6 +53,10 @@ config :phoenix_dev_toolbar,
   ]
 ```
 
+The options shown for the built-in Ecto and Process plugins are all they accept.
+
+Invalid `limits` values are logged at boot and keep their default.
+
 ### Turning it off for one run
 
 Keep the dependency and the plug, and drive `enabled` from an environment variable:
@@ -66,9 +72,9 @@ read at boot, so restart to switch it.
 
 ## Contributing
 
-Read [AGENTS.md](AGENTS.md) and the [ADR index](adr/README.md). Run `mix precommit` before pushing (its JS tests need Node 22 or later).
+Read [AGENTS.md](https://github.com/zoten/phoenix_dev_toolbar/blob/main/AGENTS.md) and the [ADR index](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/README.md). Run `mix precommit` before pushing (its JS tests need Node 22 or later).
 Try your changes in a real browser with `mix dev`, a demo app at http://localhost:4000.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](https://github.com/zoten/phoenix_dev_toolbar/blob/main/LICENSE).
