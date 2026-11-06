@@ -94,7 +94,14 @@ defmodule PhoenixDevToolbar.SpansTest do
     test "an untracked process gets no span" do
       {_pid, result} =
         ProcessHelpers.in_process(fn ->
-          :telemetry.execute([:phoenix, :live_view, :handle_event, :start], %{}, %{})
+          # Real shaped measurements and metadata: other handlers (LiveView's
+          # own logger) are attached to this event and would be detached.
+          :telemetry.execute(
+            [:phoenix, :live_view, :handle_event, :start],
+            %{system_time: System.system_time(), monotonic_time: System.monotonic_time()},
+            %{socket: %Phoenix.LiveView.Socket{view: DemoWeb.PageLive}, event: "x", params: %{}}
+          )
+
           {Attribution.current(), Process.get(:pdt_span)}
         end)
 
