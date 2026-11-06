@@ -34,6 +34,16 @@ defmodule PhoenixDevToolbar.PanelLayout do
       <div id="pdt-bridge" phx-hook="PdtPanel" hidden></div>
       <header class="pdt-header">
         <span class="pdt-logo">dev toolbar</span>
+        <%!-- Shown by CSS while a joined panel has lost its connection
+             (LiveView's phx-client-error / phx-server-error, assets/css/panel.css). --%>
+        <span
+          id="pdt-offline"
+          class="pdt-offline"
+          role="status"
+          title="The connection to the server is lost: what the toolbar shows is frozen until it reconnects"
+        >
+          Disconnected · reconnecting<span class="pdt-sr-only">: what the toolbar shows is frozen until it reconnects</span>
+        </span>
         <.summary_bar badges={Shell.badges(@shell)} dropped={@gaps.dropped} trimmed={@gaps.trimmed} />
         <%!-- Counts the badges the collapsed bar has no room for (assets/js/panel.js). --%>
         <button

@@ -92,6 +92,8 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     view = open(conn, request)
 
     assert has_element?(view, "#pdt-badge-response", "200")
+    # The lost connection notice is always rendered; CSS shows it (ADR 04).
+    assert has_element?(view, "#pdt-offline[role=status]", "Disconnected")
     assert has_element?(view, "#pdt-badge-ecto-queries", "2 queries")
     assert has_element?(view, "#pdt-query-#{dead.seq}", "SELECT 1")
     assert has_element?(view, "#pdt-query-#{connected.seq}", "SELECT 2")

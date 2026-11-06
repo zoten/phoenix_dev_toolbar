@@ -410,4 +410,17 @@ body.pdt {
 
 /* The reload breaker's notice (ADR 04): the panel stopped trying to connect. */
 .pdt-stalled { flex: none; display: flex; align-items: center; gap: 8px; color: var(--pdt-header-warn); font-size: 12px; }
+.pdt-stalled__text { white-space: nowrap; }
+.pdt-stalled .pdt-button { flex: none; }
+.pdt-tabs[inert] { opacity: 0.45; }
+/* A joined panel that lost its connection (LiveView's error classes on its root):
+   the data is frozen, so it says so and dims what it shows. */
+.pdt-offline { display: none; flex: none; color: var(--pdt-header-warn); font-size: 12px; white-space: nowrap; }
+.pdt-joined .phx-client-error .pdt-offline,
+.pdt-joined .phx-server-error .pdt-offline { display: inline-flex; }
+.pdt-stalled ~ .pdt-offline { display: none !important; }
+.pdt-joined .phx-client-error .pdt-summary,
+.pdt-joined .phx-client-error .pdt-section,
+.pdt-joined .phx-server-error .pdt-summary,
+.pdt-joined .phx-server-error .pdt-section { opacity: 0.55; }
 .pdt-stalled .pdt-button { background: transparent; color: inherit; border-color: currentColor; }

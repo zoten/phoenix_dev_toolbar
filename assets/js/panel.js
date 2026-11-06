@@ -66,6 +66,8 @@ const PdtPanel = {
     forgetLoads()
     clearStalled()
     joinedOnce = true
+    // From now on a lost connection shows "Disconnected" (assets/css/panel.css).
+    document.documentElement.classList.add("pdt-joined")
     panelHook = this
     pushVisibility()
     const pending = clientBuffer
@@ -203,12 +205,18 @@ const showStalled = (why) => {
   notice.id = "pdt-stalled"
   notice.className = "pdt-stalled"
   notice.setAttribute("role", "alert")
-  notice.title = why
-  notice.textContent = "The toolbar cannot connect to this page. "
+  notice.title = "The toolbar cannot connect to this page. " + why
+
+  // Short, so it fits the collapsed bar; the full reason is the tooltip and
+  // what screen readers hear.
+  const text = document.createElement("span")
+  text.className = "pdt-stalled__text"
+  text.textContent = "Cannot connect"
+  notice.appendChild(text)
 
   const reason = document.createElement("span")
   reason.className = "pdt-sr-only"
-  reason.textContent = why + " "
+  reason.textContent = ": the toolbar cannot connect to this page. " + why + " "
   notice.appendChild(reason)
 
   const retry = document.createElement("button")
@@ -225,11 +233,18 @@ const showStalled = (why) => {
   const logo = document.querySelector(".pdt-logo")
   if (logo) logo.after(notice)
   else document.body.prepend(notice)
+  // The tabs have nothing to show: dimmed and out of reach until it joins.
+  setTabsInert(true)
 }
 
 function clearStalled() {
   const notice = document.getElementById("pdt-stalled")
   if (notice) notice.remove()
+  setTabsInert(false)
+}
+
+function setTabsInert(inert) {
+  document.querySelectorAll(".pdt-tabs").forEach((tabs) => { tabs.inert = inert })
 }
 
 // A panel that never joins (the WebSocket itself refused or blocked, for

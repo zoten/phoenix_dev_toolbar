@@ -92,9 +92,11 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     panel = open(sid)
     visible(panel)
     assert samples(panel) == 1
+    assert has_element?(panel, "#pdt-process-memory .pdt-vital__peak", "over 1 sample")
 
     reshow(panel)
     assert samples(panel) == 2
+    assert has_element?(panel, "#pdt-process-memory .pdt-vital__peak", "over 2 samples")
 
     stale_tick(panel)
     assert samples(panel) == 2
@@ -123,7 +125,7 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     panel |> element("#pdt-process-gc") |> render_click()
     _ = render_async(panel)
     refute_receive {:trace, _pid, :gc_major_start, _info}, 100
-    assert has_element?(panel, "#pdt-process-gc-note", "one collection a second")
+    assert has_element?(panel, "#pdt-process-gc-note", "at most one collection a second")
     assert has_element?(panel, "#pdt-process-gc-result", ~r/freed|nothing to free/)
   end
 

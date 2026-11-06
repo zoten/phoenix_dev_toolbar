@@ -105,11 +105,16 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 - **Reload breaker** (`assets/js/reloads.mjs`, the safety net for any join failure,
   present or future): each panel load is recorded per sid in `sessionStorage`. The 4th
   load within 10 s does not connect and shows, in the header (so in the collapsed bar
-  too), "The toolbar cannot connect to this page" with a Retry button that clears the
-  record. A panel that has not joined 8 s after connecting (its WebSocket refused or
+  too), a short "Cannot connect" (the full reason in its tooltip and for screen
+  readers) with a Retry button that clears the record; the tabs are dimmed and inert
+  meanwhile. A panel that has not joined 8 s after connecting (its WebSocket refused or
   blocked, which never reloads) shows the same notice until it joins. A joined panel
   forgets its record; other pages' records past the window are pruned on load. Storage
   blocked: no breaker, never an error.
+- **Lost connection**: once joined, a panel whose socket drops (LiveView's
+  `phx-client-error` or `phx-server-error` on its root) shows "Disconnected ·
+  reconnecting" in the header and dims its data, which is frozen until LiveView
+  rejoins on its own. Pure CSS on a server rendered element (`#pdt-offline`).
 - **Panel**: `PhoenixDevToolbar.PanelLive` (`<path>/panel?sid=<request sid>`) shows one
   page: the request and its LiveView, or only the newest LiveView after live navigation.
   `PhoenixDevToolbar.Page` derives the page once at mount (catching up with navigation

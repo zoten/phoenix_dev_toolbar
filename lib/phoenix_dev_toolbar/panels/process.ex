@@ -111,7 +111,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
       # The last result stays; a note says when the next collection is allowed.
       false ->
-        {:noreply, socket |> assign(:gc_note, "one collection a second") |> gc_ready_later()}
+        {:noreply, socket |> assign(:gc_note, "at most one collection a second") |> gc_ready_later()}
     end
   end
 
@@ -406,9 +406,9 @@ defmodule PhoenixDevToolbar.Panels.Process do
         <.vital
           id="pdt-process-queue"
           label="Message queue"
-          value={Integer.to_string(@sample.message_queue_len)}
+          value={count(@sample.message_queue_len)}
           values={@series.queue}
-          peak={peak(@series.queue, &Integer.to_string/1)}
+          peak={peak(@series.queue, &count/1)}
           warn?={@sample.message_queue_len > 100}
         />
         <.vital
@@ -417,12 +417,12 @@ defmodule PhoenixDevToolbar.Panels.Process do
           title="Work done per second: a reduction is roughly one function call"
           value={
             if(@sample.reductions_per_second,
-              do: Integer.to_string(@sample.reductions_per_second),
+              do: count(@sample.reductions_per_second),
               else: "…"
             )
           }
           values={@series.reductions}
-          peak={peak(@series.reductions, &Integer.to_string/1)}
+          peak={peak(@series.reductions, &count/1)}
         />
       </div>
       <dl :if={is_map(@sample)} id="pdt-process-details" class="pdt-process__details">
@@ -484,7 +484,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
       <span class="pdt-vital__label" title={@title}>{@label}</span>
       <span class="pdt-vital__value">{@value}</span>
       <.sparkline values={@values} label={sparkline_label(@label, @peak, length(@values))} />
-      <span :if={@peak} class="pdt-vital__peak">peak {@peak} over {length(@values)} samples</span>
+      <span :if={@peak} class="pdt-vital__peak">peak {@peak} over {samples(length(@values))}</span>
     </div>
     """
   end
@@ -496,7 +496,14 @@ defmodule PhoenixDevToolbar.Panels.Process do
   defp sparkline_label(label, nil, _count), do: label <> " over time"
 
   defp sparkline_label(label, peak, count),
-    do: "#{label} over the last #{count} samples, peak #{peak}"
+    do: "#{label} over the last #{samples(count)}, peak #{peak}"
+
+  defp samples(1), do: "1 sample"
+  defp samples(count), do: "#{count} samples"
+
+  # 1234567 -> "1,234,567": reductions per second reach the millions.
+  defp count(value) when is_integer(value),
+    do: value |> Integer.to_string() |> String.replace(~r/\B(?=(\d{3})+$)/, ",")
 
   attr :id, :string, required: true
   attr :title, :string, required: true
