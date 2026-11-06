@@ -15,6 +15,7 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   alias PhoenixDevToolbar.Components
   alias PhoenixDevToolbar.Context
   alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.Explain
   alias PhoenixDevToolbar.NPlusOne
   alias PhoenixDevToolbar.Panels
   alias PhoenixDevToolbar.Truncate
@@ -123,15 +124,20 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
 
   @impl true
   def collect(_event, {measurements, metadata}, %Context{source: source}) do
+    raw_sql = Map.get(metadata, :query)
+    sql = sql(raw_sql)
+
     data = %{
       repo: metadata[:repo],
-      sql: metadata |> Map.get(:query) |> sql(),
+      sql: sql,
       params: metadata |> params() |> Truncate.redact() |> Truncate.inspect_value(),
       source: metadata[:source],
       result: result(metadata[:result]),
       times: times(measurements),
       stacktrace: Truncate.stacktrace(metadata[:stacktrace], [metadata[:repo] | @skip_frames]),
-      caller?: source == :caller
+      caller?: source == :caller,
+      # Raw params for EXPLAIN (ADR 08): never rendered.
+      explain: Explain.capture(raw_sql, sql, metadata[:params])
     }
 
     {:record, Event.new(:ecto, :query, data, duration: total(measurements))}

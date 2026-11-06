@@ -91,6 +91,17 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
     end
   end
 
+  test "keeps the raw params of a SELECT for EXPLAIN, not of a write", %{sid: sid} do
+    run_query(sid, query_metadata(%{}))
+    run_query(sid, query_metadata(%{query: "UPDATE users SET name = $1", params: ["ada"]}))
+
+    assert [
+             %Event{data: %{explain: {:ok, ["ada@example.com"]}}},
+             %Event{data: %{explain: {:no, :not_select}}}
+           ] =
+             Store.events(sid)
+  end
+
   test "records SQL, timings, rows and the caller's origin", %{sid: sid} do
     run_query(sid, query_metadata(%{}))
 
