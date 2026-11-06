@@ -2,18 +2,31 @@ defmodule PhoenixDevToolbar.Explain do
   @moduledoc false
   # EXPLAIN for captured queries (ADR 08).
   #
-  # `capture/2` runs in the host process, inside the Ecto plugin's collect/3:
+  # `capture/3` runs in the host process, inside the Ecto plugin's collect/3:
   # it keeps the raw params a SELECT needs to be explained later, only when
   # they are few, small scalars (the walk is bounded by those limits). They are
   # stored in the event and never rendered: params stay redacted on screen, the
-  # raw ones only go back to the database.
+  # raw ones only go back to the database. Binaries are copied, so a param cut
+  # out of a large body (a sub-binary) does not keep the body alive.
+  #
+  # Not replayable, so not captured: maps (json params), tuples, and structs
+  # other than the scalar ones below. Arrays are one level of scalars.
 
   @max_params 50
   @max_bytes 4096
 
   @type capture :: {:ok, [term()]} | {:no, :not_select | :sql_truncated | :params}
 
-  @scalar_structs [Date, Time, NaiveDateTime, DateTime, Decimal]
+  @scalar_structs [
+    Date,
+    Time,
+    NaiveDateTime,
+    DateTime,
+    Decimal,
+    Duration,
+    Postgrex.Interval,
+    Postgrex.INET
+  ]
 
   @doc """
   What EXPLAIN needs from a query: its params, when the SQL is a SELECT stored
@@ -22,9 +35,10 @@ defmodule PhoenixDevToolbar.Explain do
   """
   @spec capture(term(), String.t() | nil, term()) :: capture()
   def capture(sql, stored, params) when is_binary(sql) do
+    # The length check first: it bounds the comment walk of select?/1.
     cond do
-      not select?(sql) -> {:no, :not_select}
       stored != sql -> {:no, :sql_truncated}
+      not select?(sql) -> {:no, :not_select}
       true -> capture_params(params)
     end
   end
@@ -78,24 +92,31 @@ defmodule PhoenixDevToolbar.Explain do
   end
 
   defp capture_params(params) when is_list(params) do
-    case walk(params, {0, 0}) do
-      {:ok, _budget} -> {:ok, params}
+    case walk(params, {0, 0}, :top) do
+      {:ok, _budget} -> {:ok, Enum.map(params, &copy/1)}
       :error -> {:no, :params}
     end
   end
 
   defp capture_params(_params), do: {:no, :params}
 
-  # Arrays (lists) of scalars count each element against the budget.
-  defp walk([], budget), do: {:ok, budget}
+  # Every param, array and array element counts against the budget; arrays
+  # hold scalars only (one level), so the walk is bounded by the budget.
+  defp walk([], budget, _level), do: {:ok, budget}
 
-  defp walk([param | rest], budget) do
-    with {:ok, budget} <- param(param, budget), do: walk(rest, budget)
+  defp walk([param | rest], budget, level) do
+    with {:ok, budget} <- param(param, budget, level), do: walk(rest, budget, level)
   end
 
-  defp walk(_improper, _budget), do: :error
+  defp walk(_improper, _budget, _level), do: :error
 
-  defp param(_param, {count, _bytes}) when count >= @max_params, do: :error
+  defp param(_param, {count, _bytes}, _level) when count >= @max_params, do: :error
+
+  defp param(list, {count, bytes}, :top) when is_list(list),
+    do: walk(list, {count + 1, bytes}, :array)
+
+  defp param(list, _budget, :array) when is_list(list), do: :error
+  defp param(param, budget, _level), do: param(param, budget)
 
   defp param(param, {count, bytes}) when is_binary(param) do
     case bytes + byte_size(param) do
@@ -111,6 +132,9 @@ defmodule PhoenixDevToolbar.Explain do
   defp param(%module{}, {count, bytes}) when module in @scalar_structs,
     do: {:ok, {count + 1, bytes}}
 
-  defp param(list, budget) when is_list(list), do: walk(list, budget)
   defp param(_other, _budget), do: :error
+
+  defp copy(binary) when is_binary(binary), do: :binary.copy(binary)
+  defp copy(list) when is_list(list), do: Enum.map(list, &copy/1)
+  defp copy(param), do: param
 end

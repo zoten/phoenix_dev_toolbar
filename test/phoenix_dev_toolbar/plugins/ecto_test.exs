@@ -39,7 +39,8 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
         type: :ecto_sql_query,
         repo: DemoWeb.FakeRepo,
         query: ~s|SELECT u0."id" FROM "users" AS u0 WHERE (u0."email" = $1)|,
-        params: ["ada@example.com"],
+        # The driver gets `params` (dumped); `cast_params` (pre-dump) is shown.
+        params: ["dumped:ada@example.com"],
         cast_params: ["ada@example.com"],
         source: "users",
         result: {:ok, %{num_rows: 1}},
@@ -96,7 +97,7 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
     run_query(sid, query_metadata(%{query: "UPDATE users SET name = $1", params: ["ada"]}))
 
     assert [
-             %Event{data: %{explain: {:ok, ["ada@example.com"]}}},
+             %Event{data: %{explain: {:ok, ["dumped:ada@example.com"]}}},
              %Event{data: %{explain: {:no, :not_select}}}
            ] =
              Store.events(sid)

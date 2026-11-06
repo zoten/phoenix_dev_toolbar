@@ -38,13 +38,13 @@ defmodule PhoenixDevToolbar.ExplainTest do
     assert {:no, :sql_truncated} = capture(sql, [])
   end
 
-  test "params: up to 50 scalars, 4 KB of binaries in all, arrays counted element by element" do
+  test "params: up to 50 scalars, 4 KB of binaries in all, arrays counted with their elements" do
     scalars = [1, 2.5, true, nil, "ada", <<0::128>>, ~D[2026-01-01], ~U[2026-01-01 00:00:00Z]]
     assert {:ok, ^scalars} = capture("SELECT 1", scalars)
-    assert {:ok, _params} = capture("SELECT 1", [Enum.to_list(1..49), 1])
+    assert {:ok, _params} = capture("SELECT 1", [Enum.to_list(1..48), 1])
+    assert {:no, :params} = capture("SELECT 1", [Enum.to_list(1..49), 1])
 
     assert {:no, :params} = capture("SELECT 1", Enum.to_list(1..51))
-    assert {:no, :params} = capture("SELECT 1", [Enum.to_list(1..50), 1])
     assert {:no, :params} = capture("SELECT 1", [String.duplicate("a", 4097)])
 
     assert {:no, :params} =
@@ -53,5 +53,26 @@ defmodule PhoenixDevToolbar.ExplainTest do
     assert {:no, :params} = capture("SELECT 1", [%{"json" => 1}])
     assert {:no, :params} = capture("SELECT 1", [{:tuple}])
     assert {:no, :params} = capture("SELECT 1", :not_a_list)
+  end
+
+  test "arrays are one level of scalars, and count against the budget themselves" do
+    assert {:ok, _params} = capture("SELECT 1", [[1, 2], [3]])
+    assert {:no, :params} = capture("SELECT 1", List.duplicate([], 51))
+    assert {:no, :params} = capture("SELECT 1", [[[1]]])
+  end
+
+  test "binaries are copied: a param cut out of a large body does not keep it alive" do
+    body = String.duplicate("x", 100_000)
+    param = binary_part(body, 10, 100)
+    assert :binary.referenced_byte_size(param) == 100_000
+
+    assert {:ok, [copied, [array_item]]} = capture("SELECT 1", [param, [param]])
+    assert :binary.referenced_byte_size(copied) == 100
+    assert :binary.referenced_byte_size(array_item) == 100
+  end
+
+  test "invalid UTF-8 or a multibyte keyword never raise" do
+    assert {:no, :not_select} = capture(<<0xFF, 0xFE, "SELECT">>, [])
+    assert {:no, :not_select} = capture("sélectionner", [])
   end
 end
