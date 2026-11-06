@@ -53,3 +53,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - N+1 groups merged by SQL and origin, Clear button, advice; EXPLAIN focus, names, Hide (ADR 08)
 - Process tab: vital signs, sparklines, links and monitors, nested LiveViews; in `:defaults` (ADR 09)
 - Process tab: GC now button, rate limited; `/memory` harness page (ADR 06, ADR 09)
+- Panel reload breaker: stops after 3 refused loads in 10 s, with a notice and Retry (ADR 04)

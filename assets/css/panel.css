@@ -407,3 +407,6 @@ body.pdt {
 .pdt-process__relation span { min-width: 0; overflow-wrap: anywhere; }
 .pdt-process__paused { padding: 0 12px; }
 #pdt-process-select { display: flex; gap: 6px; align-items: center; }
+
+/* The reload breaker's notice (ADR 04): the panel stopped trying to connect. */
+.pdt-stalled { display: flex; align-items: center; gap: 8px; color: var(--pdt-header-warn); font-size: 12px; }

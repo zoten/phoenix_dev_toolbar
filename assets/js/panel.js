@@ -6,6 +6,7 @@
 // installed clients first (window.Phoenix, window.LiveView), so the client
 // always matches the host's server version.
 
+import {parse, record, tripped} from "./reloads.mjs"
 import {countWrapped} from "./summary.mjs"
 
 const {Socket} = window.Phoenix
@@ -78,6 +79,7 @@ document.addEventListener("visibilitychange", pushVisibility)
 // forwards client events.
 const PdtPanel = {
   mounted() {
+    forgetLoads()
     panelHook = this
     pushVisibility()
     const pending = clientBuffer
@@ -159,10 +161,68 @@ document.addEventListener("keydown", (event) => {
   next.click()
 })
 
+// Reload breaker (ADR 04, assets/js/reloads.mjs): this page's panel loads are
+// recorded per sid in sessionStorage; a joined panel forgets them. Storage
+// blocked: no breaker, never an error.
+const loadsKey = "pdt:loads:" + (new URLSearchParams(window.location.search).get("sid") || "")
+
+const storage = () => {
+  try {
+    return window.sessionStorage
+  } catch (_error) {
+    return null
+  }
+}
+
+const recordLoad = () => {
+  try {
+    const loads = record(parse(storage().getItem(loadsKey)), Date.now())
+    storage().setItem(loadsKey, JSON.stringify(loads))
+    return loads
+  } catch (_error) {
+    return []
+  }
+}
+
+function forgetLoads() {
+  try {
+    storage().removeItem(loadsKey)
+  } catch (_error) {
+    // Storage blocked: nothing was recorded.
+  }
+}
+
+// In the header, so it shows in the collapsed bar too.
+const showStalled = () => {
+  const notice = document.createElement("div")
+  notice.id = "pdt-stalled"
+  notice.className = "pdt-stalled"
+  notice.setAttribute("role", "alert")
+  notice.title =
+    "The panel was refused several times in a row and stopped retrying, instead of reloading without end."
+  notice.textContent = "The toolbar cannot connect to this page. "
+
+  const retry = document.createElement("button")
+  retry.type = "button"
+  retry.id = "pdt-stalled-retry"
+  retry.className = "pdt-button pdt-button--small"
+  retry.textContent = "Retry"
+  retry.addEventListener("click", () => {
+    forgetLoads()
+    window.location.reload()
+  })
+
+  notice.appendChild(retry)
+  const logo = document.querySelector(".pdt-logo")
+  if (logo) logo.after(notice)
+  else document.body.prepend(notice)
+}
+
 // A function, so reconnects pick up the host's current token.
 const liveSocket = new LiveSocket(script.dataset.socketPath, Socket, {
   params: () => ({_csrf_token: csrfToken()}),
   hooks: {PdtPanel, PdtSummaryMore},
 })
 
-liveSocket.connect()
+if (tripped(recordLoad())) showStalled()
+else liveSocket.connect()
