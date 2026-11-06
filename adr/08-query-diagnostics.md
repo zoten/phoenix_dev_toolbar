@@ -72,13 +72,19 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
   params kept for EXPLAIN are never exported.
 - `full` with EXPLAIN runs `Explain.run/2` (same checks and rollback as the button) one
   query at a time, at most 50 queries within 15 s; the rest are `skipped`, non explainable
-  ones carry the reason. It runs in `start_async/3`, cancelled by a page change; an export
-  and a single EXPLAIN never run together.
-- The payload is a map with string keys, sent with `push_event/3` (encoded by the host's
-  JSON library: the toolbar adds none); the panel's `PdtExport` hook downloads it as a
-  `.json` file (its blob URL kept until the next download or a minute, for browsers that
-  ask where to save) or copies it to the clipboard. The form's choices are kept by the
-  component, so a re-render does not reset them.
+  ones carry the reason.
+- **Download** is a plain link, `<path>/export/ecto.json?format=&explain=&root=&sids=`,
+  relative to the panel's URL, answered by `PhoenixDevToolbar.Plug` as an attachment
+  (`EctoExport.request/1`): same origin, so a host CSP's `frame-src 'self'` allows it,
+  where Firefox blocks a `blob:` link clicked in the iframe. The sids (at most 4, each a
+  session in the Store) are the access key, as for the panel. It is encoded with the
+  host's JSON library (`Phoenix.json_library/0`, pretty printed when it is Jason) and runs
+  in the request process, untracked, so its EXPLAINs are never recorded.
+- **Copy** builds the same map in `start_async/3` (cancelled by a page change; a copy and
+  a single EXPLAIN never run together) and sends it with `push_event/3` to the panel's
+  `PdtExport` hook.
+- The form's choices are kept by the component, so a re-render does not reset them, and
+  the Download link follows them.
 
 ## Consequences
 

@@ -5,9 +5,9 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   # A SELECT with captured params has an EXPLAIN button: the browser sends only
   # its seq, the query is read back from the Store (this page's sids only) and
   # explained in start_async, one at a time; the plan replaces the row.
-  # The export form pushes the page's queries as JSON (EctoExport) to the
-  # PdtExport hook, which downloads or copies it; built in start_async, since a
-  # full export may run EXPLAINs. One EXPLAIN or export at a time.
+  # Export (EctoExport): Download is a same-origin link the plug answers; Copy
+  # pushes the JSON to the PdtExport hook, built in start_async since a full
+  # export may run EXPLAINs. One EXPLAIN or copy at a time.
 
   use PhoenixDevToolbar.Panel
 
@@ -172,14 +172,15 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
     with nil <- socket.assigns.explaining,
          nil <- socket.assigns.exporting,
          {:ok, format} <- export_format(params["format"]),
-         {:ok, action} <- export_action(params["action"]) do
-      events = page_events(socket)
-      opts = export_opts(socket, format, params["explain"] == "true")
+         "copy" <- params["action"] do
+      page = Map.take(socket.assigns.page, [:root, :sids, :path])
+      explain? = params["explain"] == "true"
+      config = socket.assigns.config
 
       {:noreply,
        socket
-       |> assign(exporting: {format, action}, export_error: nil)
-       |> start_async(:export, fn -> EctoExport.build(events, format, opts) end)}
+       |> assign(exporting: format, export_error: nil)
+       |> start_async(:export, fn -> EctoExport.page(page, format, explain?, config) end)}
     else
       _busy_or_invalid -> {:noreply, socket}
     end
@@ -235,17 +236,10 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   end
 
   def handle_async(:export, {:ok, payload}, socket) do
-    {format, action} = socket.assigns.exporting
-    stamp = payload["exported_at"] |> String.replace(~r/[^0-9T]/, "") |> String.slice(0, 15)
-
     {:noreply,
      socket
      |> assign(:exporting, nil)
-     |> push_event("pdt:export", %{
-       action: action,
-       filename: "ecto-queries-#{format}-#{stamp}.json",
-       payload: payload
-     })}
+     |> push_event("pdt:export", %{payload: payload})}
   end
 
   def handle_async(:export, {:exit, reason}, socket) do
@@ -266,29 +260,15 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   defp export_format("full"), do: {:ok, :full}
   defp export_format(_other), do: :error
 
-  defp export_action("download"), do: {:ok, "download"}
-  defp export_action("copy"), do: {:ok, "copy"}
-  defp export_action(_other), do: :error
-
-  defp export_opts(socket, format, explain?) do
-    config = socket.assigns.config || %{}
-    repos = Map.get(config, :repos, [])
-
-    [
-      root: socket.assigns.page.root,
-      path: socket.assigns.page.path,
-      threshold: Plugins.Ecto.n_plus_one(config)
-    ] ++ explain_opt(format, explain?, repos)
-  end
-
-  defp explain_opt(:full, true, repos), do: [explain: &Explain.run(&1, repos)]
-  defp explain_opt(_format, _explain?, _repos), do: []
-
-  # This page's Ecto events, from the Store: what the export reads.
-  defp page_events(socket) do
-    Enum.flat_map(socket.assigns.page.sids, fn sid ->
-      for %Event{plugin: :ecto} = event <- Store.events(sid), do: event
-    end)
+  # Relative to the panel's URL (<path>/panel): <path>/export/ecto.json.
+  defp download_href(page, %{format: format, explain?: explain?}) do
+    "export/ecto.json?" <>
+      URI.encode_query(%{
+        "format" => format,
+        "explain" => to_string(explain?),
+        "root" => page.root,
+        "sids" => Enum.join(page.sids, ",")
+      })
   end
 
   # Only this page's sids: a seq from another page is not found.
@@ -326,6 +306,7 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
         exporting={@exporting}
         error={@export_error}
         choice={@export_choice}
+        href={download_href(@page, @export_choice)}
         target={@myself}
       />
       <ul id="pdt-queries" class="pdt-list" phx-update="stream">
@@ -343,6 +324,7 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   end
 
   attr :exporting, :any, required: true
+  attr :href, :string, required: true, doc: "the Download link, relative to the panel"
   attr :choice, :map, required: true, doc: "%{format: \"short\" | \"full\", explain?: boolean}"
   attr :error, :string, default: nil
   attr :target, :any, required: true
@@ -386,17 +368,9 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
           checked={@choice.explain?}
         /> with EXPLAIN
       </label>
-      <button
-        id="pdt-export-download"
-        type="submit"
-        name="action"
-        value="download"
-        class="pdt-button pdt-button--small"
-        disabled={@exporting != nil}
-        aria-busy={to_string(@exporting != nil)}
-      >
+      <a id="pdt-export-download" href={@href} download class="pdt-button pdt-button--small">
         Download
-      </button>
+      </a>
       <button
         id="pdt-export-copy"
         type="submit"

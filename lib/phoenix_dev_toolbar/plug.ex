@@ -29,6 +29,7 @@ defmodule PhoenixDevToolbar.Plug do
   require Logger
 
   alias PhoenixDevToolbar.Attribution
+  alias PhoenixDevToolbar.EctoExport
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.PanelSocket
@@ -98,6 +99,8 @@ defmodule PhoenixDevToolbar.Plug do
     case strip_prefix(conn.path_info, segments) do
       {:ok, ["assets", file]} -> serve_asset(conn, file)
       {:ok, ["panel"]} -> serve_panel(conn, opts)
+      # The Ecto tab's Download (ADR 08): same origin, so a host's frame-src allows it.
+      {:ok, ["export", "ecto.json"]} -> serve_export(conn)
       # The panel's own LiveView socket (ADR 04): no host socket, no host token.
       {:ok, ["live", "websocket"]} -> conn |> untracked() |> PanelSocket.upgrade()
       # Anything else under our path is not ours to answer: never tracked.
@@ -126,6 +129,29 @@ defmodule PhoenixDevToolbar.Plug do
   end
 
   defp serve_panel(conn, _opts), do: conn |> untracked() |> Conn.send_resp(405, "") |> Conn.halt()
+
+  ## Export
+
+  # Runs in the request process, untracked: EXPLAINs it runs are never recorded.
+  defp serve_export(%Conn{method: "GET"} = conn) do
+    conn = conn |> untracked() |> Conn.fetch_query_params()
+
+    case EctoExport.request(conn.query_params) do
+      {:ok, filename, body} ->
+        conn
+        |> Conn.put_resp_content_type("application/json")
+        |> Conn.put_resp_header("content-disposition", ~s(attachment; filename="#{filename}"))
+        |> Conn.put_resp_header("cache-control", "no-store")
+        |> Conn.put_resp_header("x-content-type-options", "nosniff")
+        |> Conn.send_resp(200, body)
+        |> Conn.halt()
+
+      {:error, status} ->
+        conn |> Conn.send_resp(status, "") |> Conn.halt()
+    end
+  end
+
+  defp serve_export(conn), do: conn |> untracked() |> Conn.send_resp(405, "") |> Conn.halt()
 
   defp panel_sid(%{"sid" => sid}) when is_binary(sid), do: sid
   defp panel_sid(_params), do: ""

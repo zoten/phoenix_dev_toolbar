@@ -70,6 +70,9 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   to another host), and passes `<path>/live` to `panel.js`. The plug runs before the
   host's `Plug.Session` in a generated endpoint, so the panel never touches the cookie
   session (LiveView treats an unfetched session as empty).
+- **Panel downloads**: `GET <path>/export/ecto.json` answers the Ecto tab's Download as
+  an attachment (ADR 08). Downloads use same-origin URLs, never `blob:` links: Firefox
+  checks a link clicked in the iframe against the host's `frame-src`.
 - **Panel socket**: `PhoenixDevToolbar.PanelSocket`. The plug upgrades
   `GET <path>/live/websocket` itself, through Phoenix's documented custom transport API:
   `Phoenix.Socket.Transport.check_origin/4` and `connect_info/3`, then

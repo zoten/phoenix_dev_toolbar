@@ -107,19 +107,16 @@ const PdtSummaryMore = {
   },
 }
 
-// On #pdt-ecto-export (ADR 08): the Ecto tab pushes its JSON export, saved as a
-// file or copied. The result line (#pdt-export-result, phx-update="ignore") is
-// ours.
-// - Download: the blob URL stays alive until the next download (or a minute):
-//   with "ask where to save", the browser reads it after its dialog closes.
-// - Copy: the export arrives after a round trip (and EXPLAINs), too late for
+// On #pdt-ecto-export (ADR 08): Download is a plain same-origin link the plug
+// answers (a blob: link here is blocked by a host's frame-src in Firefox).
+// Copy: the tab pushes its JSON export; the result line (#pdt-export-result,
+// phx-update="ignore") is ours. The export arrives after a round trip (and EXPLAINs), too late for
 //   the click's user activation. Where ClipboardItem exists (secure contexts:
 //   https or localhost), the write starts in the click itself with a promised
 //   blob, resolved when the export arrives. Elsewhere (plain http on a LAN IP)
 //   there is no Clipboard API: execCommand("copy") on arrival, and when the
 //   activation has expired the JSON is held and the next Copy click copies it.
 const EXPORT_WAIT_MS = 60000
-const URL_TTL_MS = 60000
 const HELD_MS = 60000
 
 // The pre Clipboard API copy: works without a secure context, within the
@@ -147,7 +144,6 @@ const execCopy = (text) => {
 const PdtExport = {
   mounted() {
     this.result = this.el.querySelector("#pdt-export-result")
-    this.url = null
     this.pending = null
     this.held = null
     this.onClick = (event) => {
@@ -167,18 +163,13 @@ const PdtExport = {
     this.onChange = () => this.drop()
     this.el.addEventListener("click", this.onClick, true)
     this.el.addEventListener("change", this.onChange)
-    this.handleEvent("pdt:export", ({action, filename, payload}) => {
-      const json = JSON.stringify(payload, null, 2)
-      if (action === "copy") this.copy(json)
-      else this.download(json, filename)
-    })
+    this.handleEvent("pdt:export", ({payload}) => this.copy(JSON.stringify(payload, null, 2)))
   },
   destroyed() {
     this.el.removeEventListener("click", this.onClick, true)
     this.el.removeEventListener("change", this.onChange)
     this.drop()
     this.settle(null)
-    this.revoke()
   },
   say(text) {
     if (this.result) this.result.textContent = text
@@ -192,23 +183,6 @@ const PdtExport = {
   drop() {
     if (this.held) clearTimeout(this.held.timer)
     this.held = null
-  },
-  revoke() {
-    if (this.url) URL.revokeObjectURL(this.url)
-    this.url = null
-  },
-  download(json, filename) {
-    this.revoke()
-    const url = URL.createObjectURL(new Blob([json], {type: "application/json"}))
-    this.url = url
-    setTimeout(() => { if (this.url === url) this.revoke() }, URL_TTL_MS)
-    const link = document.createElement("a")
-    link.href = url
-    link.download = filename
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    this.say("Download started: " + filename)
   },
   // In the click: claims the clipboard now, the text comes later.
   startCopy() {

@@ -1,9 +1,11 @@
 defmodule PhoenixDevToolbar.EctoExport do
   @moduledoc false
   # The Ecto tab's JSON export (ADR 08): a page's queries as a map JSON
-  # encodes as is (string keys; strings, numbers, booleans, nil, lists). It is
-  # not encoded here: the map goes through push_event/3, which Phoenix encodes
-  # with the host's JSON library, and the browser formats it.
+  # encodes as is (string keys; strings, numbers, booleans, nil, lists).
+  # Copy sends the map through push_event/3; Download is `request/1`, answered
+  # by PhoenixDevToolbar.Plug on a same-origin URL (a blob: link in the iframe
+  # is blocked by a host's `frame-src` in Firefox), encoded with the host's
+  # JSON library (`Phoenix.json_library/0`): the toolbar adds none.
   #
   # `:short` keeps what reproduces a query (SQL, params, location), `:full`
   # every captured detail, plus EXPLAIN plans when an `:explain` function is
@@ -11,12 +13,20 @@ defmodule PhoenixDevToolbar.EctoExport do
   # `:budget_ms`, the rest marked skipped. Params are the stored, redacted
   # string: the raw params kept for EXPLAIN are never exported.
 
+  # Jason pretty prints the file when it is the host's JSON library.
+  @compile {:no_warn_undefined, Jason}
+
+  alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Explain
   alias PhoenixDevToolbar.NPlusOne
+  alias PhoenixDevToolbar.Plugins
+  alias PhoenixDevToolbar.Store
 
   @max_explains 50
   @budget_ms 15_000
+  # A page is its request and its LiveViews (PhoenixDevToolbar.Page): a few sids.
+  @max_sids 4
 
   @type format :: :short | :full
   @type json :: String.t() | number() | boolean() | nil | [json()] | %{String.t() => json()}
@@ -39,6 +49,101 @@ defmodule PhoenixDevToolbar.EctoExport do
       "count" => length(queries),
       "queries" => queries
     }
+  end
+
+  @doc """
+  The export of a page: the Ecto events of `sids` in the Store, with the
+  Ecto plugin's `config` (repos for EXPLAIN, the N+1 threshold).
+  """
+  @spec page(
+          %{root: String.t() | nil, sids: [String.t()], path: String.t() | nil},
+          format(),
+          boolean(),
+          map() | nil
+        ) :: %{String.t() => json()}
+  def page(%{root: root, sids: sids, path: path}, format, explain?, config) do
+    config = config || %{}
+
+    events =
+      Enum.flat_map(sids, &for(%Event{plugin: :ecto} = event <- Store.events(&1), do: event))
+
+    opts =
+      [root: root, path: path, threshold: Plugins.Ecto.n_plus_one(config)] ++
+        explain_opt(format, explain?, Map.get(config, :repos, []))
+
+    build(events, format, opts)
+  end
+
+  defp explain_opt(:full, true, repos), do: [explain: &Explain.run(&1, repos)]
+  defp explain_opt(_format, _explain?, _repos), do: []
+
+  @doc """
+  The Download answer, from the query params of
+  `<path>/export/ecto.json?format=short|full&explain=true&root=SID&sids=SID,SID`:
+  `{:ok, filename, body}`, `{:error, 400}` for bad params or `{:error, 404}`
+  for a page or an Ecto plugin that is not there. The sids are the access
+  key, as for the panel.
+  """
+  @spec request(map()) :: {:ok, String.t(), iodata()} | {:error, 400 | 404}
+  def request(params) do
+    with {:ok, format} <- format(params["format"]),
+         {:ok, root} <- sid(params["root"]),
+         {:ok, sids} <- sids(params["sids"]),
+         {:ok, path} <- known(sids),
+         {:ok, config} <- ecto_config() do
+      page = %{root: root, sids: sids, path: path}
+      export = page(page, format, params["explain"] == "true", config)
+      {:ok, filename(format, export["exported_at"]), encode(export)}
+    end
+  end
+
+  @doc "The file name of an export: `ecto-queries-<format>-<yyyymmddThhmmss>.json`."
+  @spec filename(format(), String.t()) :: String.t()
+  def filename(format, exported_at) do
+    stamp = exported_at |> String.replace(~r/[^0-9T]/, "") |> String.slice(0, 15)
+    "ecto-queries-#{format}-#{stamp}.json"
+  end
+
+  defp format("short"), do: {:ok, :short}
+  defp format("full"), do: {:ok, :full}
+  defp format(_other), do: {:error, 400}
+
+  defp sid(sid) when is_binary(sid) and byte_size(sid) in 1..64, do: {:ok, sid}
+  defp sid(_other), do: {:error, 400}
+
+  defp sids(sids) when is_binary(sids) and byte_size(sids) <= 65 * @max_sids do
+    sids = String.split(sids, ",")
+
+    case length(sids) <= @max_sids and Enum.all?(sids, &match?({:ok, _sid}, sid(&1))) do
+      true -> {:ok, sids}
+      false -> {:error, 400}
+    end
+  end
+
+  defp sids(_other), do: {:error, 400}
+
+  # Every sid a session in the Store; the path is the page's latest.
+  defp known(sids) do
+    Enum.reduce_while(sids, {:ok, nil}, fn sid, {:ok, path} ->
+      case Store.session(sid) do
+        {:ok, session} -> {:cont, {:ok, session.path || path}}
+        :error -> {:halt, {:error, 404}}
+      end
+    end)
+  end
+
+  defp ecto_config do
+    case List.keyfind(Collector.plugins(), Plugins.Ecto, 0) do
+      {Plugins.Ecto, config} -> {:ok, config}
+      nil -> {:error, 404}
+    end
+  end
+
+  defp encode(export) do
+    case Phoenix.json_library() do
+      Jason -> Jason.encode_to_iodata!(export, pretty: true)
+      library -> library.encode_to_iodata!(export)
+    end
   end
 
   defp queries(events, :short, _opts) do

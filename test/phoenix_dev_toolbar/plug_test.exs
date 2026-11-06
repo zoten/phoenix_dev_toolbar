@@ -272,4 +272,40 @@ defmodule PhoenixDevToolbar.PlugTest do
       end
     end
   end
+
+  describe "Ecto export" do
+    defp export(query, method \\ :get) do
+      method
+      |> conn("/__pdt/export/ecto.json?" <> URI.encode_query(query))
+      |> ToolbarPlug.call(@opts)
+    end
+
+    defp page_sid, do: Store.new_session(Session.new(:request, path: "/users")).sid
+
+    test "answers a known page's export as an attachment, untracked" do
+      sid = page_sid()
+      conn = export(%{"format" => "short", "root" => sid, "sids" => sid})
+
+      assert conn.halted
+      assert conn.status == 200
+      assert ["attachment; filename=" <> _name] = get_resp_header(conn, "content-disposition")
+      assert ["application/json" <> _charset] = get_resp_header(conn, "content-type")
+
+      assert %{"format" => "short", "path" => "/users", "count" => 0} =
+               Jason.decode!(conn.resp_body)
+
+      refute Map.has_key?(conn.private, :phoenix_dev_toolbar)
+    end
+
+    test "refuses bad params, unknown pages and other methods" do
+      sid = page_sid()
+      many = Enum.join(for(_i <- 1..5, do: page_sid()), ",")
+
+      assert export(%{"format" => "xml", "root" => sid, "sids" => sid}).status == 400
+      assert export(%{"format" => "short", "root" => sid}).status == 400
+      assert export(%{"format" => "short", "root" => sid, "sids" => many}).status == 400
+      assert export(%{"format" => "short", "root" => sid, "sids" => "nope"}).status == 404
+      assert export(%{"format" => "short", "root" => sid, "sids" => sid}, :post).status == 405
+    end
+  end
 end
