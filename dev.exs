@@ -166,7 +166,7 @@ defmodule Demo.Layouts do
           <.link navigate="/assigns">Assigns</.link>
           <.link navigate="/jobs">Oban jobs</.link>
           <.link navigate="/plugins">Plugin errors</.link>
-<.link navigate="/memory">Memory</.link>
+          <.link navigate="/memory">Memory</.link>
           <a href="/plain">Dead page</a>
         </nav>
         {@inner_content}

@@ -105,7 +105,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
          |> start_async(:gc, fn -> {pid, ProcessInfo.collect(pid)} end)}
 
       false ->
-        {:noreply, socket}
+        {:noreply, assign(socket, :gc, :too_soon)}
     end
   end
 
@@ -115,7 +115,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
   def handle_async(:gc, {:ok, {pid, result}}, %{assigns: %{selected: pid}} = socket),
     do: {:noreply, socket |> assign(:gc, result) |> read_sample()}
 
-  # The target changed meanwhile.
+  # The target changed meanwhile (its task was cancelled), or the task exited.
   def handle_async(:gc, _result, socket), do: {:noreply, assign(socket, :gc, nil)}
 
   defp gc_allowed?(%{assigns: %{gc_at: nil}}), do: true
@@ -128,7 +128,9 @@ defmodule PhoenixDevToolbar.Panels.Process do
   # A new target (nil: the page's LiveView, the first of the list): its data
   # starts over.
   defp select(socket, pid) do
-    assign(socket,
+    socket
+    |> cancel_gc()
+    |> assign(
       selected: pid,
       gc: nil,
       about: nil,
@@ -137,6 +139,13 @@ defmodule PhoenixDevToolbar.Panels.Process do
       series: empty_series()
     )
   end
+
+  # A collection still running for the previous target (a process stuck in a
+  # NIF) would otherwise leave its task behind.
+  defp cancel_gc(%{assigns: %{gc: :running}} = socket),
+    do: socket |> cancel_async(:gc) |> assign(:gc, nil)
+
+  defp cancel_gc(socket), do: socket
 
   # The list is refreshed when polling starts and on every relations tick: a
   # nested LiveView mounts after its parent (same sid, so the page does not
@@ -336,11 +345,8 @@ defmodule PhoenixDevToolbar.Panels.Process do
         >
           {if(@gc == :running, do: "collecting…", else: "GC now")}
         </button>
-        <span :if={match?({:ok, _, _}, @gc)} id="pdt-process-gc-result" class="pdt-hint" role="status">
+        <span :if={is_map(@sample)} id="pdt-process-gc-result" class="pdt-hint" role="status">
           {gc_result(@gc)}
-        </span>
-        <span :if={@gc == :dead} id="pdt-process-gc-result" class="pdt-hint" role="status">
-          The process exited.
         </span>
       </div>
       <p :if={@targets != [] and not (@shown? and @visible?)} class="pdt-hint pdt-process__paused">
@@ -471,4 +477,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
     do: "freed #{bytes(before - after_gc)}: #{bytes(before)} → #{bytes(after_gc)}"
 
   defp gc_result({:ok, _before, after_gc}), do: "nothing to free: #{bytes(after_gc)} held"
+  defp gc_result(:dead), do: "the process exited"
+  defp gc_result(:too_soon), do: "one collection a second: try again"
+  defp gc_result(_none_or_running), do: ""
 end

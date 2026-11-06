@@ -107,17 +107,23 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
   end
 
   test "GC now collects the selected process, at most once a second" do
-    {_host, sid} = visit("/demo")
+    {host, sid} = visit("/demo")
     panel = open(sid)
     visible(panel)
 
+    # Count the host's real full sweeps (tracing ends with this test process).
+    :erlang.trace(host.pid, true, [:garbage_collection])
+
     panel |> element("#pdt-process-gc") |> render_click()
     _ = render_async(panel)
-    assert has_element?(panel, "#pdt-process-gc-result")
+    assert_receive {:trace, _pid, :gc_major_start, _info}
+    assert has_element?(panel, "#pdt-process-gc-result", ~r/freed|nothing to free/)
 
-    # A second click within the second is ignored: no new collection starts.
+    # A second click within the second collects nothing, and says why.
     panel |> element("#pdt-process-gc") |> render_click()
-    refute has_element?(panel, "#pdt-process-gc", "collecting")
+    _ = render_async(panel)
+    refute_receive {:trace, _pid, :gc_major_start, _info}, 100
+    assert has_element?(panel, "#pdt-process-gc-result", "one collection a second")
   end
 
   test "a dead target says so" do

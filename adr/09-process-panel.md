@@ -55,7 +55,11 @@ only, reading the page's process while the tab is shown and the panel visible.
 - One more default tab for every host: until it is opened it only reads the Store
   (which processes the page has), never the host process.
 - A full sweep GC pauses the host process for as long as it takes: user triggered and
-  rate limited.
+  rate limited. The limit is per open panel: two browser tabs on one page can each
+  collect it once a second. A forced sweep of a process close to its `max_heap_size`
+  (with `kill: true`) can be what gets it killed, a little earlier than its own GC would.
+- A collection still running when the target changes is cancelled, so a process stuck
+  in a NIF never leaves tasks behind.
 - A read is a signal the target answers: a host process stuck in a long NIF delays
   the panel, never the reverse.
 - Links and monitors are copied whole by `Process.info/2` before being cut to 50: a
