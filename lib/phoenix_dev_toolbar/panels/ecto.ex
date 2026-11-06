@@ -18,16 +18,13 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
     {:ok,
      socket
      |> stream_configure(:queries, dom_id: &"pdt-query-#{&1.seq}")
-     |> assign(n_plus_one: nil, origins?: true)}
+     |> assign(n_plus_one: nil, groups: [], detected: 0)}
   end
 
   @impl PhoenixDevToolbar.Panel
   def handle_reset(events, socket) do
-    socket =
-      assign(socket,
-        n_plus_one: NPlusOne.new(Plugins.Ecto.n_plus_one(socket.assigns[:config])),
-        origins?: true
-      )
+    threshold = Plugins.Ecto.n_plus_one(socket.assigns[:config])
+    socket = assign(socket, n_plus_one: NPlusOne.new(threshold), groups: [], detected: 0)
 
     {queries, socket} = detect(events, socket)
     stream(socket, :queries, queries, reset: true, limit: -@dom_limit)
@@ -40,7 +37,9 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   end
 
   # Folds the queries into the detector; a query at or past its group's
-  # threshold is marked for its row.
+  # threshold is marked for its row. The detector itself changes on every
+  # query: only its groups are rendered, assigned apart so the list re-renders
+  # when they change.
   defp detect(events, socket) do
     {queries, n_plus_one} =
       events
@@ -50,8 +49,13 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
         {mark(event, result), state}
       end)
 
-    origins? = socket.assigns.origins? and Enum.all?(queries, &(&1.data[:stacktrace] != []))
-    {queries, assign(socket, n_plus_one: n_plus_one, origins?: origins?)}
+    socket =
+      socket
+      |> assign(:n_plus_one, n_plus_one)
+      |> assign(:groups, NPlusOne.groups(n_plus_one))
+      |> assign(:detected, NPlusOne.detected(n_plus_one))
+
+    {queries, socket}
   end
 
   defp mark(event, :ok), do: event
@@ -61,12 +65,7 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   def render(assigns) do
     ~H"""
     <div id="pdt-ecto">
-      <.n_plus_one_list
-        :if={@n_plus_one && NPlusOne.detected(@n_plus_one) > 0}
-        n_plus_one={@n_plus_one}
-        origins?={@origins?}
-        root={@page.root}
-      />
+      <.n_plus_one_list :if={@detected > 0} groups={@groups} detected={@detected} root={@page.root} />
       <ul id="pdt-queries" class="pdt-list" phx-update="stream">
         <li id="pdt-queries-empty" class="pdt-list__empty">No queries yet.</li>
         <.query_row :for={{id, event} <- @streams.queries} id={id} event={event} root={@page.root} />

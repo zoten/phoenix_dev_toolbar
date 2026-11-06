@@ -103,28 +103,25 @@ defmodule PhoenixDevToolbar.Components do
     """
   end
 
-  attr :n_plus_one, PhoenixDevToolbar.NPlusOne, required: true
-  attr :origins?, :boolean, required: true, doc: "whether every query had an origin"
+  attr :groups, :list, required: true, doc: "PhoenixDevToolbar.NPlusOne.groups/1"
+  attr :detected, :integer, required: true, doc: "how many groups were detected in total"
   attr :root, :string, required: true
 
   @doc "The N+1 groups detected on the page, newest first (ADR 08)."
   def n_plus_one_list(assigns) do
     ~H"""
-    <section id="pdt-n-plus-one" class="pdt-n-plus-one">
+    <section id="pdt-n-plus-one" class="pdt-n-plus-one" aria-label="N+1 queries">
       <h3 class="pdt-n-plus-one__title">
-        N+1: {PhoenixDevToolbar.NPlusOne.detected(@n_plus_one)} repeated {noun_queries(
-          PhoenixDevToolbar.NPlusOne.detected(@n_plus_one)
-        )}
+        N+1: {@detected} repeated {noun_queries(@detected)}
       </h3>
       <ul class="pdt-list">
-        <li
-          :for={{group, index} <- Enum.with_index(PhoenixDevToolbar.NPlusOne.groups(@n_plus_one))}
-          id={"pdt-n-plus-one-#{index}"}
-          class="pdt-row"
-        >
+        <li :for={group <- @groups} id={"pdt-n-plus-one-#{group.seq}"} class="pdt-row">
           <div class="pdt-row__head">
             <code class="pdt-sql">{group.sql}</code>
-            <span class="pdt-badge pdt-badge--warn">×{group.count}</span>
+            <span class="pdt-badge pdt-badge--warn" title={"Ran #{group.count} times in one callback"}>
+              <span aria-hidden="true">×{group.count}</span>
+              <span class="pdt-sr-only">{group.count} times</span>
+            </span>
           </div>
           <div class="pdt-row__meta">
             <.phase_tag sid={group.sid} root={@root} />
@@ -132,7 +129,7 @@ defmodule PhoenixDevToolbar.Components do
           </div>
         </li>
       </ul>
-      <p :if={not @origins?} id="pdt-n-plus-one-hint" class="pdt-hint">
+      <p :if={Enum.any?(@groups, &is_nil(&1.origin))} id="pdt-n-plus-one-hint" class="pdt-hint">
         Without origins, queries are grouped by SQL alone: set <code>stacktrace: true</code>
         in your repo config to tell call sites apart.
       </p>

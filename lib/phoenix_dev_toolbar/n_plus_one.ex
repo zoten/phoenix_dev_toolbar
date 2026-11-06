@@ -5,15 +5,22 @@ defmodule PhoenixDevToolbar.NPlusOne do
   # span of one session (ADR 02) is an N+1. Without `stacktrace: true` the
   # origin is unknown and the SQL alone is the key.
   #
-  # Bounded: counts are kept for the current span of each sid only, at most
-  # @max_keys distinct queries per span; detected groups are capped at
-  # @max_groups, newest first, while `detected` keeps the true total.
+  # Bounded: counts are kept for the last @spans_per_sid spans of each sid
+  # (processes of one sid, nested LiveViews, interleave their spans), at most
+  # @max_keys distinct queries per span, keyed by a hash of SQL and origin;
+  # detected groups are capped at @max_groups, newest first, while `detected`
+  # keeps the true total.
+  #
+  # The origin is the first stacktrace frame outside Ecto, DBConnection and the
+  # repo: for queries run by Ecto's own tasks (parallel preloads) it is a weak
+  # one (a Task or Enum frame).
 
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.NPlusOne
 
   @max_keys 500
   @max_groups 50
+  @spans_per_sid 4
 
   defstruct threshold: 5, spans: %{}, groups: [], detected: 0
 
@@ -27,7 +34,7 @@ defmodule PhoenixDevToolbar.NPlusOne do
         }
   @type t :: %NPlusOne{
           threshold: pos_integer() | false,
-          spans: %{String.t() => {non_neg_integer() | nil, %{term() => pos_integer()}}},
+          spans: %{String.t() => [{non_neg_integer() | nil, %{integer() => pos_integer()}}]},
           groups: [group()],
           detected: non_neg_integer()
         }
@@ -45,7 +52,7 @@ defmodule PhoenixDevToolbar.NPlusOne do
   def add(%NPlusOne{threshold: false} = state, _event), do: {state, :ok}
 
   def add(%NPlusOne{} = state, %Event{kind: :query, sid: sid, span: span} = event) do
-    key = key(event)
+    key = :erlang.phash2(key(event))
     counts = counts_in(state, sid, span)
 
     case counts do
@@ -75,16 +82,17 @@ defmodule PhoenixDevToolbar.NPlusOne do
   defp origin(%{stacktrace: [first | _]}), do: first
   defp origin(_data), do: nil
 
-  # A new span of a sid drops the counts of its previous span.
   defp counts_in(%NPlusOne{spans: spans}, sid, span) do
-    case spans do
-      %{^sid => {^span, counts}} -> counts
-      _other -> %{}
+    case List.keyfind(Map.get(spans, sid, []), span, 0) do
+      {^span, counts} -> counts
+      nil -> %{}
     end
   end
 
+  # The span moves to the front; the oldest of a sid's spans is dropped.
   defp bump(state, event, sid, span, counts, count) do
-    state = %{state | spans: Map.put(state.spans, sid, {span, counts})}
+    recent = [{span, counts} | List.keydelete(Map.get(state.spans, sid, []), span, 0)]
+    state = %{state | spans: Map.put(state.spans, sid, Enum.take(recent, @spans_per_sid))}
 
     cond do
       count == state.threshold -> {detect(state, event, count), :detected}

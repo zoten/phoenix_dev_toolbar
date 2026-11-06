@@ -13,9 +13,11 @@ defmodule DemoWeb.PageLive do
     {:noreply, socket}
   end
 
-  # `count` queries in this callback, or in a Task.async child of it.
+  # `count` queries in this callback, or in a Task.async child of it; with
+  # "origin", from a call site (the stacktrace of a repo with `stacktrace: true`).
   def handle_event("queries", %{"sql" => sql, "count" => count} = params, socket) do
-    run = fn -> for _n <- 1..count, do: query(sql) end
+    stacktrace = origin(params["origin"])
+    run = fn -> for _n <- 1..count, do: query(sql, stacktrace) end
 
     case params["task"] do
       true -> run |> Task.async() |> Task.await()
@@ -49,7 +51,10 @@ defmodule DemoWeb.PageLive do
   @impl true
   def render(assigns), do: ~H"<p>page</p>"
 
-  defp query(sql) do
+  defp origin(nil), do: nil
+  defp origin(file), do: [{DemoWeb.Posts, :load, 0, [file: String.to_charlist(file), line: 3]}]
+
+  defp query(sql, stacktrace \\ nil) do
     :telemetry.execute(
       [:demo, :repo, :query],
       %{total_time: System.convert_time_unit(1, :millisecond, :native)},
@@ -58,7 +63,8 @@ defmodule DemoWeb.PageLive do
         query: sql,
         params: [],
         source: "users",
-        result: {:ok, %{num_rows: 1}}
+        result: {:ok, %{num_rows: 1}},
+        stacktrace: stacktrace
       }
     )
   end

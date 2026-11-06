@@ -30,6 +30,7 @@
     --pdt-muted: #949bab;
     --pdt-border: #2a2f3c;
     --pdt-error-bg: #2a1a1d;
+    --pdt-warn: #d69e2e;
     --pdt-code: #c9d3e3;
     color-scheme: dark;
   }
@@ -216,13 +217,21 @@ body.pdt {
 
 /* Where the event ran: the HTTP dead render or the connected LiveView. */
 .pdt-tag--http { color: var(--pdt-muted); }
+.pdt-tag--live { color: var(--pdt-ok); border-color: color-mix(in srgb, var(--pdt-ok) 45%, transparent); }
 .pdt-tag--warn { color: var(--pdt-warn); border-color: color-mix(in srgb, var(--pdt-warn) 45%, transparent); }
 
 /* The N+1 groups above the Ecto queries (ADR 08). */
 .pdt-n-plus-one { border-bottom: 1px solid var(--pdt-border); background: var(--pdt-bg-alt); }
 .pdt-n-plus-one__title { margin: 0; padding: 8px 12px 0; font-size: 12px; color: var(--pdt-warn); }
 .pdt-n-plus-one .pdt-hint { margin: 0; padding: 0 12px 8px; }
-.pdt-tag--live { color: var(--pdt-ok); border-color: color-mix(in srgb, var(--pdt-ok) 45%, transparent); }
+.pdt-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 
 .pdt-origin { font: 11px var(--pdt-mono); overflow-wrap: anywhere; }
 

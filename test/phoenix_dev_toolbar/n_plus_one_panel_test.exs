@@ -59,8 +59,8 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
     flush(panel)
 
     assert has_element?(panel, "#pdt-badge-ecto-n-plus-one", "N+1 ×1")
-    assert has_element?(panel, "#pdt-n-plus-one-0", "SELECT * FROM posts WHERE user_id = $1")
-    assert has_element?(panel, "#pdt-n-plus-one-0", "×6")
+    assert has_element?(panel, "#pdt-n-plus-one li", "SELECT * FROM posts WHERE user_id = $1")
+    assert has_element?(panel, "#pdt-n-plus-one li", "×6")
     # Rows from the threshold on (the 5th and 6th) are tagged.
     tags =
       panel
@@ -71,6 +71,20 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
     assert Enum.count(tags) == 2
     # FakeRepo queries have no stacktrace: the hint explains the coarser grouping.
     assert has_element?(panel, "#pdt-n-plus-one-hint")
+  end
+
+  test "with origins, two call sites are two groups and no hint is shown" do
+    {host, panel} = start(PhoenixDevToolbar.Application.plugins())
+
+    for file <- ["lib/a.ex", "lib/b.ex"],
+        do: render_hook(host, "queries", %{"sql" => "SELECT u", "count" => 5, "origin" => file})
+
+    flush(panel)
+
+    assert has_element?(panel, "#pdt-badge-ecto-n-plus-one", "N+1 ×2")
+    assert has_element?(panel, "#pdt-n-plus-one li .pdt-origin", "lib/a.ex:3")
+    assert has_element?(panel, "#pdt-n-plus-one li .pdt-origin", "lib/b.ex:3")
+    refute has_element?(panel, "#pdt-n-plus-one-hint")
   end
 
   test "the same query once per callback, five times, is not an N+1" do
