@@ -100,6 +100,47 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
              WebSocketClient.recv_json(socket)
   end
 
+  # The panel socket must never become a way into the host's own LiveViews: a
+  # host LiveView's session token would join here without the host's CSRF and
+  # session checks. Only registered panels may join; anything else closes.
+  test "a host LiveView cannot be joined through the panel socket", %{port: port} do
+    host =
+      build_conn()
+      |> get("/demo")
+      |> html_response(200)
+      |> LazyHTML.from_document()
+      |> LazyHTML.query("[data-phx-session]")
+
+    [id] = LazyHTML.attribute(host, "id")
+    [session] = LazyHTML.attribute(host, "data-phx-session")
+    static = host |> LazyHTML.attribute("data-phx-static") |> List.first()
+
+    join = %{
+      "url" => "http://localhost/demo",
+      "session" => session,
+      "static" => static,
+      "params" => %{}
+    }
+
+    {:ok, socket} =
+      WebSocketClient.connect(port, "/__pdt/live/websocket?vsn=2.0.0", [
+        {"Origin", "http://localhost:#{port}"}
+      ])
+
+    :ok = WebSocketClient.send_json(socket, ["1", "1", "lv:#{id}", "phx_join", join])
+    assert WebSocketClient.closed?(socket)
+  end
+
+  test "an endpoint without a LiveView socket gets a 404, never a crash" do
+    conn =
+      :get
+      |> Plug.Test.conn("/__pdt/live/websocket")
+      |> Plug.Conn.put_private(:phoenix_endpoint, PhoenixDevToolbar.NoSocketEndpoint)
+      |> PhoenixDevToolbar.PanelSocket.upgrade()
+
+    assert {conn.status, conn.halted} == {404, true}
+  end
+
   test "a foreign origin is refused (the endpoint's check_origin)", %{port: port} do
     assert {:error, {403, _head}} =
              WebSocketClient.connect(port, "/__pdt/live/websocket?vsn=2.0.0", [

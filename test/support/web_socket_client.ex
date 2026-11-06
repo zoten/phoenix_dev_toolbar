@@ -50,6 +50,16 @@ defmodule PhoenixDevToolbar.WebSocketClient do
       :gen_tcp.send(socket, [0x81, length_header(byte_size(payload)), mask, mask(payload, mask)])
   end
 
+  # Whether the server closed the connection (a close frame or the TCP close).
+  @spec closed?(port(), timeout()) :: boolean()
+  def closed?(socket, timeout \\ 2_000) do
+    case :gen_tcp.recv(socket, 2, timeout) do
+      {:ok, <<_fin::1, _rsv::3, 8::4, _rest::binary>>} -> true
+      {:error, :closed} -> true
+      _other -> false
+    end
+  end
+
   @spec recv_json(port(), timeout()) :: term()
   def recv_json(socket, timeout \\ 5_000) do
     {:ok, <<_fin_opcode, len>>} = :gen_tcp.recv(socket, 2, timeout)

@@ -65,6 +65,7 @@ const PdtPanel = {
   mounted() {
     forgetLoads()
     clearStalled()
+    joinedOnce = true
     panelHook = this
     pushVisibility()
     const pending = clientBuffer
@@ -235,6 +236,7 @@ function clearStalled() {
 // example by a proxy) never reloads either: it says so after JOIN_MS, and the
 // notice goes away if it joins later.
 const JOIN_MS = 8000
+let joinedOnce = false
 
 // The panel's own socket at <path>/live: WebSocket only (no long poll
 // fallback), no CSRF param (it carries no session).
@@ -247,6 +249,6 @@ if (tripped(recordLoad())) {
 } else {
   liveSocket.connect()
   setTimeout(() => {
-    if (!panelHook) showStalled("It has not connected yet: its WebSocket may be blocked.")
+    if (!joinedOnce) showStalled("It has not connected yet: its WebSocket may be blocked.")
   }, JOIN_MS)
 }

@@ -76,7 +76,16 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   `connect_info/3`, then `Phoenix.LiveView.Socket.connect/1` and
   `WebSockAdapter.upgrade/4`, with Phoenix's default WebSocket options (JSON serializers
   1.0 and 2.0, 60 s timeout). It uses the host endpoint (PubSub, secret key base,
-  LiveView's session verification), but its `connect_info` has no session.
+  LiveView's session verification) and the endpoint's mounted LiveView socket handler
+  (`Phoenix.LiveView.Socket`, or a host module that uses it), but its `connect_info`
+  has no session. An endpoint without a LiveView socket gets a 404 and one warning.
+  - Panels only: the handler is wrapped as a `WebSock` that lets a `phx_join` through
+    only for `lv:<id>` where a panel's dead render registered `id`
+    (`Store.allow_panel/1`, a day and 1000 panels at most; LiveView checks that the
+    topic is the id signed in the session token). Any other join (a host LiveView,
+    uploads) closes the connection: the session free socket never becomes a way into
+    the host's own LiveViews, whose tokens would otherwise join without the host's
+    CSRF and session checks.
   - Why: the host's own socket, configured with `connect_info: [session: ...]` as every
     generated app is, gets a session only when the `_csrf_token` param matches the CSRF
     state in the session cookie. Without one, LiveView refuses every join with `stale`,
@@ -146,5 +155,11 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 - No long poll fallback: a proxy that blocks WebSockets leaves the panel unconnected
   (the breaker's notice says so).
 - The panel socket mirrors Phoenix's WebSocket defaults by hand: a new Phoenix default
-  (a serializer version) needs a change here.
+  (a serializer version) needs a change here. It skips what the panel does not need:
+  code reloading on connect, subprotocols, and the pool drainer (panel connections
+  close abruptly as the endpoint stops).
+- The upgrade from a plug is tested with Bandit only; Cowboy relies on the same halted
+  conn contract.
+- A panel left open for more than a day cannot rejoin after a disconnect (its id
+  expired): a reload fixes it.
 - Pages that are not HTML responses from Plug (static files) get no toolbar.

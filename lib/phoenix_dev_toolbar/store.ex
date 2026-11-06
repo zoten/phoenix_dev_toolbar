@@ -14,6 +14,7 @@ defmodule PhoenixDevToolbar.Store do
   #   :pdt_socket_ids  set          {socket_id, sid}      (dead render -> LiveView)
   #   :pdt_transports  set          {transport_pid, sid}  (latest sid per tab)
   #   :pdt_rate        set          {{sid, second}, n}    (flood guard)
+  #   :pdt_panels      set          {panel_id, second}    (panel socket allowlist)
 
   use GenServer
 
@@ -28,7 +29,12 @@ defmodule PhoenixDevToolbar.Store do
   @transports :pdt_transports
   @rate :pdt_rate
   @counts :pdt_counts
-  @tables [@events, @sessions, @pids, @socket_ids, @transports, @rate, @counts]
+  @panels :pdt_panels
+  @tables [@events, @sessions, @pids, @socket_ids, @transports, @rate, @counts, @panels]
+
+  # Panel LiveView ids the panel socket accepts (ADR 04): a day, 1000 at most.
+  @panel_ttl_s 24 * 3600
+  @max_panels 1000
 
   @limits_key {Store, :limits}
   @seq_key {Store, :seq}
@@ -208,6 +214,26 @@ defmodule PhoenixDevToolbar.Store do
         do: {plugin, %{count: count, trimmed: trimmed}}
   rescue
     ArgumentError -> %{}
+  end
+
+  @doc """
+  Lets the panel socket accept joins for the panel LiveView `id` (its dead
+  render registers it). A day at most, 1000 panels at most.
+  """
+  @spec allow_panel(String.t()) :: :ok
+  def allow_panel(id) when is_binary(id) do
+    :ets.insert(@panels, {id, System.monotonic_time(:second)})
+    :ok
+  rescue
+    ArgumentError -> :ok
+  end
+
+  @doc "Whether the panel socket accepts a join for `id` (false while the Store restarts)."
+  @spec panel_allowed?(String.t()) :: boolean()
+  def panel_allowed?(id) when is_binary(id) do
+    :ets.member(@panels, id)
+  rescue
+    ArgumentError -> false
   end
 
   @doc "The event `seq` of `sid`, or nil (also while the Store restarts)."
@@ -487,7 +513,25 @@ defmodule PhoenixDevToolbar.Store do
     :ets.select_delete(@rate, [{{{:_, :"$1"}, :_}, [{:<, :"$1", cutoff}], [true]}])
     delete_orphan_events()
     delete_orphan_index_rows()
+    expire_panels()
     :ok
+  end
+
+  defp expire_panels do
+    cutoff = System.monotonic_time(:second) - @panel_ttl_s
+    :ets.select_delete(@panels, [{{:_, :"$1"}, [{:<, :"$1", cutoff}], [true]}])
+
+    case :ets.info(@panels, :size) - @max_panels do
+      over when over > 0 ->
+        @panels
+        |> :ets.tab2list()
+        |> Enum.sort_by(&elem(&1, 1))
+        |> Enum.take(over)
+        |> Enum.each(fn {id, _at} -> :ets.delete(@panels, id) end)
+
+      _within ->
+        :ok
+    end
   end
 
   # Index rows written after their session was deleted, and pid rows of

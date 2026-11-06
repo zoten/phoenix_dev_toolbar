@@ -22,6 +22,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   alias PhoenixDevToolbar.Panel
   alias PhoenixDevToolbar.PanelLayout
   alias PhoenixDevToolbar.Shell
+  alias PhoenixDevToolbar.Store
 
   @flush_ms 100
   # Seqs are allocated before their row is written, so concurrent writers on one
@@ -36,6 +37,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   # Rendered by PhoenixDevToolbar.Plug without a router: the sid comes from the
   # signed LiveView session, there are no route params.
   def mount(_params, session, socket) do
+    :ok = allow_join(socket)
     root = valid_sid(session["pdt_sid"])
     shell = Shell.new(Collector.plugins())
     tabs = Shell.tabs(shell)
@@ -217,6 +219,15 @@ defmodule PhoenixDevToolbar.PanelLive do
     case Enum.find(tabs, &(&1.id == tab)) do
       %{panel: panel} -> send_update(panel, id: panel_id(tab), pdt: :recover)
       nil -> :ok
+    end
+  end
+
+  # The panel socket only accepts joins for panels rendered here (ADR 04): the
+  # dead render registers its id, the connected mount joins with it.
+  defp allow_join(socket) do
+    case connected?(socket) do
+      true -> :ok
+      false -> Store.allow_panel(socket.id)
     end
   end
 
