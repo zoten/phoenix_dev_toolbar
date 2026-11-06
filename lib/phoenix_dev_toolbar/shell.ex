@@ -82,19 +82,21 @@ defmodule PhoenixDevToolbar.Shell do
   def fold(%Shell{} = shell, events) do
     events
     |> Enum.group_by(& &1.plugin)
-    |> Enum.reduce(shell, fn {id, plugin_events}, acc ->
-      case acc.summaries do
-        %{^id => summary} ->
-          plugin = acc.by_id[id]
+    |> Enum.reduce(shell, &fold_plugin/2)
+  end
 
-          guard(acc, plugin, fn ->
-            put_summary(acc, id, Enum.reduce(plugin_events, summary, &plugin.summary_add(&2, &1)))
-          end)
+  defp fold_plugin({id, plugin_events}, %Shell{summaries: summaries} = acc) do
+    case summaries do
+      %{^id => summary} ->
+        plugin = acc.by_id[id]
 
-        _no_summary ->
-          acc
-      end
-    end)
+        guard(acc, plugin, fn ->
+          put_summary(acc, id, Enum.reduce(plugin_events, summary, &plugin.summary_add(&2, &1)))
+        end)
+
+      _no_summary ->
+        acc
+    end
   end
 
   @doc "The summary bar badges of every plugin, in configuration order."

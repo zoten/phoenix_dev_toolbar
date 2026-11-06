@@ -7,12 +7,12 @@ defmodule PhoenixDevToolbar.CollectorTest do
 
   alias PhoenixDevToolbar.Attribution
   alias PhoenixDevToolbar.Collector
-  alias PhoenixDevToolbar.TestPlugins.BadEvents
-  alias PhoenixDevToolbar.TestPlugins.Configured
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
+  alias PhoenixDevToolbar.TestPlugins.BadEvents
+  alias PhoenixDevToolbar.TestPlugins.Configured
   alias PhoenixDevToolbar.TestPlugins.Echo
   alias PhoenixDevToolbar.TestPlugins.Raising
 

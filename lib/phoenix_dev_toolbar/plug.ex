@@ -28,13 +28,13 @@ defmodule PhoenixDevToolbar.Plug do
 
   require Logger
 
-  alias Plug.Conn
   alias PhoenixDevToolbar.Attribution
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.PanelSocket
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
+  alias Plug.Conn
 
   @default_path "/__pdt"
   # Served name => {application, file under its priv/static, content type}. The

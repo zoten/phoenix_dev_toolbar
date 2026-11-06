@@ -306,12 +306,14 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
   defp live_view_owner(%Page{sids: sids}) do
     sids
     |> Enum.reverse()
-    |> Enum.find_value(fn sid ->
-      case safe(fn -> Store.session(sid) end, :error) do
-        {:ok, %Session{kind: :live_view, owner: owner}} when is_pid(owner) -> owner
-        _other -> nil
-      end
-    end)
+    |> Enum.find_value(&live_view_owner_of/1)
+  end
+
+  defp live_view_owner_of(sid) do
+    case safe(fn -> Store.session(sid) end, :error) do
+      {:ok, %Session{kind: :live_view, owner: owner}} when is_pid(owner) -> owner
+      _other -> nil
+    end
   end
 
   # The Store's tables vanish while it restarts: the panel shows what it can.

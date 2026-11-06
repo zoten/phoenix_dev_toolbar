@@ -18,7 +18,7 @@
           # Explicit last `with` clause keeps the chain readable
           {Credo.Check.Refactor.RedundantWithClauseResult, false}
         ],
-        enabled: [
+        extra: [
           {Jump.CredoChecks.AssertElementSelectorCanNeverFail, []},
           {Jump.CredoChecks.AvoidFunctionLevelElse, []},
           {Jump.CredoChecks.AvoidLoggerConfigureInTest, []},
