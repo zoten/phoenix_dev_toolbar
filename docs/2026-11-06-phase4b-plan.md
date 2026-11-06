@@ -123,6 +123,8 @@ reviewer, then the two final reviewers (technical and product) on the whole rang
 
 ## Decisions
 
-1. In `:defaults` (recommended), or opt-in?
-2. "GC now" button: yes (recommended, rate limited), or read only?
-3. Sampling: every second with 60 points, relations every 5 seconds (recommended)?
+1. In `:defaults`, after LiveView.
+2. "GC now" button: yes, rate limited.
+3. Sampling every second with 60 points, relations every 5 seconds, all three
+   configurable as plugin options (`sample_ms:`, `samples:`, `relations_ms:`),
+   validated in `init/1` and documented in the README and ADR 09.
