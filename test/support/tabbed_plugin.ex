@@ -6,27 +6,27 @@ defmodule PhoenixDevToolbar.TestPlugins.Tabbed do
 
   alias PhoenixDevToolbar.Event
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def init(opts), do: {:ok, %{prefix: Keyword.get(opts, :prefix, "value")}}
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def telemetry_events(_config), do: [[:pdt_test, :echo]]
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def collect(_event, {_measurements, metadata}, context) do
     data = %{text: "#{context.config.prefix} #{metadata[:value]}"}
     {:record, Event.new(:tabbed, :echo, data)}
   end
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def panel, do: PhoenixDevToolbar.TestPlugins.TabbedPanel
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def summary_init(_config), do: 0
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def summary_add(count, %Event{}), do: count + 1
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def badges(count), do: [%{id: "tabbed", text: "#{count} echoes", level: :info}]
 end

@@ -4,10 +4,10 @@ defmodule PhoenixDevToolbar.TestPlugins.Echo do
 
   alias PhoenixDevToolbar.Event
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def telemetry_events(_config), do: [[:pdt_test, :echo]]
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def collect(_event, {_measurements, %{skip: true}}, _context), do: :skip
 
   def collect(_event, {_measurements, metadata}, context),

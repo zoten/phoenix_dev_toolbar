@@ -17,7 +17,7 @@ defmodule PhoenixDevToolbar.ProcessHelpers do
       end)
 
     on_exit(fn -> send(pid, :stop) end)
-    assert_receive {:in_process_done, ^pid, result}
+    _ = assert_receive {:in_process_done, ^pid, result}
     {pid, result}
   end
 
@@ -31,7 +31,7 @@ defmodule PhoenixDevToolbar.ProcessHelpers do
   def stop(pid) do
     ref = Process.monitor(pid)
     send(pid, :stop)
-    assert_receive {:DOWN, ^ref, :process, ^pid, :normal}
+    _ = assert_receive {:DOWN, ^ref, :process, ^pid, :normal}
     :ok
   end
 end

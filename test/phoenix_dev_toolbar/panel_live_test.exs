@@ -5,6 +5,8 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
   import PhoenixDevToolbar.ProcessHelpers
+  import PhoenixDevToolbar.PageHelpers
+  import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
@@ -284,28 +286,12 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
   describe "end to end with a real host LiveView" do
     setup do
       Application.put_env(:phoenix_dev_toolbar, :repos, [DemoWeb.FakeRepo])
-      PhoenixDevToolbar.Collector.attach(PhoenixDevToolbar.Application.plugins())
+      attach_plugins()
 
       on_exit(fn ->
         Application.delete_env(:phoenix_dev_toolbar, :repos)
-        PhoenixDevToolbar.Collector.attach(PhoenixDevToolbar.Application.plugins())
+        attach_plugins()
       end)
-    end
-
-    # Loads a host page as a browser would and returns its LiveView and the
-    # sid from the injected loader tag.
-    defp visit(conn, path) do
-      conn = conn |> page_headers() |> get(path)
-
-      [sid] =
-        conn
-        |> html_response(200)
-        |> LazyHTML.from_document()
-        |> LazyHTML.query("script[data-pdt-sid]")
-        |> LazyHTML.attribute("data-pdt-sid")
-
-      {:ok, host, _html} = live(conn)
-      {host, sid}
     end
 
     test "follows the page from dead render through live events and navigation",

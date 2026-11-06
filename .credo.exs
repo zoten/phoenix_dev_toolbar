@@ -19,6 +19,13 @@
           {Credo.Check.Refactor.RedundantWithClauseResult, false}
         ],
         extra: [
+          # Opt-in Credo checks: off by default, on here.
+          {Credo.Check.Design.DuplicatedCode, []},
+          {Credo.Check.Readability.ImplTrue, []},
+          {Credo.Check.Refactor.AppendSingleItem, []},
+          {Credo.Check.Refactor.NegatedIsNil, []},
+          # Tests build atom keys from literal ranges; the rule is about runtime input.
+          {Credo.Check.Warning.UnsafeToAtom, files: %{excluded: ["test/"]}},
           {Jump.CredoChecks.AssertElementSelectorCanNeverFail, []},
           {Jump.CredoChecks.AvoidFunctionLevelElse, []},
           {Jump.CredoChecks.AvoidLoggerConfigureInTest, []},

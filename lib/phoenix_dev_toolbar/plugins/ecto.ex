@@ -25,7 +25,7 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   @times [:query_time, :queue_time, :decode_time, :idle_time, :total_time]
   @n_plus_one 5
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def init(opts) do
     repos =
       Keyword.get_lazy(opts, :repos, fn ->
@@ -55,15 +55,15 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   def n_plus_one(%{n_plus_one: threshold}), do: threshold
   def n_plus_one(_config), do: @n_plus_one
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def telemetry_events(%{repos: repos}) do
-    for repo <- repos, prefix = telemetry_prefix(repo), do: prefix ++ [:query]
+    for repo <- repos, prefix = telemetry_prefix(repo), do: List.insert_at(prefix, -1, :query)
   end
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def panel, do: Panels.Ecto
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def summary_init(config),
     do: %{
       queries: 0,
@@ -73,7 +73,7 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
       n_plus_one: NPlusOne.new(n_plus_one(config))
     }
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def summary_add(summary, %Event{kind: :query, duration: duration, data: data} = event) do
     duration = duration || 0
     {n_plus_one, _result} = NPlusOne.add(summary.n_plus_one, event)
@@ -95,7 +95,7 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
 
   def summary_add(summary, %Event{}), do: summary
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def badges(%{queries: queries, db_us: db_us, failed: failed} = summary) do
     text = "#{queries} #{noun(queries)} · #{Components.duration(db_us)}"
     [%{id: "ecto-queries", text: text, level: queries_level(failed)} | n_plus_one_badge(summary)]
@@ -127,7 +127,7 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   defp failed(%{result: {:error, _}}), do: 1
   defp failed(_data), do: 0
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def collect(_event, {measurements, metadata}, %Context{source: source}) do
     raw_sql = Map.get(metadata, :query)
     sql = sql(raw_sql)

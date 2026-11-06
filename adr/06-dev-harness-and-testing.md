@@ -57,7 +57,9 @@ correctness and boundedness need tests, not just eyeballing.
   outside `test/` so the formatter and Credo never scan its `deps/`. It caught that a
   router macro cannot be installed this way (ADR 01).
 - **Gate**: `mix precommit` (compile with warnings as errors, format, tests, Credo strict,
-  Dialyzer, ExDoc warnings as errors) locally. CI runs two rows: the minimum supported
+  Dialyzer, ExDoc warnings as errors) locally. Credo runs its defaults plus the opt-in
+  checks listed in `.credo.exs` (`extra:`; `enabled:` would run only those), Dialyzer
+  adds `:unmatched_returns`, `:extra_return` and `:missing_return`. CI runs two rows: the minimum supported
   stack (Elixir 1.17 / OTP 26 / LiveView `~> 1.1.0`, through the `PDT_LIVE_VIEW`
   override read by `mix.exs`) runs compile and tests with warnings as errors; the latest
   (Elixir 1.20 / OTP 29 / the locked LiveView) also runs format, unused deps, Credo,

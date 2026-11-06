@@ -3,6 +3,6 @@ defmodule PhoenixDevToolbar.TestPlugins.MessageRaisingError do
   # An exception whose message/1 throws: banners must survive it.
   defexception [:value]
 
-  @impl true
+  @impl Exception
   def message(_exception), do: throw(:no_message)
 end

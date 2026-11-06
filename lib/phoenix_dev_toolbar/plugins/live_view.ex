@@ -28,7 +28,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
   @params_bytes 2048
   @id_inspect [limit: 5, printable_limit: 128]
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def telemetry_events(_config) do
     view =
       for callback <- [:mount, :handle_params, :handle_event],
@@ -43,19 +43,19 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
     view ++ component ++ [@lv ++ [:render, :stop], @lv ++ [:render, :exception]]
   end
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def panel, do: PhoenixDevToolbar.Panels.LiveView
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def summary_init(_config), do: %{callbacks: 0, slowest_us: 0}
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def summary_add(summary, %Event{kind: :callback, duration: duration}),
     do: %{callbacks: summary.callbacks + 1, slowest_us: max(summary.slowest_us, duration || 0)}
 
   def summary_add(summary, %Event{}), do: summary
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def badges(%{callbacks: 0}), do: []
 
   def badges(%{callbacks: callbacks, slowest_us: slowest_us}) do
@@ -72,7 +72,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
   defp noun(1), do: "callback"
   defp noun(_callbacks), do: "callbacks"
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   # LiveView callbacks run in the LiveView process itself, tracked through the
   # pdict: a `$callers` child is never the page's LiveView.
   def collect(_event, _payload, %Context{source: :caller}), do: :skip

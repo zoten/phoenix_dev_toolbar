@@ -4,10 +4,10 @@ defmodule DemoWeb.PageLive do
   # the telemetry event an Ecto query on DemoWeb.FakeRepo would.
   use Phoenix.LiveView
 
-  @impl true
+  @impl Phoenix.LiveView
   def mount(_params, _session, socket), do: {:ok, socket}
 
-  @impl true
+  @impl Phoenix.LiveView
   def handle_event("query", %{"sql" => sql}, socket) do
     query(sql)
     {:noreply, socket}
@@ -54,7 +54,7 @@ defmodule DemoWeb.PageLive do
     {:noreply, socket}
   end
 
-  @impl true
+  @impl Phoenix.LiveView
   def render(assigns), do: ~H"<p>page</p>"
 
   defp origin(nil), do: nil

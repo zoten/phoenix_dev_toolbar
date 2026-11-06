@@ -33,7 +33,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   # The tab the PdtPanel hook's client events go to (ADR 07).
   @client_tab "live_view"
 
-  @impl true
+  @impl Phoenix.LiveView
   # Rendered by PhoenixDevToolbar.Plug without a router: the sid comes from the
   # signed LiveView session, there are no route params.
   def mount(_params, session, socket) do
@@ -54,7 +54,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     {:ok, load(socket, root)}
   end
 
-  @impl true
+  @impl Phoenix.LiveView
   # Tab ids are compared as strings: never an atom from the client.
   def handle_event("tab", %{"tab" => tab}, socket) do
     case Enum.any?(socket.assigns.tabs, &(&1.id == tab)) do
@@ -100,7 +100,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     do:
       {:noreply, assign(socket, :visible?, params["open"] == true and params["visible"] == true)}
 
-  @impl true
+  @impl Phoenix.LiveView
   def handle_info({:pdt_event, _sid}, %{assigns: %{flush: nil}} = socket),
     do: {:noreply, assign(socket, :flush, Process.send_after(self(), :pdt_flush, @flush_ms))}
 
@@ -200,15 +200,16 @@ defmodule PhoenixDevToolbar.PanelLive do
   # Only once connected: the dead render's process would just drop them, so
   # the dead render shows empty tabs, filled on connect.
   defp deliver(socket, kind, events) do
-    maybe_connected(socket, fn ->
-      routed = Shell.route(socket.assigns.shell, events)
+    _ =
+      maybe_connected(socket, fn ->
+        routed = Shell.route(socket.assigns.shell, events)
 
-      for %{id: id, panel: panel} <- socket.assigns.tabs,
-          tab_events = Map.get(routed, id, []),
-          kind == :reset or tab_events != [] do
-        send_update(panel, id: panel_id(id), pdt: {kind, tab_events})
-      end
-    end)
+        for %{id: id, panel: panel} <- socket.assigns.tabs,
+            tab_events = Map.get(routed, id, []),
+            kind == :reset or tab_events != [] do
+          send_update(panel, id: panel_id(id), pdt: {kind, tab_events})
+        end
+      end)
 
     socket
   end
@@ -262,12 +263,12 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   defp subscribe(socket, sids) do
     new = Enum.reject(sids, &(&1 in socket.assigns.subscribed))
-    maybe_connected(socket, fn -> Enum.each(new, &Notify.subscribe/1) end)
+    _ = maybe_connected(socket, fn -> Enum.each(new, &Notify.subscribe/1) end)
     assign(socket, :subscribed, socket.assigns.subscribed ++ new)
   end
 
   defp unsubscribe(socket, sids) do
-    maybe_connected(socket, fn -> Enum.each(sids, &Notify.unsubscribe/1) end)
+    _ = maybe_connected(socket, fn -> Enum.each(sids, &Notify.unsubscribe/1) end)
     assign(socket, :subscribed, socket.assigns.subscribed -- sids)
   end
 
@@ -281,7 +282,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   defp cancel_flush(%{assigns: %{flush: nil}} = socket), do: socket
 
   defp cancel_flush(%{assigns: %{flush: ref}} = socket) do
-    Process.cancel_timer(ref)
+    _ = Process.cancel_timer(ref)
     assign(socket, :flush, nil)
   end
 
@@ -296,7 +297,7 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   ## Rendering
 
-  @impl true
+  @impl Phoenix.LiveView
   def render(assigns) do
     ~H"""
     <PanelLayout.panel

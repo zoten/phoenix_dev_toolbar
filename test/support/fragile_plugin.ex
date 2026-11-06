@@ -9,10 +9,10 @@ defmodule PhoenixDevToolbar.TestPlugins.Fragile do
 
   alias PhoenixDevToolbar.Event
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def telemetry_events(_config), do: [[:pdt_test, :echo]]
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def collect(_event, {_measurements, %{value: "collect"}}, _context), do: raise("collect boom")
 
   def collect(_event, {_measurements, %{value: "impostor"}}, _context),
@@ -21,17 +21,17 @@ defmodule PhoenixDevToolbar.TestPlugins.Fragile do
   def collect(_event, {_measurements, metadata}, _context),
     do: {:record, Event.new(:fragile, :echo, %{value: metadata[:value]})}
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def panel, do: PhoenixDevToolbar.TestPlugins.FragilePanel
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def summary_init(_config), do: %{count: 0, last: nil}
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def summary_add(_summary, %Event{data: %{value: "summary"}}), do: raise("summary boom")
   def summary_add(summary, event), do: %{count: summary.count + 1, last: event.data.value}
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def badges(%{last: "badges"}), do: raise("badges boom")
 
   def badges(%{last: "bad_title", count: count}),

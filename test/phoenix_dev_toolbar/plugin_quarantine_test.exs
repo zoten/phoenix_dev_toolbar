@@ -7,6 +7,7 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
   import ExUnit.CaptureLog
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
+  import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Store
@@ -20,26 +21,15 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
   setup do
     Store.reset()
     Application.put_env(:phoenix_dev_toolbar, :repos, [DemoWeb.FakeRepo])
-    Collector.attach(PhoenixDevToolbar.Application.plugins() ++ [Fragile])
+    attach_plugins([Fragile])
 
     on_exit(fn ->
       Application.delete_env(:phoenix_dev_toolbar, :repos)
-      Collector.attach(PhoenixDevToolbar.Application.plugins())
+      attach_plugins()
       Store.reset()
     end)
 
-    conn =
-      build_conn()
-      |> Plug.Conn.put_req_header("accept", "text/html")
-      |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
-      |> get("/demo")
-
-    [sid] =
-      conn
-      |> html_response(200)
-      |> LazyHTML.from_document()
-      |> LazyHTML.query("script[data-pdt-sid]")
-      |> LazyHTML.attribute("data-pdt-sid")
+    {conn, sid} = load_page("/demo")
 
     {:ok, host, _html} = live(conn)
     Process.put({:pdt_test_sid, host.pid}, sid)
@@ -170,7 +160,7 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
   end
 
   test "a component mount that raised breaks its tab, not the panel" do
-    Collector.attach(PhoenixDevToolbar.Application.plugins() ++ [MountBoom])
+    attach_plugins([MountBoom])
 
     {_html, log} =
       with_log(fn -> build_conn() |> get("/__pdt/panel?sid=missing") |> html_response(200) end)
@@ -186,7 +176,7 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
 
   test "a plugin without a tab is shown disabled and re-enabled from its badge",
        %{host: host, panel: _panel} do
-    Collector.attach(PhoenixDevToolbar.Application.plugins() ++ [TablessFragile])
+    attach_plugins([TablessFragile])
     {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid_of(host)}")
 
     capture_log(fn -> echo(host, panel, "tabless") end)

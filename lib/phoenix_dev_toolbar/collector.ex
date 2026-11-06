@@ -32,9 +32,9 @@ defmodule PhoenixDevToolbar.Collector do
     [:phoenix, :live_component, :handle_event]
   ]
   @span_edges Map.new(
-                for prefix <- @span_callbacks,
+                for [:phoenix, scope, callback] <- @span_callbacks,
                     {stage, edge} <- [start: :before, stop: :after, exception: :after],
-                    do: {prefix ++ [stage], edge}
+                    do: {[:phoenix, scope, callback, stage], edge}
               )
 
   @plugins_key {Collector, :plugins}
@@ -137,7 +137,10 @@ defmodule PhoenixDevToolbar.Collector do
   @doc "Detaches every toolbar handler."
   @spec detach() :: :ok
   def detach do
-    for %{id: {Collector, _event} = id} <- :telemetry.list_handlers([]), do: :telemetry.detach(id)
+    for %{id: {Collector, _event} = id} <- :telemetry.list_handlers([]) do
+      _ = :telemetry.detach(id)
+    end
+
     :ok
   end
 

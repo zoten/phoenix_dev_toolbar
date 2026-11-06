@@ -5,6 +5,7 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
 
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
+  import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Panel
@@ -15,26 +16,8 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
 
   setup do
     Store.reset()
-    Collector.attach(PhoenixDevToolbar.Application.plugins())
+    attach_plugins()
     on_exit(fn -> Store.reset() end)
-  end
-
-  defp visit(path) do
-    conn =
-      build_conn()
-      |> Plug.Conn.put_req_header("accept", "text/html")
-      |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
-      |> get(path)
-
-    [sid] =
-      conn
-      |> html_response(200)
-      |> LazyHTML.from_document()
-      |> LazyHTML.query("script[data-pdt-sid]")
-      |> LazyHTML.attribute("data-pdt-sid")
-
-    {:ok, host, _html} = live(conn)
-    {host, sid}
   end
 
   defp open(sid) do
@@ -164,7 +147,7 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
 
   test "after a crash, the rejoined LiveView is sampled again without a reshow" do
     Collector.attach([{PhoenixDevToolbar.Plugins.Process, relations_ms: 1000}])
-    on_exit(fn -> Collector.attach(PhoenixDevToolbar.Application.plugins()) end)
+    on_exit(fn -> attach_plugins() end)
 
     {host, sid} = visit("/demo")
     panel = open(sid)
@@ -187,18 +170,7 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
   end
 
   test "a nested LiveView shows up even when the panel was open before it connected" do
-    conn =
-      build_conn()
-      |> Plug.Conn.put_req_header("accept", "text/html")
-      |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
-      |> get("/demo/nested")
-
-    [sid] =
-      conn
-      |> html_response(200)
-      |> LazyHTML.from_document()
-      |> LazyHTML.query("script[data-pdt-sid]")
-      |> LazyHTML.attribute("data-pdt-sid")
+    {conn, sid} = load_page("/demo/nested")
 
     panel = open(sid)
     visible(panel)
@@ -228,18 +200,7 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
   end
 
   test "a page without a LiveView says so" do
-    conn =
-      build_conn()
-      |> Plug.Conn.put_req_header("accept", "text/html")
-      |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
-      |> get("/demo")
-
-    [sid] =
-      conn
-      |> html_response(200)
-      |> LazyHTML.from_document()
-      |> LazyHTML.query("script[data-pdt-sid]")
-      |> LazyHTML.attribute("data-pdt-sid")
+    {_conn, sid} = load_page("/demo")
 
     panel = open(sid)
     visible(panel)

@@ -13,7 +13,7 @@ defmodule PhoenixDevToolbar.Plugins.Process do
   @defaults [sample_ms: 1000, samples: 60, relations_ms: 5000]
   @bounds [sample_ms: {250, 60_000}, samples: {2, 600}, relations_ms: {1000, 300_000}]
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def init(opts) do
     case Keyword.keys(opts) -- Keyword.keys(@defaults) do
       [] ->
@@ -51,12 +51,12 @@ defmodule PhoenixDevToolbar.Plugins.Process do
   def config(%{sample_ms: _, samples: _, relations_ms: _} = config), do: config
   def config(_config), do: Map.new(@defaults)
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def telemetry_events(_config), do: []
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def collect(_event, _payload, _context), do: :skip
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def panel, do: PhoenixDevToolbar.Panels.Process
 end

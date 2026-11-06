@@ -15,6 +15,7 @@ defmodule PhoenixDevToolbar.MixProject do
       aliases: aliases(),
       dialyzer: [
         plt_add_apps: [:mix, :ex_unit],
+        flags: [:unmatched_returns, :extra_return, :missing_return],
         plt_local_path: "priv/plts",
         plt_core_path: "priv/plts"
       ],

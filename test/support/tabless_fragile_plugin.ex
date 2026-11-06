@@ -5,10 +5,10 @@ defmodule PhoenixDevToolbar.TestPlugins.TablessFragile do
 
   alias PhoenixDevToolbar.Event
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def telemetry_events(_config), do: [[:pdt_test, :echo]]
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def collect(_event, {_measurements, %{value: "tabless"}}, _context), do: raise("tabless boom")
   def collect(_event, _payload, _context), do: {:record, Event.new(:tabless, :echo, %{})}
 end

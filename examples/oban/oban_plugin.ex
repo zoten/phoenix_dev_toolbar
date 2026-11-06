@@ -25,7 +25,7 @@ defmodule PdtExamples.Oban do
   @workers 5
 
   # Queues are compared as strings, the way Oban stores them.
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def init(opts) do
     case Keyword.get(opts, :queues, :all) do
       :all -> {:ok, %{queues: :all}}
@@ -34,11 +34,11 @@ defmodule PdtExamples.Oban do
     end
   end
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def telemetry_events(_config), do: [@insert, @insert_failed, @insert_all]
 
   # Runs in the host process that inserted: bounded values only, no calls.
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def collect(@insert, {measurements, %{job: %{queue: queue} = job}}, %Context{config: config}) do
     case wanted?(config, queue) do
       true ->
@@ -71,13 +71,13 @@ defmodule PdtExamples.Oban do
 
   def collect(_event, _payload, _context), do: :skip
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def panel, do: PdtExamples.ObanPanel
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def summary_init(_config), do: %{jobs: 0, failed: 0}
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   # A unique conflict returns the existing job: nothing new was enqueued.
   def summary_add(summary, %Event{kind: :inserted, data: %{conflict?: true}}), do: summary
   def summary_add(summary, %Event{kind: :inserted}), do: %{summary | jobs: summary.jobs + 1}
@@ -90,7 +90,7 @@ defmodule PdtExamples.Oban do
 
   def summary_add(summary, _event), do: summary
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def badges(%{jobs: 0, failed: 0}), do: []
 
   def badges(%{jobs: jobs, failed: failed}),

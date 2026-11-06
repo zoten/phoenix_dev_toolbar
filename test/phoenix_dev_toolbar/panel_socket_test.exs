@@ -6,8 +6,8 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
 
   import ExUnit.CaptureLog
   import Phoenix.ConnTest
+  import PhoenixDevToolbar.PageHelpers
 
-  alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Store
   alias PhoenixDevToolbar.WebSocketClient
 
@@ -15,7 +15,7 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
 
   setup do
     Store.reset()
-    Collector.attach(PhoenixDevToolbar.Application.plugins())
+    attach_plugins()
     on_exit(fn -> Store.reset() end)
 
     server = start_supervised!({Bandit, plug: DemoWeb.Endpoint, port: 0, ip: :loopback})
@@ -25,18 +25,7 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
 
   # A page's sid, then the panel's LiveView join params from its dead render.
   defp panel_join_params do
-    conn =
-      build_conn()
-      |> Plug.Conn.put_req_header("accept", "text/html")
-      |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
-      |> get("/demo")
-
-    [sid] =
-      conn
-      |> html_response(200)
-      |> LazyHTML.from_document()
-      |> LazyHTML.query("script[data-pdt-sid]")
-      |> LazyHTML.attribute("data-pdt-sid")
+    {_conn, sid} = load_page("/demo")
 
     main =
       build_conn()

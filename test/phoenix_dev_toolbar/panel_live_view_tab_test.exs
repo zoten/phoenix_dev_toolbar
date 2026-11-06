@@ -6,6 +6,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
   import PhoenixDevToolbar.ProcessHelpers
+  import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
@@ -274,10 +275,10 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
   describe "end to end with a real host LiveView" do
     setup do
-      PhoenixDevToolbar.Collector.attach(PhoenixDevToolbar.Application.plugins())
+      attach_plugins()
 
       on_exit(fn ->
-        PhoenixDevToolbar.Collector.attach(PhoenixDevToolbar.Application.plugins())
+        attach_plugins()
       end)
     end
 
@@ -287,25 +288,6 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
         %Session{kind: :live_view, parent: ^sid, sid: live} -> live
         _other -> nil
       end)
-    end
-
-    # Loads a host page as a browser would: its LiveView and the injected sid.
-    defp visit(path) do
-      conn =
-        build_conn()
-        |> Plug.Conn.put_req_header("accept", "text/html")
-        |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
-        |> get(path)
-
-      [sid] =
-        conn
-        |> html_response(200)
-        |> LazyHTML.from_document()
-        |> LazyHTML.query("script[data-pdt-sid]")
-        |> LazyHTML.attribute("data-pdt-sid")
-
-      {:ok, host, _html} = live(conn)
-      {host, sid}
     end
 
     test "profiles the host LiveView and its component" do

@@ -3,6 +3,6 @@ defmodule PhoenixDevToolbar.TestOwnLive do
   # Stands in for the toolbar's own LiveViews (the panel), which are never tracked.
   use Phoenix.LiveView
 
-  @impl true
+  @impl Phoenix.LiveView
   def render(assigns), do: ~H"<p>toolbar</p>"
 end

@@ -4,11 +4,11 @@ defmodule DemoWeb.ComponentsLive do
   # driven end to end by the LiveView plugin and panel tests.
   use Phoenix.LiveView
 
-  @impl true
+  @impl Phoenix.LiveView
   def mount(_params, _session, socket),
     do: {:ok, assign(socket, clicks: 0, api_token: "s3cret")}
 
-  @impl true
+  @impl Phoenix.LiveView
   def handle_event("click", _params, socket) do
     socket
     |> update(:clicks, &(&1 + 1))
@@ -16,7 +16,7 @@ defmodule DemoWeb.ComponentsLive do
     |> then(&{:noreply, &1})
   end
 
-  @impl true
+  @impl Phoenix.LiveView
   def render(assigns) do
     ~H"""
     <div>

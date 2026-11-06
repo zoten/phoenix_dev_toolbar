@@ -295,16 +295,16 @@ defmodule PhoenixDevToolbar.Store do
 
   ## GenServer
 
-  @impl true
+  @impl GenServer
   def init(_opts) do
-    for table <- @tables, do: :ets.new(table, table_opts(table))
+    Enum.each(@tables, fn table -> _ = :ets.new(table, table_opts(table)) end)
     :persistent_term.put(@seq_key, :atomics.new(1, signed: false))
     put_configured_limits()
     schedule_sweep()
     {:ok, %{monitors: %{}}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:session_created, %Session{} = session}, state) do
     evict_oldest()
     {:noreply, maybe_monitor(state, session)}
@@ -324,7 +324,7 @@ defmodule PhoenixDevToolbar.Store do
     {:noreply, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:sweep, now_us}, _from, state) do
     do_sweep(now_us)
     {:reply, :ok, state}
@@ -337,10 +337,10 @@ defmodule PhoenixDevToolbar.Store do
     {:reply, :ok, %{state | monitors: %{}}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:DOWN, ref, :process, pid, _reason}, state) do
     {sid, monitors} = Map.pop(state.monitors, ref)
-    maybe_schedule_expire(sid, pid, limits().down_grace_ms)
+    _ = maybe_schedule_expire(sid, pid, limits().down_grace_ms)
     {:noreply, %{state | monitors: monitors}}
   end
 
@@ -470,9 +470,10 @@ defmodule PhoenixDevToolbar.Store do
   end
 
   defp bump_by(sid, position, amount) do
-    :ets.update_counter(@sessions, sid, {position, amount})
+    _ = :ets.update_counter(@sessions, sid, {position, amount})
+    :ok
   rescue
-    ArgumentError -> nil
+    ArgumentError -> :ok
   end
 
   # Sessions without a live LiveView owner go first (the tab the developer is
@@ -525,7 +526,7 @@ defmodule PhoenixDevToolbar.Store do
     cutoff = System.monotonic_time(:second) - 1
     :ets.select_delete(@rate, [{{{:_, :"$1"}, :_}, [{:<, :"$1", cutoff}], [true]}])
     delete_orphan_events()
-    delete_orphan_index_rows()
+    _ = delete_orphan_index_rows()
     expire_panels()
     :ok
   end

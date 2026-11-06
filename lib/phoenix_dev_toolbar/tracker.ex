@@ -67,7 +67,7 @@ defmodule PhoenixDevToolbar.Tracker do
             path: path
           )
 
-        Store.new_session(session)
+        _ = Store.new_session(session)
         adopt(info, session.sid)
         Notify.session(session)
     end

@@ -15,6 +15,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
   alias PhoenixDevToolbar.Page
   alias PhoenixDevToolbar.Panel
+  alias PhoenixDevToolbar.Panels.Process, as: ProcessPanel
   alias PhoenixDevToolbar.Plugins
   alias PhoenixDevToolbar.ProcessInfo
   alias PhoenixDevToolbar.Session
@@ -127,7 +128,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
   defp gc_ready_later(%{assigns: %{gc_timer: nil, gc_at: at}} = socket) do
     wait = max(@gc_every_ms - (System.monotonic_time(:millisecond) - at), 0)
-    assign(socket, :gc_timer, Panel.send_after(__MODULE__, socket.assigns.id, :gc_ready, wait))
+    assign(socket, :gc_timer, Panel.send_after(ProcessPanel, socket.assigns.id, :gc_ready, wait))
   end
 
   defp gc_ready_later(socket), do: socket
@@ -269,12 +270,15 @@ defmodule PhoenixDevToolbar.Panels.Process do
        when is_pid(pid) and (kind == :relations or sample != :dead) do
     socket = cancel_timer(socket, kind)
     token = make_ref()
-    every = Map.fetch!(config(socket), :"#{kind}_ms")
-    ref = Panel.send_after(__MODULE__, socket.assigns.id, {kind, token}, every)
+    every = Map.fetch!(config(socket), interval_key(kind))
+    ref = Panel.send_after(ProcessPanel, socket.assigns.id, {kind, token}, every)
     update(socket, :timers, &Map.put(&1, kind, {ref, token}))
   end
 
   defp schedule(socket, kind), do: cancel_timer(socket, kind)
+
+  defp interval_key(:sample), do: :sample_ms
+  defp interval_key(:relations), do: :relations_ms
 
   defp cancel_timers(socket), do: socket |> cancel_timer(:sample) |> cancel_timer(:relations)
 
@@ -323,7 +327,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
   defp empty_series, do: %{memory: [], queue: [], reductions: []}
 
-  # Newest last, at most `samples` points per series.
+  # Newest first, at most `samples` points per series (reversed to render).
   defp push(series, sample, rate, samples) do
     %{
       memory: keep(series.memory, sample.memory, samples),
@@ -333,7 +337,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
   end
 
   defp keep(values, nil, _samples), do: values
-  defp keep(values, value, samples), do: Enum.take(values ++ [value], -samples)
+  defp keep(values, value, samples), do: Enum.take([value | values], samples)
 
   ## Render
 
@@ -401,14 +405,14 @@ defmodule PhoenixDevToolbar.Panels.Process do
           id="pdt-process-memory"
           label="Memory"
           value={bytes(@sample.memory)}
-          values={@series.memory}
+          values={Enum.reverse(@series.memory)}
           peak={peak(@series.memory, &bytes/1)}
         />
         <.vital
           id="pdt-process-queue"
           label="Message queue"
           value={count(@sample.message_queue_len)}
-          values={@series.queue}
+          values={Enum.reverse(@series.queue)}
           peak={peak(@series.queue, &count/1)}
           warn?={@sample.message_queue_len > 100}
         />
@@ -422,7 +426,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
               else: "…"
             )
           }
-          values={@series.reductions}
+          values={Enum.reverse(@series.reductions)}
           peak={peak(@series.reductions, &count/1)}
         />
       </div>

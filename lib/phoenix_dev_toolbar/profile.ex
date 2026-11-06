@@ -52,9 +52,12 @@ defmodule PhoenixDevToolbar.Profile do
   the nested LiveView's module.
   """
   @spec subject(map()) :: module() | nil
-  def subject(%{component: component}) when not is_nil(component), do: component
-  def subject(%{nested?: true, view: view}), do: view
-  def subject(_data), do: nil
+  def subject(%{component: nil} = data), do: nested_view(data)
+  def subject(%{component: component}), do: component
+  def subject(data), do: nested_view(data)
+
+  defp nested_view(%{nested?: true, view: view}), do: view
+  defp nested_view(_data), do: nil
 
   @doc "Rows, slowest total first."
   @spec rows(t()) :: [row()]

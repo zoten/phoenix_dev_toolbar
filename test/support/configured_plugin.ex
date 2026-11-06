@@ -6,7 +6,7 @@ defmodule PhoenixDevToolbar.TestPlugins.Configured do
 
   alias PhoenixDevToolbar.Event
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def init(opts) do
     case Keyword.fetch(opts, :label) do
       {:ok, label} when is_binary(label) -> {:ok, %{label: label}}
@@ -14,10 +14,10 @@ defmodule PhoenixDevToolbar.TestPlugins.Configured do
     end
   end
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def telemetry_events(_config), do: [[:pdt_test, :echo]]
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def collect(_event, _payload, context),
     do: {:record, Event.new(:configured, :echo, %{label: context.config.label})}
 end

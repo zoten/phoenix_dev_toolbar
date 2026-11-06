@@ -5,8 +5,8 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
 
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
+  import PhoenixDevToolbar.PageHelpers
 
-  alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Store
   alias PhoenixDevToolbar.TestPlugins.BadgeOnly
   alias PhoenixDevToolbar.TestPlugins.Tabbed
@@ -15,30 +15,12 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
 
   setup do
     Store.reset()
-    Collector.attach(PhoenixDevToolbar.Application.plugins() ++ [{Tabbed, prefix: "echo"}])
+    attach_plugins([{Tabbed, prefix: "echo"}])
 
     on_exit(fn ->
-      Collector.attach(PhoenixDevToolbar.Application.plugins())
+      attach_plugins()
       Store.reset()
     end)
-  end
-
-  defp visit(path) do
-    conn =
-      build_conn()
-      |> Plug.Conn.put_req_header("accept", "text/html")
-      |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
-      |> get(path)
-
-    [sid] =
-      conn
-      |> html_response(200)
-      |> LazyHTML.from_document()
-      |> LazyHTML.query("script[data-pdt-sid]")
-      |> LazyHTML.attribute("data-pdt-sid")
-
-    {:ok, host, _html} = live(conn)
-    {host, sid}
   end
 
   defp props(panel) do
@@ -82,7 +64,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
   end
 
   test "badges follow the configuration order; a plugin without a panel has no tab" do
-    Collector.attach(PhoenixDevToolbar.Application.plugins() ++ [BadgeOnly, {Tabbed, []}])
+    attach_plugins([BadgeOnly, {Tabbed, []}])
     {host, sid} = visit("/demo")
     render_hook(host, "echo", %{"value" => "x"})
     {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")

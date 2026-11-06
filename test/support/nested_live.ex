@@ -4,10 +4,10 @@ defmodule DemoWeb.NestedLive do
   # parent's sid): for the Process tab's process list.
   use Phoenix.LiveView
 
-  @impl true
+  @impl Phoenix.LiveView
   def mount(_params, _session, socket), do: {:ok, socket}
 
-  @impl true
+  @impl Phoenix.LiveView
   def render(assigns) do
     ~H"""
     <div>{live_render(@socket, DemoWeb.PageLive, id: "nested-child")}</div>

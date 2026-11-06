@@ -3,15 +3,15 @@ defmodule PhoenixDevToolbar.TestPlugins.ThrowingId do
   # A hand written plugin whose id/0 throws: Config must skip it, not crash boot.
   @behaviour PhoenixDevToolbar.Plugin
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def id, do: throw(:nope)
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def name, do: "Throwing"
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def telemetry_events(_config), do: []
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def collect(_event, _payload, _context), do: :skip
 end

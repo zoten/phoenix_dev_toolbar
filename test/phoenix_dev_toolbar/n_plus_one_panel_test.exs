@@ -5,6 +5,7 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
 
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
+  import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Plugins
@@ -19,22 +20,11 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
 
     on_exit(fn ->
       Application.delete_env(:phoenix_dev_toolbar, :repos)
-      Collector.attach(PhoenixDevToolbar.Application.plugins())
+      attach_plugins()
       Store.reset()
     end)
 
-    conn =
-      build_conn()
-      |> Plug.Conn.put_req_header("accept", "text/html")
-      |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
-      |> get("/demo")
-
-    [sid] =
-      conn
-      |> html_response(200)
-      |> LazyHTML.from_document()
-      |> LazyHTML.query("script[data-pdt-sid]")
-      |> LazyHTML.attribute("data-pdt-sid")
+    {conn, sid} = load_page("/demo")
 
     {:ok, host, _html} = live(conn)
     {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")

@@ -69,11 +69,16 @@ defmodule PhoenixDevToolbar.NPlusOneTest do
     old = for _n <- 1..4, do: query("SELECT u", span: 1)
     others = for span <- 2..5, do: query("SELECT x", span: span)
 
-    {_results, state} = fold(NPlusOne.new(5), old ++ others ++ [query("SELECT u", span: 1)])
+    {_results, state} =
+      fold(NPlusOne.new(5), Enum.concat([old, others, [query("SELECT u", span: 1)]]))
+
     assert NPlusOne.detected(state) == 0
 
     {_results, state} =
-      fold(NPlusOne.new(5), old ++ Enum.take(others, 3) ++ [query("SELECT u", span: 1)])
+      fold(
+        NPlusOne.new(5),
+        Enum.concat([old, Enum.take(others, 3), [query("SELECT u", span: 1)]])
+      )
 
     assert NPlusOne.detected(state) == 1
   end

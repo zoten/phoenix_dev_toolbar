@@ -65,7 +65,7 @@ defmodule PhoenixDevToolbar.Plug do
     end
   end
 
-  @impl true
+  @impl Plug
   def init(opts) do
     warn_removed(opts)
     path = opts |> Keyword.get(:path, @default_path) |> String.trim_trailing("/")
@@ -86,7 +86,7 @@ defmodule PhoenixDevToolbar.Plug do
     end
   end
 
-  @impl true
+  @impl Plug
   def call(%Conn{} = conn, opts) do
     case PhoenixDevToolbar.enabled?() do
       true -> route(conn, opts)

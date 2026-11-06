@@ -16,24 +16,24 @@ defmodule PhoenixDevToolbar.Plugins.Request do
   @stop [:phoenix, :router_dispatch, :stop]
   @exception [:phoenix, :router_dispatch, :exception]
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def telemetry_events(_config), do: [@stop, @exception]
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def panel, do: Panels.Request
 
   # The last response (recorded by PhoenixDevToolbar.Plug) and the exceptions.
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def summary_init(_config), do: %{response: nil, errors: 0}
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def summary_add(summary, %Event{kind: :response, duration: duration, data: data}),
     do: %{summary | response: %{status: data[:status], duration: duration}}
 
   def summary_add(summary, %Event{kind: :exception}), do: %{summary | errors: summary.errors + 1}
   def summary_add(summary, %Event{}), do: summary
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def badges(%{response: response, errors: errors}) do
     response_badge(response) ++ errors_badge(errors)
   end
@@ -61,7 +61,7 @@ defmodule PhoenixDevToolbar.Plugins.Request do
   defp plural(1, one, _many), do: one
   defp plural(_n, _one, many), do: many
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def collect(@stop, {measurements, metadata}, %Context{}) do
     {:record,
      Event.new(:request, :dispatch, route_data(metadata), duration: measurements[:duration])}

@@ -21,13 +21,13 @@ defmodule PhoenixDevToolbar.Plugin do
 
         alias PhoenixDevToolbar.{Context, Event}
 
-        @impl true
+        @impl PhoenixDevToolbar.Plugin
         def init(opts), do: {:ok, %{queues: Keyword.get(opts, :queues, :all)}}
 
-        @impl true
+        @impl PhoenixDevToolbar.Plugin
         def telemetry_events(_config), do: [[:oban, :engine, :insert_job, :stop]]
 
-        @impl true
+        @impl PhoenixDevToolbar.Plugin
         def collect(_event, {measurements, metadata}, %Context{}) do
           data = %{worker: metadata.job.worker}
           {:record, Event.new(:jobs, :inserted, data, duration: measurements.duration)}

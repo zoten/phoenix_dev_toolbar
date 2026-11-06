@@ -8,7 +8,7 @@ defmodule PhoenixDevToolbar.Application do
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Config
 
-  @impl true
+  @impl Application
   def start(_type, _args) do
     :ok = settle_enabled(Application.fetch_env(:phoenix_dev_toolbar, :enabled), mix_loaded?())
     enabled? = PhoenixDevToolbar.enabled?()
@@ -23,7 +23,7 @@ defmodule PhoenixDevToolbar.Application do
     end
   end
 
-  @impl true
+  @impl Application
   def prep_stop(state) do
     Collector.detach()
     state

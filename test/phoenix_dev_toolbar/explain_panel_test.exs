@@ -5,6 +5,7 @@ defmodule PhoenixDevToolbar.ExplainPanelTest do
 
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
+  import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Plugins
@@ -17,31 +18,13 @@ defmodule PhoenixDevToolbar.ExplainPanelTest do
     Collector.attach([{Plugins.Ecto, repos: [DemoWeb.SQLiteRepo]}, Plugins.LiveView])
 
     on_exit(fn ->
-      Collector.attach(PhoenixDevToolbar.Application.plugins())
+      attach_plugins()
       Store.reset()
     end)
 
-    {host, sid} = visit()
+    {host, sid} = visit("/demo")
     {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
     %{host: host, panel: panel}
-  end
-
-  defp visit do
-    conn =
-      build_conn()
-      |> Plug.Conn.put_req_header("accept", "text/html")
-      |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
-      |> get("/demo")
-
-    [sid] =
-      conn
-      |> html_response(200)
-      |> LazyHTML.from_document()
-      |> LazyHTML.query("script[data-pdt-sid]")
-      |> LazyHTML.attribute("data-pdt-sid")
-
-    {:ok, host, _html} = live(conn)
-    {host, sid}
   end
 
   # Runs `sql` in the host LiveView; returns the seq of its row in the panel.
@@ -110,7 +93,7 @@ defmodule PhoenixDevToolbar.ExplainPanelTest do
   test "a seq of another page is never explained", %{host: host, panel: panel} do
     own = run(host, panel, "SELECT id FROM users")
 
-    {other_host, other_sid} = visit()
+    {other_host, other_sid} = visit("/demo")
     {:ok, other_panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{other_sid}")
     other = run(other_host, other_panel, "SELECT name FROM users")
 

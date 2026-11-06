@@ -61,3 +61,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docs: per-run disable recipe through `DEV_TOOLBAR=0` (ADR 01)
 - `limits:` overrides validated at boot; panel `frame-ancestors` and `nosniff` headers (ADR 03, ADR 04)
 - Public repo: renamed to `phoenix_dev_toolbar`, GitHub install, CI badge, SECURITY.md
+- Stricter lint: Credo opt-in checks, Dialyzer unmatched returns; shared test page helpers (ADR 06)

@@ -79,7 +79,7 @@ defmodule MyApp.Toolbar.Jobs do
   alias PhoenixDevToolbar.{Context, Event, Truncate}
 
   # Runs once, when the toolbar starts: validate options here.
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def init(opts) do
     case Keyword.get(opts, :queues, :all) do
       :all -> {:ok, %{queues: :all}}
@@ -88,11 +88,11 @@ defmodule MyApp.Toolbar.Jobs do
     end
   end
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def telemetry_events(_config), do: [[:oban, :engine, :insert_job, :stop]]
 
   # Runs in the host process. The config is the one init/1 returned.
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def collect(_event, {measurements, %{job: job}}, %Context{config: config}) do
     case config.queues == :all or job.queue in config.queues do
       true ->
@@ -135,14 +135,14 @@ buffer (each plugin keeps its last 500 events per session; a LiveView page
 has two sessions, its request and its LiveView).
 
 ```elixir
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def summary_init(_config), do: 0
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def summary_add(count, %Event{kind: :inserted}), do: count + 1
   def summary_add(count, _event), do: count
 
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def badges(0), do: []
   def badges(count), do: [%{id: "jobs", text: "#{count} jobs", level: :info}]
 ```
@@ -158,7 +158,7 @@ becomes `pdt-badge-<id>`: start it with your plugin's id), `text`, `level`
 `panel/0` returns a LiveComponent that does `use PhoenixDevToolbar.Panel`:
 
 ```elixir
-  @impl true
+  @impl PhoenixDevToolbar.Plugin
   def panel, do: MyApp.Toolbar.JobsPanel
 ```
 
