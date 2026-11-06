@@ -1,8 +1,9 @@
 defmodule PhoenixDevToolbar.Config do
   @moduledoc false
   # Plugin registration (ADR 05): expands `:defaults`, applies overrides and
-  # exclusions, validates every entry. Never raises: an invalid entry is logged
-  # and skipped, the host application always boots.
+  # exclusions, validates every entry. Store limits (ADR 03): validates the
+  # overrides. Never raises: an invalid entry is logged and skipped, the host
+  # application always boots.
 
   require Logger
 
@@ -12,6 +13,9 @@ defmodule PhoenixDevToolbar.Config do
   @defaults [Plugins.Ecto, Plugins.Request, Plugins.LiveView, Plugins.Process]
 
   @type entry :: {module(), keyword()}
+
+  # Limits that may be 0 (expire at once); every other limit is a positive cap.
+  @zero_limits [:ttl_ms, :down_grace_ms]
 
   @doc "The built-in plugins `:defaults` expands to."
   @spec defaults() :: [module()]
@@ -41,6 +45,41 @@ defmodule PhoenixDevToolbar.Config do
   def expand(other) do
     warn("`plugins` must be a list, got #{inspect(other, limit: 5)}: using [:defaults]")
     expand([:defaults])
+  end
+
+  @doc """
+  Merges `limits:` overrides into `defaults`. An unknown key or a value that is
+  not a positive integer (or 0 for `ttl_ms` and `down_grace_ms`) is logged and
+  keeps the default: `:infinity` would silently disable a cap.
+  """
+  @spec limits(term(), %{atom() => non_neg_integer()}) :: %{atom() => non_neg_integer()}
+  def limits(overrides, defaults) when is_list(overrides) do
+    Enum.reduce(overrides, defaults, fn override, acc -> put_limit(override, acc) end)
+  end
+
+  def limits(other, defaults) do
+    warn("`limits` must be a keyword list, got #{inspect(other, limit: 5)}: using the defaults")
+    defaults
+  end
+
+  defp put_limit({key, value} = override, acc) when is_map_key(acc, key) do
+    case valid_limit?(key, value) do
+      true -> Map.put(acc, key, value)
+      false -> skip_limit(override, "expected #{limit_kind(key)}", acc)
+    end
+  end
+
+  defp put_limit(override, acc), do: skip_limit(override, "unknown limit", acc)
+
+  defp valid_limit?(key, value) when key in @zero_limits, do: is_integer(value) and value >= 0
+  defp valid_limit?(_key, value), do: is_integer(value) and value > 0
+
+  defp limit_kind(key) when key in @zero_limits, do: "a non-negative integer"
+  defp limit_kind(_key), do: "a positive integer"
+
+  defp skip_limit(override, why, acc) do
+    warn("ignoring limit #{inspect(override, limit: 5)}: #{why}")
+    acc
   end
 
   defp entry(:defaults), do: Enum.map(@defaults, &{&1, []})

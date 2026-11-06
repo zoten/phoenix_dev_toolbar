@@ -345,4 +345,17 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
              )
              |> Enum.to_list()
   end
+
+  # Hardening (ADR 04): only the host page's own origin may frame the panel.
+  test "the panel page refuses cross-site framing and MIME sniffing", %{conn: conn, request: sid} do
+    conn = get(conn, "/__pdt/panel?sid=#{sid}")
+
+    assert html_response(conn, 200)
+
+    assert Plug.Conn.get_resp_header(conn, "content-security-policy") == [
+             "frame-ancestors 'self'"
+           ]
+
+    assert Plug.Conn.get_resp_header(conn, "x-content-type-options") == ["nosniff"]
+  end
 end

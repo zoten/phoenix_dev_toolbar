@@ -258,6 +258,7 @@ defmodule PhoenixDevToolbar.PlugTest do
         assert conn.halted
         assert conn.status == 200
         assert [^type <> _] = get_resp_header(conn, "content-type")
+        assert get_resp_header(conn, "x-content-type-options") == ["nosniff"]
         assert conn.resp_body =~ marker
       end
     end

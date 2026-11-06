@@ -18,6 +18,7 @@ defmodule PhoenixDevToolbar.Store do
 
   use GenServer
 
+  alias PhoenixDevToolbar.Config
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
@@ -594,7 +595,7 @@ defmodule PhoenixDevToolbar.Store do
 
   defp put_configured_limits do
     configured = Application.get_env(:phoenix_dev_toolbar, :limits, [])
-    :persistent_term.put(@limits_key, Map.merge(@default_limits, Map.new(configured)))
+    :persistent_term.put(@limits_key, Config.limits(configured, @default_limits))
   end
 
   defp schedule_sweep, do: Process.send_after(self(), :sweep, limits().sweep_ms)

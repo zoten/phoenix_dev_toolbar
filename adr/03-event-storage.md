@@ -65,6 +65,10 @@ serialize every query of the app behind one mailbox.
   | `sweep_ms` | 30 seconds |
   | `down_grace_ms` | 60 seconds |
 
+  Each override must be a positive integer (`ttl_ms` and `down_grace_ms` may be 0). An
+  unknown key or an invalid value (`:infinity` would disable a cap) is logged at boot
+  and keeps its default: the host always boots.
+
 - Payloads are truncated before insert by `PhoenixDevToolbar.Truncate`:
   `inspect(value, limit: 50, printable_limit: 1024)` for query and path params, SQL capped at
   8 KB (UTF-8 safe), other text (exception messages and banners) at 2 KB, stacktraces at

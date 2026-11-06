@@ -146,7 +146,9 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 - **Access**: the sid is the only key to a page's data. It is 96 random bits, never
   listed or enumerable, and reaches the panel only through the injected tag and the
   signed LiveView session: a bearer capability, adequate for a dev only tool on the
-  developer's machine. There is no other access control.
+  developer's machine. There is no other access control. The panel page answers with
+  `content-security-policy: frame-ancestors 'self'` (only the host page's own origin
+  may frame it) and, like every served asset, `x-content-type-options: nosniff`.
 
 ## Consequences
 

@@ -115,6 +115,8 @@ defmodule PhoenixDevToolbar.Plug do
     conn = conn |> untracked() |> Conn.fetch_query_params()
 
     conn
+    |> Conn.put_resp_header("content-security-policy", "frame-ancestors 'self'")
+    |> Conn.put_resp_header("x-content-type-options", "nosniff")
     |> Conn.put_private(:phoenix_dev_toolbar_panel, Map.take(opts, [:path]))
     |> Phoenix.Controller.put_root_layout(html: {PhoenixDevToolbar.Layouts, :root})
     |> Phoenix.LiveView.Controller.live_render(PhoenixDevToolbar.PanelLive,
@@ -296,6 +298,7 @@ defmodule PhoenixDevToolbar.Plug do
       conn
       |> Conn.put_resp_content_type(content_type)
       |> Conn.put_resp_header("cache-control", "no-cache")
+      |> Conn.put_resp_header("x-content-type-options", "nosniff")
       |> Conn.send_file(200, path)
       |> Conn.halt()
     else

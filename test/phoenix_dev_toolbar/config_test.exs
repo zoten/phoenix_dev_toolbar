@@ -92,4 +92,38 @@ defmodule PhoenixDevToolbar.ConfigTest do
     log = capture_log(fn -> assert Config.expand(:oops) == @defaults end)
     assert log =~ "must be a list"
   end
+
+  describe "limits/2" do
+    @limit_defaults %{max_sessions: 50, ttl_ms: 600_000}
+
+    test "valid overrides replace the defaults" do
+      assert Config.limits([max_sessions: 10, ttl_ms: 0], @limit_defaults) ==
+               %{max_sessions: 10, ttl_ms: 0}
+    end
+
+    test "an invalid value keeps that key's default, with a warning" do
+      log =
+        capture_log(fn ->
+          assert Config.limits([max_sessions: :infinity, ttl_ms: -1], @limit_defaults) ==
+                   @limit_defaults
+        end)
+
+      assert log =~ "max_sessions"
+      assert log =~ "ttl_ms"
+    end
+
+    test "unknown keys are ignored, with a warning" do
+      log =
+        capture_log(fn ->
+          assert Config.limits([max_sesions: 10], @limit_defaults) == @limit_defaults
+        end)
+
+      assert log =~ "max_sesions"
+    end
+
+    test "a value that is not a keyword list keeps every default, with a warning" do
+      log = capture_log(fn -> assert Config.limits(:oops, @limit_defaults) == @limit_defaults end)
+      assert log =~ "keyword list"
+    end
+  end
 end
