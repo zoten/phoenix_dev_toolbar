@@ -41,8 +41,9 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ matrix.live_view || 'locked' }}-${{ hashFiles('mix.lock') }}
       - run: mix deps.get
         if: ${{ !matrix.live_view }}
-      # Resolves the overridden requirement (the lockfile pins the latest LiveView).
-      - run: mix deps.update phoenix_live_view
+      # Resolves the overridden requirement (the lockfile pins the latest LiveView),
+      # then fetches the rest: deps.update alone only fetches LiveView (a cold cache).
+      - run: mix deps.update phoenix_live_view && mix deps.get
         if: ${{ matrix.live_view }}
       - run: mix compile --warnings-as-errors
       - run: mix test --warnings-as-errors
