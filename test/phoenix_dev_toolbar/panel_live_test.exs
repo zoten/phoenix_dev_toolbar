@@ -92,7 +92,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     view = open(conn, request)
 
     assert has_element?(view, "#pdt-badge-response", "200")
-    assert has_element?(view, "#pdt-badge-queries", "2 queries")
+    assert has_element?(view, "#pdt-badge-ecto-queries", "2 queries")
     assert has_element?(view, "#pdt-query-#{dead.seq}", "SELECT 1")
     assert has_element?(view, "#pdt-query-#{connected.seq}", "SELECT 2")
     # Which phase ran each query: the HTTP dead render or the connected LiveView.
@@ -182,7 +182,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     flush(view)
 
     assert has_element?(view, "#pdt-query-#{event.seq}", "SELECT live")
-    assert has_element?(view, "#pdt-badge-queries", "1 query")
+    assert has_element?(view, "#pdt-badge-ecto-queries", "1 query")
   end
 
   test "picks up the LiveView when it connects after the panel opened",

@@ -16,7 +16,7 @@ defmodule PhoenixDevToolbar.Plugins.SummariesTest do
     ok = event(:ecto, :query, %{result: {:ok, 1}}, 1200)
     failed = event(:ecto, :query, %{result: {:error, "boom"}}, 300)
 
-    assert [%{id: "queries", text: "1 query · 1.20 ms", level: :info}] =
+    assert [%{id: "ecto-queries", text: "1 query · 1.20 ms", level: :info}] =
              badges(Plugins.Ecto, [ok])
 
     assert [%{text: "2 queries · 1.50 ms", level: :error}] = badges(Plugins.Ecto, [ok, failed])

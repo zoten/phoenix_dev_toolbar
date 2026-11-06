@@ -36,12 +36,13 @@ config :phoenix_dev_toolbar,
   plugins: [:defaults, {MyApp.Toolbar.Jobs, queues: [:default]}],
   # Values of keys containing these words are shown as [REDACTED]
   redact: ["password", "token", "secret"],
-  # Memory bounds (ADR 03), these are the defaults
+  # Memory bounds (ADR 03), these are the defaults. A session is one request
+  # or one LiveView process: a LiveView page has two.
   limits: [
-    max_events: 500,           # per plugin and page, oldest trimmed first
-    max_session_events: 2000,  # per page, all plugins together
-    max_sessions: 50,          # pages kept, oldest closed ones evicted first
-    events_per_second: 200     # per page, the rest are counted as dropped
+    max_events: 500,           # per plugin and session, oldest trimmed first
+    max_session_events: 2000,  # per session, all plugins together
+    max_sessions: 50,          # sessions kept, oldest closed ones evicted first
+    events_per_second: 200     # per session, the rest are counted as dropped
   ]
 ```
 

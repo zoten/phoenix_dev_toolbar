@@ -34,8 +34,12 @@ defmodule PhoenixDevToolbar.PluginTest do
     """)
   end
 
-  test "a panel cannot define update_many/1" do
+  test "a panel cannot define update/2 or update_many/1" do
     assert [{_module, _binary}] = compile_panel("")
+
+    assert_raise CompileError, ~r/cannot define update\/2/, fn ->
+      compile_panel("def update(_assigns, socket), do: {:ok, socket}")
+    end
 
     assert_raise CompileError, ~r/cannot define update_many\/1/, fn ->
       compile_panel("def update_many(list), do: Enum.map(list, &elem(&1, 1))")

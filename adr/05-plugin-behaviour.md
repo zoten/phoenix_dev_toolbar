@@ -38,8 +38,8 @@ atom other than the reserved `:client` and the name a string):
   it. Validation never raises during the host's boot: an entry that is not a module or
   `{module, opts}`, a module that is missing, does not implement the callbacks, defines
   only part of the summary trio, has a `panel/0` that is not a `Panel`, has an id that
-  is not an atom, is reserved or taken, or whose `id/0` raises, throws or exits, is
-  logged and skipped. The Ecto plugin takes `repos:`, falling back to the top level
+  is not an atom (or is `nil` or a boolean), is reserved or taken, a name that is not a
+  string, or whose `id/0` or `name/0` raises, throws or exits, is logged and skipped. The Ecto plugin takes `repos:`, falling back to the top level
   `repos` config.
 - **Attach** (`PhoenixDevToolbar.Collector.attach/1`): runs each plugin's `init/1` and
   `telemetry_events/1`; a plugin whose `init/1` returns an error, raises, or whose
@@ -48,14 +48,15 @@ atom other than the reserved `:client` and the name a string):
   twice are attached once. The handler config holds module names only: `:telemetry`
   copies it into every emitting process, tracked or not. Configs live in
   persistent_term and are read (no copy) once the process is known to be tracked, then
-  handed over in `Context.config`. `Collector.plugins/0` lists the attached plugins
+  handed over in `Context.config`. A recorded event is stamped with the plugin's own id,
+  whatever `Event.new/4` was given: a plugin cannot fill another one's tab, cap or summary. `Collector.plugins/0` lists the attached plugins
   with their config, in configuration order, for the panel.
 - **Context**: `sid`, `source` (`:self` or `:caller` for `$callers` children), `config`.
   **Event**: `plugin` (the plugin id), `kind`, `at`, `duration` (microseconds, from
   native units in `Event.new/4`), `data` (already bounded with
   `PhoenixDevToolbar.Truncate`, stored as is), `sid` and `seq` set on insert.
 - **Panel** (`use PhoenixDevToolbar.Panel`, a `Phoenix.LiveComponent`): the toolbar
-  defines `update/2` (`update_many/1` is rejected at compile time) and delivers the
+  defines `update/2` (a panel defining `update/2` or `update_many/1` fails to compile) and delivers the
   plugin's events through `handle_reset(events, socket)` (a new page: every stored
   event; also once with `[]` before the first render) and `handle_events(events,
   socket)` (new events, oldest first), with `send_update` after the panel's own
@@ -78,8 +79,8 @@ atom other than the reserved `:client` and the name a string):
     error logged once, and the page notified so its panel shows it at once;
   - summary (panel): `summary_init/1`, `summary_add/2` or `badges/1` raising marks the
     plugin broken for that panel; its summary and badges are dropped;
-  - tab (panel): `mount/1`, the update path, `handle_event/3`, `handle_async/3` and the
-    template run behind a boundary; the template is evaluated once there through
+  - tab (panel): `mount/1`, the update path, `handle_event/3`, `handle_async/3` and all
+    of `render/1` (the code before `~H` too) run behind a boundary; the template is evaluated once there through
     `Phoenix.HTML.Safe` (render only builds a `%Rendered{}`, evaluated later while
     LiveView diffs, outside any boundary). An error breaks that tab only.
 

@@ -59,7 +59,7 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   @impl true
   def badges(%{queries: queries, db_us: db_us, failed: failed}) do
     text = "#{queries} #{noun(queries)} · #{Components.duration(db_us)}"
-    [%{id: "queries", text: text, level: queries_level(failed)}]
+    [%{id: "ecto-queries", text: text, level: queries_level(failed)}]
   end
 
   defp noun(1), do: "query"

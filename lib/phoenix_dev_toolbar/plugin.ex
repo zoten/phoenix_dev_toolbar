@@ -10,7 +10,7 @@ defmodule PhoenixDevToolbar.Plugin do
       config :phoenix_dev_toolbar,
         plugins: [:defaults, {MyApp.Toolbar.Jobs, queues: [:default]}]
 
-  `:defaults` expands to the built-ins (Request, Ecto, LiveView). Listing a
+  `:defaults` expands to the built-ins (Ecto, Request, LiveView). Listing a
   built-in with options overrides it; `{:exclude, Module}` removes one. An
   invalid entry is logged and skipped: the host application always boots.
 

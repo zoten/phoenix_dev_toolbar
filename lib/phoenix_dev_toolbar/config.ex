@@ -92,12 +92,15 @@ defmodule PhoenixDevToolbar.Config do
       not panel?(module) ->
         {:error, "panel/0 must return a module that uses PhoenixDevToolbar.Panel"}
 
+      not is_binary(module.name()) ->
+        {:error, "name/0 must return a string"}
+
       true ->
         check_id(module.id())
     end
   end
 
-  defp check_id(id) when is_atom(id) do
+  defp check_id(id) when is_atom(id) and id not in [nil, true, false] do
     case id in Plugin.reserved_ids() do
       true -> {:error, "id #{inspect(id)} is reserved"}
       false -> {:ok, id}

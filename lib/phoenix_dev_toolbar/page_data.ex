@@ -38,7 +38,7 @@ defmodule PhoenixDevToolbar.PageData do
 
   @doc """
   Events over the flood guard budget (dropped) and the oldest events past the
-  per plugin and per page caps (trimmed) are counted, not stored: the gaps the
+  per plugin and per session caps (trimmed) are counted, not stored: the gaps the
   panel shows, in total and per plugin (by tab id).
   """
   @spec gaps([Session.sid()]) :: gaps()

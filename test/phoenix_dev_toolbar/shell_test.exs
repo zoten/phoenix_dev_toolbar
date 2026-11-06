@@ -29,7 +29,7 @@ defmodule PhoenixDevToolbar.ShellTest do
   test "folds summaries incrementally and resets them for a new page" do
     shell = @plugins |> Shell.new() |> Shell.fold([Event.new(:tabbed, :echo, %{}, at: 0)])
 
-    assert [%{id: "queries", text: "0 queries" <> _}, %{id: "tabbed", text: "1 echoes"}] =
+    assert [%{id: "ecto-queries", text: "0 queries" <> _}, %{id: "tabbed", text: "1 echoes"}] =
              Shell.badges(shell)
 
     assert [_queries, %{text: "0 echoes"}] = shell |> Shell.reset([]) |> Shell.badges()

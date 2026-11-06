@@ -129,6 +129,24 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
     still_works(host, panel)
   end
 
+  test "a render/1 that raised before its template breaks its tab, not the panel",
+       %{host: host, panel: panel} do
+    log = capture_log(fn -> echo(host, panel, "eager") end)
+
+    assert log =~ "eager boom"
+    _ = render(panel)
+    assert has_element?(panel, "#pdt-disabled-fragile", "eager boom")
+    still_works(host, panel)
+  end
+
+  test "an event recorded under another plugin's id is stamped with its own",
+       %{host: host, panel: panel} do
+    echo(host, panel, "impostor")
+
+    assert has_element?(panel, "#fragile .fragile-value", "impostor")
+    refute has_element?(panel, "#pdt-queries", "impostor")
+  end
+
   test "an async result that raised breaks its tab", %{host: host, panel: panel} do
     capture_log(fn ->
       panel |> element("#fragile-async") |> render_click()

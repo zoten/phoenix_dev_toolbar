@@ -169,7 +169,7 @@ defmodule PhoenixDevToolbar.PanelLive do
       gaps: PageData.gaps(sids),
       quarantined: PageData.quarantined(socket.assigns.shell.plugins)
     )
-    |> assign(seqs: %{}, seen: MapSet.new())
+    |> assign(seqs: %{}, seen: %{})
     |> remember(events)
     |> deliver(:reset, events)
   end
@@ -177,7 +177,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   defp flush(%{assigns: %{page: %Page{sids: sids}, seqs: seqs, seen: seen}} = socket) do
     lows = Map.new(sids, &{&1, max(Map.get(seqs, &1, 0) - @reread_window, 0)})
 
-    events = sids |> PageData.read_since(lows) |> Enum.reject(&MapSet.member?(seen, &1.seq))
+    events = sids |> PageData.read_since(lows) |> Enum.reject(&seen?(seen, &1))
 
     socket
     |> fold(events)
@@ -223,20 +223,30 @@ defmodule PhoenixDevToolbar.PanelLive do
   defp default_tab([%{id: id} | _tabs]), do: id
   defp default_tab([]), do: nil
 
-  # Tracks the highest seq per sid and the seqs already shown (for the re-read
-  # window); `forget_below/2` keeps `seen` bounded to that window.
+  # Tracks, per sid, the highest seq and the seqs already shown (for the
+  # re-read window); `forget_below/2` keeps each sid's `seen` bounded to its
+  # own window (one floor for all sids would keep a quiet sid's window open).
   defp remember(socket, events) do
-    seqs =
-      Enum.reduce(events, socket.assigns.seqs, fn %Event{sid: sid, seq: seq}, acc ->
-        Map.update(acc, sid, seq, &max(&1, seq))
+    {seqs, seen} =
+      Enum.reduce(events, {socket.assigns.seqs, socket.assigns.seen}, fn
+        %Event{sid: sid, seq: seq}, {seqs, seen} ->
+          {Map.update(seqs, sid, seq, &max(&1, seq)),
+           Map.update(seen, sid, MapSet.new([seq]), &MapSet.put(&1, seq))}
       end)
 
-    assign(socket, seqs: seqs, seen: Enum.into(events, socket.assigns.seen, & &1.seq))
+    assign(socket, seqs: seqs, seen: seen)
   end
 
+  defp seen?(seen, %Event{sid: sid, seq: seq}),
+    do: seen |> Map.get(sid, MapSet.new()) |> MapSet.member?(seq)
+
   defp forget_below(socket, lows) do
-    floor = lows |> Map.values() |> Enum.min(fn -> 0 end)
-    update(socket, :seen, &MapSet.filter(&1, fn seq -> seq >= floor end))
+    update(socket, :seen, fn seen ->
+      Map.new(seen, fn {sid, seqs} ->
+        low = Map.get(lows, sid, 0)
+        {sid, MapSet.filter(seqs, &(&1 >= low))}
+      end)
+    end)
   end
 
   defp subscribe(socket, sids) do

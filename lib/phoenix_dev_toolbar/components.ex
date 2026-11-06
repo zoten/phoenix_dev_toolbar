@@ -15,7 +15,7 @@ defmodule PhoenixDevToolbar.Components do
 
   attr :trimmed, :integer,
     default: 0,
-    doc: "oldest events removed past the per plugin and per page caps"
+    doc: "oldest events removed past the per plugin and per session caps"
 
   def summary_bar(assigns) do
     ~H"""
@@ -40,7 +40,7 @@ defmodule PhoenixDevToolbar.Components do
         :if={@trimmed > 0}
         id="pdt-badge-trimmed"
         class="pdt-badge pdt-badge--warn"
-        title="The oldest events were removed past the per page limit: lists start later than the page"
+        title="The oldest events were removed past the per session limits: lists start later than the page"
       >
         {@trimmed} older trimmed
       </span>

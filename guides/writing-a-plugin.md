@@ -108,8 +108,9 @@ defmodule MyApp.Toolbar.Jobs do
 end
 ```
 
-- `id` is stored in every event (`Event.plugin`) and names the tab
-  (`#pdt-tab-jobs`); it must be unique among the configured plugins.
+- `id` is stored in every event (`Event.plugin`, set by the toolbar to your
+  plugin's id) and names the tab (`#pdt-tab-jobs`); it must be unique among
+  the configured plugins.
 - `Event.new/4` takes the plugin id, a `kind` of your choosing, the `data` map
   (already bounded: it is stored as is) and an optional `:duration` in native
   time units, as `:telemetry` reports it.
@@ -130,7 +131,8 @@ logged and skipped: your app always boots.
 
 Badges are shown in the collapsed bar. They are folded event by event in the
 panel, so they keep counting when the oldest events are trimmed from the
-buffer (each plugin keeps its last 500 events per page).
+buffer (each plugin keeps its last 500 events per session; a LiveView page
+has two sessions, its request and its LiveView).
 
 ```elixir
   @impl true
@@ -212,10 +214,11 @@ end
   only one loaded.
 - DOM ids must be unique in the whole panel: prefix them with your plugin id.
 
-An exception in the tab's code (its callbacks, its template, `mount/1`)
-disables the tab only, with the error and a Re-enable button. The template is
-checked by rendering it once more behind that boundary; a template that nests
-live components is not checked, and an error there still breaks the panel.
+An exception in the tab's code (its callbacks, `render/1` and its template,
+`mount/1`) disables the tab only, with the error and a Re-enable button. The
+template is checked by rendering it once more behind that boundary; a template
+that nests live components is not checked, and an error there still breaks the
+panel.
 
 ## Testing a plugin
 

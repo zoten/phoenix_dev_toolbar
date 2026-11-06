@@ -27,13 +27,23 @@ defmodule PhoenixDevToolbar.TestPlugins.FragilePanel do
 
   @impl Phoenix.LiveComponent
   def render(assigns) do
+    # Work before the template, outside ~H: "eager" raises here.
+    assigns = assign(assigns, :count, count(assigns.values))
+
     ~H"""
-    <div id="fragile">
+    <div id="fragile" data-count={@count}>
       <button id="fragile-explode" phx-click="explode" phx-target={@myself}>explode</button>
       <button id="fragile-async" phx-click="async" phx-target={@myself}>async</button>
       <span :for={value <- @values} class="fragile-value">{render_value(value)}</span>
     </div>
     """
+  end
+
+  defp count(values) do
+    case "eager" in values do
+      true -> raise "eager boom"
+      false -> length(values)
+    end
   end
 
   defp render_value("render"), do: raise("render boom")

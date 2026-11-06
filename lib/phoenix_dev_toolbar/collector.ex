@@ -34,15 +34,19 @@ defmodule PhoenixDevToolbar.Collector do
     detach()
 
     attached = Enum.flat_map(plugins, &attachable/1)
-    configs = Enum.map(attached, fn {plugin, config, _events} -> {plugin, config} end)
+    configs = Enum.map(attached, fn {plugin, _id, config, _events} -> {plugin, config} end)
     :persistent_term.put(@plugins_key, configs)
-    :persistent_term.put(@configs_key, Map.new(configs))
+
+    :persistent_term.put(
+      @configs_key,
+      Map.new(attached, fn {plugin, id, config, _events} -> {plugin, {id, config}} end)
+    )
 
     # The handler config holds module names only: `:telemetry` copies it into
     # every emitting process, tracked or not. Configs are read from
     # persistent_term (no copy) once a process is known to be tracked.
     attached
-    |> Enum.flat_map(fn {plugin, _config, events} -> Enum.map(events, &{&1, plugin}) end)
+    |> Enum.flat_map(fn {plugin, _id, _config, events} -> Enum.map(events, &{&1, plugin}) end)
     |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
     # Session tracking needs the mount event even when no plugin asks for it.
     |> Map.put_new(@mount_start, [])
@@ -60,7 +64,7 @@ defmodule PhoenixDevToolbar.Collector do
     release(plugin)
 
     case start(plugin, opts) do
-      {:ok, config, events} -> [{plugin, config, events}]
+      {:ok, id, config, events} -> [{plugin, id, config, events}]
       :skip -> []
     end
   end
@@ -75,10 +79,11 @@ defmodule PhoenixDevToolbar.Collector do
     do: skip(plugin, "expected Module or {Module, opts}")
 
   defp start(plugin, opts) do
-    with {:ok, config} <- init(plugin, opts),
+    with id when is_atom(id) and id not in [nil, true, false] <- plugin.id(),
+         {:ok, config} <- init(plugin, opts),
          events when is_list(events) <- plugin.telemetry_events(config),
          true <- Enum.all?(events, &event_name?/1) do
-      {:ok, config, Enum.uniq(events)}
+      {:ok, id, config, Enum.uniq(events)}
     else
       {:error, reason} when is_binary(reason) ->
         skip(plugin, "init/1 returned an error: #{reason}")
@@ -167,18 +172,22 @@ defmodule PhoenixDevToolbar.Collector do
 
     for plugin <- plugins,
         not quarantined?(plugin),
-        {:ok, config} <- [Map.fetch(configs, plugin)],
-        do: collect_one(plugin, event, payload, %{context | config: config})
+        {:ok, {id, config}} <- [Map.fetch(configs, plugin)],
+        do: collect_one(plugin, id, event, payload, %{context | config: config})
 
     :ok
   end
 
   # Only the plugin's own code can quarantine it: Store and Notify failures are
-  # ours and are handled by the handler level catch.
-  defp collect_one(plugin, event, payload, %Context{sid: sid} = context) do
+  # ours and are handled by the handler level catch. Events are stamped with
+  # the plugin's own id: a plugin cannot record into another one's tab or cap.
+  defp collect_one(plugin, id, event, payload, %Context{sid: sid} = context) do
     case run_plugin(plugin, event, payload, context) do
-      {:record, %Event{} = recorded} -> maybe_notify(Store.insert(sid, recorded), sid)
-      _skip_or_quarantined -> :ok
+      {:record, %Event{} = recorded} ->
+        maybe_notify(Store.insert(sid, %{recorded | plugin: id}), sid)
+
+      _skip_or_quarantined ->
+        :ok
     end
   end
 

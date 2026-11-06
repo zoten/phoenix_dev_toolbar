@@ -109,10 +109,6 @@ defmodule PhoenixDevToolbar.Panel do
 
       @behaviour PhoenixDevToolbar.Panel
 
-      @impl Phoenix.LiveComponent
-      def update(assigns, socket),
-        do: PhoenixDevToolbar.Panel.__update__(__MODULE__, assigns, socket)
-
       @impl PhoenixDevToolbar.Panel
       def handle_props(socket), do: socket
 
@@ -127,24 +123,32 @@ defmodule PhoenixDevToolbar.Panel do
 
   @doc false
   defmacro __before_compile__(env) do
-    if Module.defines?(env.module, {:update_many, 1}) do
+    for fun <- [update: 2, update_many: 1], Module.defines?(env.module, fun) do
+      {name, arity} = fun
+
       raise CompileError,
         file: env.file,
         description:
-          "#{inspect(env.module)}: a PhoenixDevToolbar.Panel cannot define update_many/1"
+          "#{inspect(env.module)}: a PhoenixDevToolbar.Panel cannot define #{name}/#{arity}"
     end
 
     # The plugin's own callbacks run behind a boundary: an exception breaks
     # this tab only (the toolbar shows it with a Re-enable button), never the
     # whole panel. A broken tab renders nothing of the plugin's.
     quote do
+      @impl Phoenix.LiveComponent
+      def update(assigns, socket),
+        do: PhoenixDevToolbar.Panel.__update__(__MODULE__, assigns, socket)
+
       defoverridable render: 1
 
       @impl Phoenix.LiveComponent
       def render(%{pdt_error: banner} = assigns) when is_binary(banner),
         do: PhoenixDevToolbar.Panel.__broken__(assigns)
 
-      def render(assigns), do: PhoenixDevToolbar.Panel.__checked__(super(assigns), assigns)
+      # Code before the template (assign/3, helpers) runs here: guarded too.
+      def render(assigns),
+        do: PhoenixDevToolbar.Panel.__checked__(fn -> super(assigns) end, assigns)
 
       unquote(guarded_mount(env))
       unquote(guarded(env, :handle_event, 3))
@@ -192,18 +196,25 @@ defmodule PhoenixDevToolbar.Panel do
   # evaluated once here (Phoenix.HTML.Safe, a public protocol) to catch an
   # error before LiveView sees it, at the cost of rendering it twice. A panel
   # that nests live components cannot be converted to HTML: it is not checked.
-  @spec __checked__(Phoenix.LiveView.Rendered.t(), map()) :: Phoenix.LiveView.Rendered.t()
-  def __checked__(rendered, assigns) do
-    _ = Phoenix.HTML.Safe.to_iodata(rendered)
+  # The plugin's render/1 is called here too, so code before its ~H is covered.
+  @spec __checked__((-> Phoenix.LiveView.Rendered.t()), map()) :: Phoenix.LiveView.Rendered.t()
+  def __checked__(render, assigns) do
+    rendered = render.()
+    check(rendered)
     rendered
+  catch
+    kind, reason -> render_failed(assigns, kind, reason, __STACKTRACE__)
+  end
+
+  defp check(rendered) do
+    _ = Phoenix.HTML.Safe.to_iodata(rendered)
+    :ok
   rescue
     exception in ArgumentError ->
       case Exception.message(exception) =~ "cannot convert component" do
-        true -> rendered
-        false -> render_failed(assigns, :error, exception, __STACKTRACE__)
+        true -> :ok
+        false -> reraise exception, __STACKTRACE__
       end
-  catch
-    kind, reason -> render_failed(assigns, kind, reason, __STACKTRACE__)
   end
 
   # No socket in render: tell the toolbar (it shows the error), log once per

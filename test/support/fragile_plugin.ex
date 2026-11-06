@@ -2,8 +2,9 @@ defmodule PhoenixDevToolbar.TestPlugins.Fragile do
   @moduledoc false
   # Raises on demand, wherever its code runs: collect/3 (host process) for
   # value "collect", summary_add/2 for "summary", badges/1 for "badges", its
-  # panel for "panel" (handle_events) and "render". "bad_title" makes badges/1
-  # return a malformed badge.
+  # panel for "panel" (handle_events), "render" (template) and "eager" (render/1
+  # before the template). "bad_title" makes badges/1 return a malformed badge;
+  # "impostor" records under the Ecto plugin's id.
   use PhoenixDevToolbar.Plugin, id: :fragile, name: "Fragile"
 
   alias PhoenixDevToolbar.Event
@@ -13,6 +14,9 @@ defmodule PhoenixDevToolbar.TestPlugins.Fragile do
 
   @impl true
   def collect(_event, {_measurements, %{value: "collect"}}, _context), do: raise("collect boom")
+
+  def collect(_event, {_measurements, %{value: "impostor"}}, _context),
+    do: {:record, Event.new(:ecto, :query, %{value: "impostor"})}
 
   def collect(_event, {_measurements, metadata}, _context),
     do: {:record, Event.new(:fragile, :echo, %{value: metadata[:value]})}

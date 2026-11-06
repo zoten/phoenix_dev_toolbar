@@ -95,7 +95,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
       |> LazyHTML.attribute("id")
 
     assert ids == [
-             "pdt-badge-queries",
+             "pdt-badge-ecto-queries",
              "pdt-badge-response",
              "pdt-badge-live",
              "pdt-badge-badge_only",
@@ -134,5 +134,25 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
 
     assert has_element?(panel, "#pdt-trimmed-tabbed", "3 older events trimmed")
     refute has_element?(panel, "#pdt-trimmed-ecto")
+  end
+
+  # A memory bound (ADR 03): the panel remembers the seqs it showed only within
+  # each sid's re-read window, even when the page's request sid stays quiet.
+  test "a long lived page keeps the panel's seen seqs bounded per sid" do
+    Store.put_limits(events_per_second: 10_000)
+    {host, sid} = visit("/demo")
+    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+
+    for batch <- 1..20 do
+      for n <- 1..10, do: render_hook(host, "echo", %{"value" => "#{batch}-#{n}"})
+      flush(panel)
+    end
+
+    _ = render(panel)
+    assert has_element?(panel, "#tabbed-list li", "echo 20-10")
+    %{socket: %{assigns: %{seen: seen}}} = :sys.get_state(panel.pid)
+    # 400 events shown; each sid keeps its re-read window (64 seqs) plus the
+    # last flush's events (20).
+    assert seen |> Map.values() |> Enum.map(&MapSet.size/1) |> Enum.max() <= 64 + 20 + 1
   end
 end

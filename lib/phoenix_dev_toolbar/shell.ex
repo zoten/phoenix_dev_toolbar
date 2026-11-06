@@ -10,7 +10,12 @@ defmodule PhoenixDevToolbar.Shell do
   alias PhoenixDevToolbar.Shell
   alias PhoenixDevToolbar.Truncate
 
-  defstruct plugins: [], by_id: %{}, summaries: %{}, badges: %{}, broken: %{}
+  defstruct plugins: [],
+            by_id: %{},
+            tab_ids: MapSet.new(),
+            summaries: %{},
+            badges: %{},
+            broken: %{}
 
   @type tab :: %{
           id: String.t(),
@@ -22,6 +27,7 @@ defmodule PhoenixDevToolbar.Shell do
   @type t :: %Shell{
           plugins: [{module(), term()}],
           by_id: %{atom() => module()},
+          tab_ids: MapSet.t(String.t()),
           summaries: %{atom() => term()},
           badges: %{atom() => [PhoenixDevToolbar.Plugin.badge()]},
           broken: %{String.t() => String.t()}
@@ -34,6 +40,8 @@ defmodule PhoenixDevToolbar.Shell do
       plugins: plugins,
       by_id: Map.new(plugins, fn {plugin, _} -> {plugin.id(), plugin} end)
     }
+
+    shell = %{shell | tab_ids: shell |> tabs() |> MapSet.new(& &1.id)}
 
     reset(shell, [])
   end
@@ -148,12 +156,10 @@ defmodule PhoenixDevToolbar.Shell do
 
   @doc "Events grouped by the tab they go to, oldest first; others are dropped."
   @spec route(t(), [Event.t()]) :: %{String.t() => [Event.t()]}
-  def route(%Shell{} = shell, events) do
-    tabs = shell |> tabs() |> MapSet.new(& &1.id)
-
+  def route(%Shell{tab_ids: tab_ids}, events) do
     events
     |> Enum.group_by(&Atom.to_string(&1.plugin))
-    |> Map.filter(fn {id, _events} -> MapSet.member?(tabs, id) end)
+    |> Map.filter(fn {id, _events} -> MapSet.member?(tab_ids, id) end)
   end
 
   defp summary?(plugin), do: function_exported?(plugin, :summary_init, 1)

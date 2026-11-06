@@ -5,9 +5,11 @@ defmodule PhoenixDevToolbar.ConfigTest do
 
   alias PhoenixDevToolbar.Config
   alias PhoenixDevToolbar.Plugins
+  alias PhoenixDevToolbar.TestPlugins.AtomName
   alias PhoenixDevToolbar.TestPlugins.BadPanel
   alias PhoenixDevToolbar.TestPlugins.Echo
   alias PhoenixDevToolbar.TestPlugins.HalfSummary
+  alias PhoenixDevToolbar.TestPlugins.NilId
   alias PhoenixDevToolbar.TestPlugins.SameId
   alias PhoenixDevToolbar.TestPlugins.ThrowingId
 
@@ -53,6 +55,13 @@ defmodule PhoenixDevToolbar.ConfigTest do
   test "a plugin whose id/0 throws is skipped, never crashes the boot" do
     log = capture_log(fn -> assert Config.expand([ThrowingId, Echo]) == [{Echo, []}] end)
     assert log =~ "ignoring plugin PhoenixDevToolbar.TestPlugins.ThrowingId: ** (throw) :nope"
+  end
+
+  test "a nil id or a name that is not a string is skipped" do
+    log = capture_log(fn -> assert Config.expand([NilId, AtomName, Echo]) == [{Echo, []}] end)
+
+    assert log =~ "NilId: id/0 must return an atom"
+    assert log =~ "AtomName: name/0 must return a string"
   end
 
   test "{:exclude, _} needs a module, and excludes an explicitly listed one too" do
