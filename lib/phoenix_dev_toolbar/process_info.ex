@@ -38,6 +38,7 @@ defmodule PhoenixDevToolbar.ProcessInfo do
         }
 
   @type relation :: %{
+          toolbar?: boolean(),
           id: String.t(),
           kind: :process | :port | :other,
           name: String.t(),
@@ -98,6 +99,20 @@ defmodule PhoenixDevToolbar.ProcessInfo do
     end
   end
 
+  @doc """
+  The module a process was started for, from its `$initial_call` (a LiveView's
+  is `{View, :mount, 3}`), or nil.
+  """
+  @spec module(pid()) :: module() | nil
+  def module(pid) when is_pid(pid) and node(pid) == node() do
+    case dictionary(pid, :"$initial_call") do
+      {module, _fun, _arity} when is_atom(module) -> module
+      _missing -> nil
+    end
+  end
+
+  def module(_pid), do: nil
+
   @doc "Reductions per second between two samples of one process."
   @spec reductions_per_second(sample(), sample()) :: non_neg_integer()
   def reductions_per_second(%{at: t0, reductions: r0}, %{at: t1, reductions: r1}) when t1 > t0,
@@ -156,20 +171,28 @@ defmodule PhoenixDevToolbar.ProcessInfo do
   defp relation({:process, target}, owner), do: relation(target, owner)
 
   defp relation(pid, owner) when is_pid(pid) do
-    %{id: inspect(pid), kind: :process, name: name(pid), child?: child?(pid, owner)}
+    name = name(pid)
+
+    %{
+      id: inspect(pid),
+      kind: :process,
+      name: name,
+      child?: child?(pid, owner),
+      toolbar?: String.starts_with?(name, "PhoenixDevToolbar.")
+    }
   end
 
   defp relation({:port, port}, owner), do: relation(port, owner)
 
   defp relation(port, _owner) when is_port(port),
-    do: %{id: inspect(port), kind: :port, name: port_name(port), child?: false}
+    do: %{id: inspect(port), kind: :port, name: port_name(port), child?: false, toolbar?: false}
 
   # A monitor by name ({name, node}) or a NIF resource.
   defp relation({name, node} = other, _owner) when is_atom(name) and is_atom(node),
-    do: %{id: inspect(other), kind: :other, name: inspect(name), child?: false}
+    do: %{id: inspect(other), kind: :other, name: inspect(name), child?: false, toolbar?: false}
 
   defp relation(other, _owner),
-    do: %{id: inspect(other, limit: 5), kind: :other, name: "", child?: false}
+    do: %{id: inspect(other, limit: 5), kind: :other, name: "", child?: false, toolbar?: false}
 
   # Process.info/2 and Port.info/2 raise on another node's pid or port: those
   # are only named by their node.

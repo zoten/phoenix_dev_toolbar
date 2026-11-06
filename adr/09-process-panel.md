@@ -34,14 +34,19 @@ only, reading the page's process while the tab is shown and the panel visible.
   (`{:dictionary, key}`, OTP 26.2+, checked once; older OTPs skip them). Remote pids
   and ports are named by their node and never read.
 - **Sparklines**: memory, queue and reductions per second keep the last `samples`
-  points, inline SVG with the panel's tokens.
+  points, inline SVG with the panel's tokens, each scaled to its own window: the
+  window's peak is written under it. Nested LiveViews are named after their module
+  (`$initial_call`), read only while polling; the toolbar's own processes are tagged.
 - **Polling**: `Panel.send_after/4` timers, started from `handle_props/1` when the tab
   is shown and the panel visible, renewed only while that holds. Each timer carries a
   token, and scheduling replaces the pending timer of its kind: a tick that is not the
   pending one is dropped, so there is one loop per kind whatever raced. The target list
   is refreshed on every relations tick (a nested LiveView mounts after its parent, in
   the same sid, so the page does not change); exited pids are skipped and a target that
-  left the list gives way to the first. A dead target stops the loop.
+  left the list gives way to the first. A dead target stops the sample loop; the
+  relations loop goes on, and when it finds a new target (a crashed LiveView rejoined
+  with a new pid) the sample loop restarts. A reset (Re-enable included) restarts
+  polling.
 - **GC now**: the only thing the panel does to a host process. A button runs
   `:erlang.garbage_collect/1` on the selected process, in `start_async/3` (a target busy
   in a long NIF never blocks the panel), at most once a second, and shows the memory
@@ -67,7 +72,10 @@ only, reading the page's process while the tab is shown and the panel visible.
 
 ## Open limits
 
-- Nested LiveViews are labelled "nested LiveView": their sessions are their parent's.
+- A task shorter than `relations_ms` may never show among the relations.
+- Sparklines join their points across a pause (panel hidden): the gap is not drawn.
+- The OTP before 26.2 path (no `{:dictionary, key}`) is not covered by CI, whose OTP 26
+  row runs the latest 26.2.
 - Plain `Task.async` children run the function they were given: their name is that
   function; `start_async` tasks all read as LiveView's async runner.
 - No summary badge (no events): a growing queue only shows in the tab.

@@ -393,6 +393,7 @@ body.pdt {
 .pdt-vital__value { font: 600 12px var(--pdt-mono); text-align: right; }
 .pdt-vital--warn .pdt-vital__value { color: var(--pdt-warn); }
 .pdt-sparkline { grid-column: 1 / -1; width: 100%; height: 24px; }
+.pdt-vital__peak { grid-column: 1 / -1; color: var(--pdt-muted); font-size: 11px; }
 .pdt-sparkline polyline { stroke: var(--pdt-accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .pdt-vital--warn .pdt-sparkline polyline { stroke: var(--pdt-warn); }
 .pdt-process__details { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0; padding: 4px 12px 8px; }

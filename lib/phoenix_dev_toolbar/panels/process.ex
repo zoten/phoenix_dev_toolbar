@@ -29,12 +29,15 @@ defmodule PhoenixDevToolbar.Panels.Process do
   def mount(socket) do
     {:ok,
      socket
-     |> assign(prev: nil, targets: [], selected: nil, timers: %{}, gc: nil, gc_at: nil)
+     |> assign(prev: nil, targets: [], selected: nil, timers: %{})
+     |> assign(gc: nil, gc_at: nil, gc_note: nil, gc_timer: nil)
      |> assign(about: nil, sample: nil, relations: nil, series: empty_series())}
   end
 
+  # A reset also follows Re-enable (after an error broke the tab): polling
+  # restarts if someone looks.
   @impl Panel
-  def handle_reset(_events, socket), do: socket
+  def handle_reset(_events, socket), do: poll_now(socket)
 
   @impl Panel
   def handle_events(_events, socket), do: socket
@@ -49,7 +52,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
     cond do
       # The list itself is only Store reads: the host process is read once polling.
       prev.page != assigns.page ->
-        socket |> cancel_timers() |> select(nil) |> refresh_targets() |> poll_now()
+        socket |> cancel_timers() |> select(nil) |> refresh_targets(false) |> poll_now()
 
       not (prev.shown? and prev.visible?) and polling?(socket) ->
         poll_now(socket)
@@ -76,6 +79,8 @@ defmodule PhoenixDevToolbar.Panels.Process do
         socket
     end
   end
+
+  def handle_info(:gc_ready, socket), do: assign(socket, gc_note: nil, gc_timer: nil)
 
   def handle_info(_message, socket), do: socket
 
@@ -104,8 +109,9 @@ defmodule PhoenixDevToolbar.Panels.Process do
          |> assign(gc: :running, gc_at: System.monotonic_time(:millisecond))
          |> start_async(:gc, fn -> {pid, ProcessInfo.collect(pid)} end)}
 
+      # The last result stays; a note says when the next collection is allowed.
       false ->
-        {:noreply, assign(socket, :gc, :too_soon)}
+        {:noreply, socket |> assign(:gc_note, "one collection a second") |> gc_ready_later()}
     end
   end
 
@@ -117,6 +123,13 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
   # The target changed meanwhile (its task was cancelled), or the task exited.
   def handle_async(:gc, _result, socket), do: {:noreply, assign(socket, :gc, nil)}
+
+  defp gc_ready_later(%{assigns: %{gc_timer: nil, gc_at: at}} = socket) do
+    wait = max(@gc_every_ms - (System.monotonic_time(:millisecond) - at), 0)
+    assign(socket, :gc_timer, Panel.send_after(__MODULE__, socket.assigns.id, :gc_ready, wait))
+  end
+
+  defp gc_ready_later(socket), do: socket
 
   defp gc_allowed?(%{assigns: %{gc_at: nil}}), do: true
 
@@ -134,6 +147,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
       selected: pid,
       gc: nil,
       about: nil,
+      gc_note: nil,
       sample: nil,
       relations: nil,
       series: empty_series()
@@ -150,8 +164,10 @@ defmodule PhoenixDevToolbar.Panels.Process do
   # The list is refreshed when polling starts and on every relations tick: a
   # nested LiveView mounts after its parent (same sid, so the page does not
   # change). A selected process that left the list gives way to the first.
-  defp refresh_targets(socket) do
-    targets = targets(socket.assigns.page)
+  # `named?`: nested LiveViews are named after their module, a read of the
+  # process: only while polling (until the tab is opened, only the Store is read).
+  defp refresh_targets(socket, named?) do
+    targets = targets(socket.assigns.page, named?)
     selected = socket.assigns.selected
 
     socket = assign(socket, :targets, targets)
@@ -168,7 +184,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
   # The page's LiveView first, then the other live processes of its sids
   # (nested LiveViews), at most @max_targets. Exited pids linger in the index
   # until the Store's sweep: they are skipped.
-  defp targets(%Page{sids: sids}) do
+  defp targets(%Page{sids: sids}, named?) do
     owners =
       for sid <- Enum.reverse(sids),
           {:ok, %Session{kind: :live_view, owner: owner, view: view}} <- [session(sid)],
@@ -181,10 +197,19 @@ defmodule PhoenixDevToolbar.Panels.Process do
       for sid <- sids,
           pid <- pids_for(sid),
           pid not in owner_pids and Process.alive?(pid),
-          do: %{pid: pid, label: "nested LiveView"}
+          do: %{pid: pid, label: nested_label(pid, named?)}
 
     Enum.take(owners ++ Enum.uniq_by(nested, & &1.pid), @max_targets)
   end
+
+  defp nested_label(pid, true) do
+    case ProcessInfo.module(pid) do
+      nil -> "nested LiveView"
+      module -> inspect(module) <> " (nested)"
+    end
+  end
+
+  defp nested_label(_pid, false), do: "nested LiveView"
 
   defp label(nil), do: "LiveView"
   defp label(view), do: inspect(view)
@@ -210,7 +235,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
     case polling?(socket) do
       true ->
         socket
-        |> refresh_targets()
+        |> refresh_targets(true)
         |> read_about()
         |> read_sample()
         |> read_relations()
@@ -224,13 +249,23 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
   defp tick(socket, :sample), do: read_sample(socket)
 
-  defp tick(socket, :relations),
-    do: socket |> refresh_targets() |> read_about() |> read_relations()
+  # A new target found here (the LiveView crashed and rejoined with a new pid,
+  # the selected nested one exited) restarts the sample loop, stopped on :dead.
+  defp tick(socket, :relations) do
+    before = socket.assigns.selected
+    socket = socket |> refresh_targets(true) |> read_about() |> read_relations()
+
+    case socket.assigns.selected do
+      ^before -> socket
+      _new -> socket |> read_sample() |> schedule(:sample)
+    end
+  end
 
   # Replaces any pending timer of that kind. Nothing is scheduled without a
-  # live target: a dead one stops the loop (a page change or a select restarts it).
+  # target; a dead one stops the sample loop, while the relations loop goes on
+  # to find its replacement (a rejoin) or drop it from the list.
   defp schedule(%{assigns: %{selected: pid, sample: sample}} = socket, kind)
-       when is_pid(pid) and sample != :dead do
+       when is_pid(pid) and (kind == :relations or sample != :dead) do
     socket = cancel_timer(socket, kind)
     token = make_ref()
     every = Map.fetch!(config(socket), :"#{kind}_ms")
@@ -346,7 +381,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
           {if(@gc == :running, do: "collecting…", else: "GC now")}
         </button>
         <span :if={is_map(@sample)} id="pdt-process-gc-result" class="pdt-hint" role="status">
-          {gc_result(@gc)}
+          {gc_result(@gc)}<span :if={@gc_note} id="pdt-process-gc-note"> · {@gc_note}</span>
         </span>
       </div>
       <p :if={@targets != [] and not (@shown? and @visible?)} class="pdt-hint pdt-process__paused">
@@ -366,17 +401,20 @@ defmodule PhoenixDevToolbar.Panels.Process do
           label="Memory"
           value={bytes(@sample.memory)}
           values={@series.memory}
+          peak={peak(@series.memory, &bytes/1)}
         />
         <.vital
           id="pdt-process-queue"
           label="Message queue"
           value={Integer.to_string(@sample.message_queue_len)}
           values={@series.queue}
+          peak={peak(@series.queue, &Integer.to_string/1)}
           warn?={@sample.message_queue_len > 100}
         />
         <.vital
           id="pdt-process-reductions"
           label="Reductions / s"
+          title="Work done per second: a reduction is roughly one function call"
           value={
             if(@sample.reductions_per_second,
               do: Integer.to_string(@sample.reductions_per_second),
@@ -384,12 +422,18 @@ defmodule PhoenixDevToolbar.Panels.Process do
             )
           }
           values={@series.reductions}
+          peak={peak(@series.reductions, &Integer.to_string/1)}
         />
       </div>
       <dl :if={is_map(@sample)} id="pdt-process-details" class="pdt-process__details">
         <dt>status</dt>
-        <dd>{@sample.status}</dd>
-        <dt>running</dt>
+        <dd>
+          {@sample.status}
+          <span :if={@sample.status == :waiting and @sample.message_queue_len > 100} class="pdt-hint">
+            · between two messages: the queue grows faster than they are handled
+          </span>
+        </dd>
+        <dt>current function</dt>
         <dd><code>{@sample.current_function}</code></dd>
         <dt>heap</dt>
         <dd>
@@ -399,7 +443,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
         </dd>
         <dt>GC</dt>
         <dd>
-          {@sample.minor_gcs} minor collections since the last full sweep · full sweep after {@sample.fullsweep_after}
+          {@sample.minor_gcs} minor collections since the last full sweep · a full sweep every {@sample.fullsweep_after} minor ones
         </dd>
       </dl>
       <section :if={is_map(@relations)} id="pdt-process-relations" class="pdt-process__relations">
@@ -431,16 +475,28 @@ defmodule PhoenixDevToolbar.Panels.Process do
   attr :value, :string, required: true
   attr :values, :list, required: true
   attr :warn?, :boolean, default: false
+  attr :peak, :string, default: nil, doc: "the window's highest value, formatted"
+  attr :title, :string, default: nil
 
   defp vital(assigns) do
     ~H"""
     <div id={@id} class={["pdt-vital", @warn? && "pdt-vital--warn"]}>
-      <span class="pdt-vital__label">{@label}</span>
+      <span class="pdt-vital__label" title={@title}>{@label}</span>
       <span class="pdt-vital__value">{@value}</span>
-      <.sparkline values={@values} label={@label <> " over time"} />
+      <.sparkline values={@values} label={sparkline_label(@label, @peak, length(@values))} />
+      <span :if={@peak} class="pdt-vital__peak">peak {@peak} over {length(@values)} samples</span>
     </div>
     """
   end
+
+  # The line is scaled to its own window: the peak gives it a size.
+  defp peak([], _format), do: nil
+  defp peak(values, format), do: format.(Enum.max(values))
+
+  defp sparkline_label(label, nil, _count), do: label <> " over time"
+
+  defp sparkline_label(label, peak, count),
+    do: "#{label} over the last #{count} samples, peak #{peak}"
 
   attr :id, :string, required: true
   attr :title, :string, required: true
@@ -457,6 +513,9 @@ defmodule PhoenixDevToolbar.Panels.Process do
           <code>{relation.id}</code>
           <span>{relation.name}</span>
           <span :if={relation.kind == :port} class="pdt-tag">port</span>
+          <span :if={relation.toolbar?} class="pdt-tag" title="Part of the dev toolbar itself">
+            toolbar
+          </span>
           <span
             :if={relation.child?}
             class="pdt-tag pdt-tag--live"

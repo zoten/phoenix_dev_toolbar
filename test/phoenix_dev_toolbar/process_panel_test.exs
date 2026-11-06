@@ -123,7 +123,8 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     panel |> element("#pdt-process-gc") |> render_click()
     _ = render_async(panel)
     refute_receive {:trace, _pid, :gc_major_start, _info}, 100
-    assert has_element?(panel, "#pdt-process-gc-result", "one collection a second")
+    assert has_element?(panel, "#pdt-process-gc-note", "one collection a second")
+    assert has_element?(panel, "#pdt-process-gc-result", ~r/freed|nothing to free/)
   end
 
   test "a dead target says so" do
@@ -140,6 +141,47 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     reshow(panel)
     refute has_element?(panel, "#pdt-process-vitals")
     assert has_element?(panel, "#pdt-process-none")
+  end
+
+  # Real timers: the relations tick runs every second here (its minimum).
+  defp eventually(fun, tries \\ 40) do
+    case fun.() do
+      true ->
+        true
+
+      false when tries > 0 ->
+        receive do
+        after
+          100 -> eventually(fun, tries - 1)
+        end
+
+      false ->
+        flunk("condition never met")
+    end
+  end
+
+  test "after a crash, the rejoined LiveView is sampled again without a reshow" do
+    Collector.attach([{PhoenixDevToolbar.Plugins.Process, relations_ms: 1000}])
+    on_exit(fn -> Collector.attach(PhoenixDevToolbar.Application.plugins()) end)
+
+    {host, sid} = visit("/demo")
+    panel = open(sid)
+    visible(panel)
+    assert has_element?(panel, "#pdt-process-vitals")
+
+    {live_sid, _span} = Store.caller(host.pid)
+    Process.flag(:trap_exit, true)
+    ref = Process.monitor(host.pid)
+    Process.exit(host.pid, :kill)
+    assert_receive {:DOWN, ^ref, :process, _pid, :killed}
+
+    # The rejoin: the same LiveView session claimed by a new process.
+    rejoined = spawn(fn -> receive(do: (:stop -> :ok)) end)
+    on_exit(fn -> send(rejoined, :stop) end)
+    Store.claim(live_sid, rejoined, self())
+
+    eventually(fn -> has_element?(panel, "#pdt-process-target-label", inspect(rejoined)) end)
+    eventually(fn -> has_element?(panel, "#pdt-process-vitals") end)
   end
 
   test "a nested LiveView shows up even when the panel was open before it connected" do
@@ -162,7 +204,7 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     _ = render(panel)
 
     reshow(panel)
-    assert has_element?(panel, "#pdt-process-target option", "nested LiveView")
+    assert has_element?(panel, "#pdt-process-target option", "DemoWeb.PageLive (nested)")
   end
 
   test "a nested LiveView can be picked by index; a tampered index is ignored" do
@@ -171,16 +213,16 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     visible(panel)
 
     assert has_element?(panel, "#pdt-process-target option", "DemoWeb.NestedLive")
-    assert has_element?(panel, "#pdt-process-target option", "nested LiveView")
+    assert has_element?(panel, "#pdt-process-target option", "DemoWeb.PageLive (nested)")
 
     panel |> form("#pdt-process-select", %{"index" => "1"}) |> render_change()
-    assert has_element?(panel, "#pdt-process-target option[selected]", "nested LiveView")
+    assert has_element?(panel, "#pdt-process-target option[selected]", "(nested)")
 
     for index <- ["7", "-1", "x"] do
       panel |> element("#pdt-process-select") |> render_change(%{"index" => index})
     end
 
-    assert has_element?(panel, "#pdt-process-target option[selected]", "nested LiveView")
+    assert has_element?(panel, "#pdt-process-target option[selected]", "(nested)")
   end
 
   test "a page without a LiveView says so" do
