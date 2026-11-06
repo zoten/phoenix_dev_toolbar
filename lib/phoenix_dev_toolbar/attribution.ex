@@ -8,13 +8,30 @@ defmodule PhoenixDevToolbar.Attribution do
   alias PhoenixDevToolbar.Store
 
   @key :pdt_sid
+  @span_key :pdt_span
 
-  @spec current() :: {Session.sid(), :self | :caller} | nil
+  @doc """
+  The current process's session, how it is tracked, and its callback span: a
+  tracked process's own, or for a `$callers` child the span its caller is in.
+  """
+  @spec current() :: {Session.sid(), :self | :caller, non_neg_integer()} | nil
   def current do
     case Process.get(@key) do
       nil -> from_callers(Process.get(:"$callers"))
-      sid -> {sid, :self}
+      sid -> {sid, :self, Process.get(@span_key, 0)}
     end
+  end
+
+  @doc """
+  Starts a new callback span in the current (tracked) process, bumped at each
+  LiveView callback start and stop, and published for its `$callers` children.
+  """
+  @spec next_span() :: non_neg_integer()
+  def next_span do
+    span = Process.get(@span_key, 0) + 1
+    Process.put(@span_key, span)
+    Store.put_span(self(), span)
+    span
   end
 
   @doc "Marks the current process as part of `sid`, for itself and its `$callers` children."
@@ -56,9 +73,9 @@ defmodule PhoenixDevToolbar.Attribution do
   defp from_callers([]), do: nil
 
   defp from_callers([pid | rest]) when is_pid(pid) do
-    case Store.sid_for_pid(pid) do
+    case Store.caller(pid) do
       nil -> from_callers(rest)
-      sid -> {sid, :caller}
+      {sid, span} -> {sid, :caller, span}
     end
   end
 

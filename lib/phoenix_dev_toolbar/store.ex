@@ -10,7 +10,7 @@ defmodule PhoenixDevToolbar.Store do
   #   :pdt_events      ordered_set  {{sid, seq}, %Event{}}
   #   :pdt_sessions    set          {sid, %Session{}, count, dropped, trimmed}
   #   :pdt_counts      set          {{sid, plugin}, count, trimmed}  (per plugin cap)
-  #   :pdt_pids        set          {pid, sid}            ($callers attribution)
+  #   :pdt_pids        set          {pid, sid, span}      ($callers attribution)
   #   :pdt_socket_ids  set          {socket_id, sid}      (dead render -> LiveView)
   #   :pdt_transports  set          {transport_pid, sid}  (latest sid per tab)
   #   :pdt_rate        set          {{sid, second}, n}    (flood guard)
@@ -118,13 +118,40 @@ defmodule PhoenixDevToolbar.Store do
 
   @doc "Attributes a process to a session (used for `$callers` lookups)."
   @spec track_pid(pid(), Session.sid()) :: true
-  def track_pid(pid, sid) when is_pid(pid), do: :ets.insert(@pids, {pid, sid})
+  def track_pid(pid, sid) when is_pid(pid), do: :ets.insert(@pids, {pid, sid, 0})
 
   @spec untrack_pid(pid()) :: true
   def untrack_pid(pid) when is_pid(pid), do: :ets.delete(@pids, pid)
 
   @spec sid_for_pid(pid()) :: Session.sid() | nil
-  def sid_for_pid(pid), do: lookup(@pids, pid)
+  def sid_for_pid(pid) do
+    case caller(pid) do
+      {sid, _span} -> sid
+      nil -> nil
+    end
+  end
+
+  @doc """
+  The sid of a tracked process and its current callback span, for its
+  `$callers` children (ADR 02).
+  """
+  @spec caller(pid()) :: {Session.sid(), non_neg_integer()} | nil
+  def caller(pid) do
+    case :ets.lookup(@pids, pid) do
+      [{^pid, sid, span}] -> {sid, span}
+      [] -> nil
+    end
+  rescue
+    ArgumentError -> nil
+  end
+
+  @doc "Records the current callback span of a tracked process (no row: a no-op)."
+  @spec put_span(pid(), non_neg_integer()) :: boolean()
+  def put_span(pid, span) when is_pid(pid) do
+    :ets.update_element(@pids, pid, {3, span})
+  rescue
+    ArgumentError -> false
+  end
 
   @doc """
   The processes tracked as `sid`: its LiveView and nested LiveViews (request
@@ -132,7 +159,7 @@ defmodule PhoenixDevToolbar.Store do
   holds tracked processes; called by the panel, never by a handler.
   """
   @spec pids_for(Session.sid()) :: [pid()]
-  def pids_for(sid), do: @pids |> :ets.match({:"$1", sid}) |> List.flatten()
+  def pids_for(sid), do: @pids |> :ets.match({:"$1", sid, :_}) |> List.flatten()
 
   @doc "Links a LiveView socket id (created during the dead render) to its sid."
   @spec link_socket_id(String.t(), Session.sid()) :: true
@@ -455,7 +482,8 @@ defmodule PhoenixDevToolbar.Store do
   # Index rows written after their session was deleted, and pid rows of
   # processes that exited (nested LiveViews, finished requests).
   defp delete_orphan_index_rows do
-    for table <- [@pids, @socket_ids, @transports], {key, sid} <- :ets.tab2list(table) do
+    for table <- [@pids, @socket_ids, @transports], row <- :ets.tab2list(table) do
+      {key, sid} = {elem(row, 0), elem(row, 1)}
       _ = orphan_row?(table, key, sid) && :ets.delete(table, key)
     end
 
@@ -498,7 +526,7 @@ defmodule PhoenixDevToolbar.Store do
     :ets.delete(@sessions, sid)
     delete_events(sid)
     :ets.match_delete(@counts, {{sid, :_}, :_, :_})
-    :ets.match_delete(@pids, {:_, sid})
+    :ets.match_delete(@pids, {:_, sid, :_})
     :ets.match_delete(@socket_ids, {:_, sid})
     :ets.match_delete(@transports, {:_, sid})
   end

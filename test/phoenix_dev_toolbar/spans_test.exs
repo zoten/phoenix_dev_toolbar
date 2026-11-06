@@ -1,0 +1,70 @@
+defmodule PhoenixDevToolbar.SpansTest do
+  # Callback spans (ADR 02): every event is stamped with the LiveView callback
+  # it happened in, so diagnostics can group "one callback". Drives a real host
+  # LiveView through DemoWeb.Endpoint.
+  use ExUnit.Case, async: false
+
+  import Phoenix.ConnTest
+  import Phoenix.LiveViewTest
+
+  alias PhoenixDevToolbar.Collector
+  alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.Store
+
+  @endpoint DemoWeb.Endpoint
+
+  setup do
+    Store.reset()
+    Application.put_env(:phoenix_dev_toolbar, :repos, [DemoWeb.FakeRepo])
+    Collector.attach(PhoenixDevToolbar.Application.plugins())
+
+    on_exit(fn ->
+      Application.delete_env(:phoenix_dev_toolbar, :repos)
+      Collector.attach(PhoenixDevToolbar.Application.plugins())
+      Store.reset()
+    end)
+
+    conn =
+      build_conn()
+      |> Plug.Conn.put_req_header("accept", "text/html")
+      |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
+      |> get("/demo")
+
+    {:ok, host, _html} = live(conn)
+    {sid, _span} = Store.caller(host.pid)
+    %{host: host, sid: sid}
+  end
+
+  defp queries(sid, sql),
+    do: for(%Event{kind: :query} = e <- Store.events(sid), e.data.sql == sql, do: e)
+
+  # The spans of the handle_event callbacks, in order (recorded at their stop).
+  defp handle_event_spans(sid) do
+    for %Event{kind: :callback, span: span, data: %{callback: :handle_event}} <- Store.events(sid),
+        do: span
+  end
+
+  test "queries in one callback share its span; the next callback gets another",
+       %{host: host, sid: sid} do
+    render_hook(host, "queries", %{"sql" => "SELECT a", "count" => 3})
+    render_hook(host, "queries", %{"sql" => "SELECT b", "count" => 1})
+
+    [a1, a2, a3] = queries(sid, "SELECT a")
+    [b] = queries(sid, "SELECT b")
+
+    assert a1.span == a2.span and a2.span == a3.span
+    assert handle_event_spans(sid) == [a1.span, b.span]
+    refute b.span == a1.span
+  end
+
+  test "a Task.async child gets the span of the callback it was called from",
+       %{host: host, sid: sid} do
+    render_hook(host, "queries", %{"sql" => "SELECT t", "count" => 2, "task" => true})
+
+    [t1, t2] = queries(sid, "SELECT t")
+
+    assert t1.data.caller? and t2.data.caller?
+    assert t1.span == t2.span
+    assert handle_event_spans(sid) == [t1.span]
+  end
+end

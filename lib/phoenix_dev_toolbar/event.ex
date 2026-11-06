@@ -5,18 +5,28 @@ defmodule PhoenixDevToolbar.Event do
   Plugins build events with `new/4` in `c:PhoenixDevToolbar.Plugin.collect/3`.
   `plugin` is the plugin's id, `kind` an atom of the plugin's choosing, `data`
   a map that must already be bounded (see `PhoenixDevToolbar.Truncate`): it is
-  stored as is. `sid` and `seq` are set by the toolbar on insert.
+  stored as is. `sid` and `seq` are set by the toolbar on insert; `plugin` and
+  `span` (the callback span, see `PhoenixDevToolbar.Context`) are stamped by the
+  collector.
   """
 
   alias PhoenixDevToolbar.Event
 
   @enforce_keys [:plugin, :kind, :at]
-  defstruct sid: nil, seq: nil, plugin: nil, kind: nil, at: nil, duration: nil, data: %{}
+  defstruct sid: nil,
+            seq: nil,
+            plugin: nil,
+            span: nil,
+            kind: nil,
+            at: nil,
+            duration: nil,
+            data: %{}
 
   @type t :: %Event{
           sid: String.t() | nil,
           seq: pos_integer() | nil,
           plugin: atom(),
+          span: non_neg_integer() | nil,
           kind: atom(),
           at: integer(),
           duration: non_neg_integer() | nil,

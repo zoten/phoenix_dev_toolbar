@@ -9,17 +9,18 @@ defmodule DemoWeb.PageLive do
 
   @impl true
   def handle_event("query", %{"sql" => sql}, socket) do
-    :telemetry.execute(
-      [:demo, :repo, :query],
-      %{total_time: System.convert_time_unit(1, :millisecond, :native)},
-      %{
-        repo: DemoWeb.FakeRepo,
-        query: sql,
-        params: [],
-        source: "users",
-        result: {:ok, %{num_rows: 1}}
-      }
-    )
+    query(sql)
+    {:noreply, socket}
+  end
+
+  # `count` queries in this callback, or in a Task.async child of it.
+  def handle_event("queries", %{"sql" => sql, "count" => count} = params, socket) do
+    run = fn -> for _n <- 1..count, do: query(sql) end
+
+    case params["task"] do
+      true -> run |> Task.async() |> Task.await()
+      _inline -> run.()
+    end
 
     {:noreply, socket}
   end
@@ -47,4 +48,18 @@ defmodule DemoWeb.PageLive do
 
   @impl true
   def render(assigns), do: ~H"<p>page</p>"
+
+  defp query(sql) do
+    :telemetry.execute(
+      [:demo, :repo, :query],
+      %{total_time: System.convert_time_unit(1, :millisecond, :native)},
+      %{
+        repo: DemoWeb.FakeRepo,
+        query: sql,
+        params: [],
+        source: "users",
+        result: {:ok, %{num_rows: 1}}
+      }
+    )
+  end
 end

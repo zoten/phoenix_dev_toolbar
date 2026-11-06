@@ -46,3 +46,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Panel seen seqs bounded per session; Config checks id and name; update/2 rejected (ADR 03, ADR 05)
 - Breaking: Ecto badge DOM id is `pdt-badge-ecto-queries` (ADR 05)
 - Summary bar: badges that do not fit are counted in a "+N" chip that opens the panel (ADR 04)
+- Callback spans: `Context.span` and `Event.span`, the LiveView callback an event ran in (ADR 02)

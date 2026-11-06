@@ -21,6 +21,22 @@ defmodule PhoenixDevToolbar.Collector do
 
   @mount_start [:phoenix, :live_view, :mount, :start]
 
+  # Callback boundaries (ADR 02): a tracked process starts a new span at each
+  # start (before the plugins see it) and each stop or exception (after).
+  @span_callbacks [
+    [:phoenix, :live_view, :mount],
+    [:phoenix, :live_view, :handle_params],
+    [:phoenix, :live_view, :handle_event],
+    [:phoenix, :live_view, :render],
+    [:phoenix, :live_component, :update],
+    [:phoenix, :live_component, :handle_event]
+  ]
+  @span_edges Map.new(
+                for prefix <- @span_callbacks,
+                    {stage, edge} <- [start: :before, stop: :after, exception: :after],
+                    do: {prefix ++ [stage], edge}
+              )
+
   @plugins_key {Collector, :plugins}
   @configs_key {Collector, :configs}
 
@@ -48,8 +64,11 @@ defmodule PhoenixDevToolbar.Collector do
     attached
     |> Enum.flat_map(fn {plugin, _id, _config, events} -> Enum.map(events, &{&1, plugin}) end)
     |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
-    # Session tracking needs the mount event even when no plugin asks for it.
-    |> Map.put_new(@mount_start, [])
+    # Session tracking needs the mount event, and spans the callback
+    # boundaries, even when no plugin asks for them.
+    |> then(fn by_event ->
+      Enum.reduce(Map.keys(@span_edges), by_event, &Map.put_new(&2, &1, []))
+    end)
     |> Enum.each(fn {event, event_plugins} ->
       :ok = :telemetry.attach({Collector, event}, event, &Collector.handle_event/4, event_plugins)
     end)
@@ -131,8 +150,15 @@ defmodule PhoenixDevToolbar.Collector do
       nil ->
         :ok
 
-      {sid, source} ->
-        collect(plugins, event, {measurements, metadata}, %Context{sid: sid, source: source})
+      {sid, :self, span} ->
+        edge = Map.get(@span_edges, event)
+        context = %Context{sid: sid, source: :self, span: span_before(edge, span)}
+        collect(plugins, event, {measurements, metadata}, context)
+        span_after(edge)
+
+      {sid, :caller, span} ->
+        context = %Context{sid: sid, source: :caller, span: span}
+        collect(plugins, event, {measurements, metadata}, context)
     end
   catch
     # Every class: `:telemetry` detaches a handler on throws and exits too.
@@ -143,6 +169,16 @@ defmodule PhoenixDevToolbar.Collector do
         Exception.format(kind, reason, __STACKTRACE__)
       )
   end
+
+  defp span_before(:before, _span), do: Attribution.next_span()
+  defp span_before(_edge, span), do: span
+
+  defp span_after(:after) do
+    _ = Attribution.next_span()
+    :ok
+  end
+
+  defp span_after(_edge), do: :ok
 
   @doc false
   @spec quarantined?(module()) :: boolean()
@@ -184,7 +220,7 @@ defmodule PhoenixDevToolbar.Collector do
   defp collect_one(plugin, id, event, payload, %Context{sid: sid} = context) do
     case run_plugin(plugin, event, payload, context) do
       {:record, %Event{} = recorded} ->
-        maybe_notify(Store.insert(sid, %{recorded | plugin: id}), sid)
+        maybe_notify(Store.insert(sid, %{recorded | plugin: id, span: context.span}), sid)
 
       _skip_or_quarantined ->
         :ok
