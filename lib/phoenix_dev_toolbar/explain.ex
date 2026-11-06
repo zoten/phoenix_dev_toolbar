@@ -30,6 +30,7 @@ defmodule PhoenixDevToolbar.Explain do
           | :query_failed
           | :not_select
           | :multiple_statements
+          | :escapes
           | :unsupported_adapter
 
   @type capture :: {:ok, [term()]} | {:no, :not_select | :sql_truncated | :params}
@@ -93,6 +94,7 @@ defmodule PhoenixDevToolbar.Explain do
   def reason(:query_failed), do: "the query itself failed"
   def reason(:not_select), do: "only SELECT queries are explained"
   def reason(:multiple_statements), do: "only single statements are explained"
+  def reason(:escapes), do: "its SQL has backslash escapes, which differ between databases"
   def reason(:unsupported_adapter), do: "this database adapter is not supported"
   def reason(message) when is_binary(message), do: message
 
@@ -121,6 +123,9 @@ defmodule PhoenixDevToolbar.Explain do
   defp single_select(sql) when is_binary(sql) do
     cond do
       not select?(sql) -> {:error, :not_select}
+      # A backslash escapes a quote in MySQL strings, not in Postgres ones: the
+      # separator scan cannot be sure, so such SQL is not explained.
+      String.contains?(sql, "\\") -> {:error, :escapes}
       separator?(sql) -> {:error, :multiple_statements}
       # MySQL runs the text of a versioned comment (/*!80018 ... */).
       String.contains?(sql, "/*!") -> {:error, :not_select}
@@ -272,14 +277,30 @@ defmodule PhoenixDevToolbar.Explain do
     end
   end
 
-  defp param(param, {count, bytes})
-       when is_integer(param) or is_float(param) or is_boolean(param) or is_nil(param),
-       do: {:ok, {count + 1, bytes}}
+  # A big integer (or a Decimal's coefficient) counts its bytes.
+  defp param(param, budget) when is_integer(param), do: integer(param, budget)
+  # Matched by name: `decimal` is not a dependency (a %Decimal{} pattern would
+  # not compile in a host without it).
+  defp param(%{__struct__: Decimal, coef: coef}, budget) when is_integer(coef),
+    do: integer(coef, budget)
+
+  defp param(param, {count, bytes}) when is_float(param) or is_boolean(param) or is_nil(param),
+    do: {:ok, {count + 1, bytes}}
 
   defp param(%module{}, {count, bytes}) when module in @scalar_structs,
     do: {:ok, {count + 1, bytes}}
 
   defp param(_other, _budget), do: :error
+
+  defp integer(int, {count, bytes}) when int > -0x8000000000000000 and int < 0x8000000000000000,
+    do: {:ok, {count + 1, bytes}}
+
+  defp integer(int, {count, bytes}) do
+    case bytes + byte_size(:binary.encode_unsigned(abs(int))) do
+      total when total <= @max_bytes -> {:ok, {count + 1, total}}
+      _over -> :error
+    end
+  end
 
   defp copy(binary) when is_binary(binary), do: :binary.copy(binary)
   defp copy(list) when is_list(list), do: Enum.map(list, &copy/1)

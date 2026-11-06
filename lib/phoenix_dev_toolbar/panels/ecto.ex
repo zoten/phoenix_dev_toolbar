@@ -10,7 +10,9 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
 
   import PhoenixDevToolbar.Components
 
+  alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Explain
+  alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.NPlusOne
   alias PhoenixDevToolbar.Plugins
   alias PhoenixDevToolbar.Store
@@ -24,7 +26,14 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
     {:ok,
      socket
      |> stream_configure(:queries, dom_id: &"pdt-query-#{&1.seq}")
-     |> assign(n_plus_one: nil, groups: [], detected: 0, flagged: MapSet.new(), explaining: nil)}
+     |> assign(
+       n_plus_one: nil,
+       groups: [],
+       detected: 0,
+       flagged: MapSet.new(),
+       shown: :queue.new(),
+       explaining: nil
+     )}
   end
 
   @impl PhoenixDevToolbar.Panel
@@ -41,6 +50,7 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
         groups: [],
         detected: 0,
         flagged: MapSet.new(),
+        shown: :queue.new(),
         explaining: nil
       )
 
@@ -59,13 +69,15 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   # query: only its groups are rendered, assigned apart so the list re-renders
   # when they change.
   defp detect(events, socket) do
-    {queries, n_plus_one} =
-      events
-      |> Enum.filter(&(&1.kind == :query))
-      |> Enum.map_reduce(socket.assigns.n_plus_one, fn event, state ->
+    # Every event goes through the detector (a Clear marker resets it); only
+    # queries become rows.
+    {marked, n_plus_one} =
+      Enum.map_reduce(events, socket.assigns.n_plus_one, fn event, state ->
         {state, result} = NPlusOne.add(state, event)
         {mark(event, result), state}
       end)
+
+    queries = Enum.filter(marked, &(&1.kind == :query))
 
     socket =
       socket
@@ -73,6 +85,7 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
       |> assign(:groups, NPlusOne.groups(n_plus_one))
       |> assign(:detected, NPlusOne.detected(n_plus_one))
       |> update(:flagged, &flag(&1, queries))
+      |> update(:shown, &show(&1, queries))
 
     {queries, socket}
   end
@@ -94,6 +107,19 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
     end
   end
 
+  # The seqs of the rows in the DOM, oldest first, like the stream's limit: a
+  # late EXPLAIN result for a row that left never brings it back.
+  defp show(shown, queries) do
+    shown = Enum.reduce(queries, shown, &:queue.in(&1.seq, &2))
+
+    case :queue.len(shown) - @dom_limit do
+      over when over > 0 -> elem(:queue.split(over, shown), 1)
+      _within -> shown
+    end
+  end
+
+  defp shown?(socket, seq), do: :queue.member(seq, socket.assigns.shown)
+
   @impl Phoenix.LiveComponent
   def handle_event("explain", %{"seq" => seq}, socket) do
     with nil <- socket.assigns.explaining,
@@ -114,13 +140,39 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
 
   def handle_event("explain", _params, socket), do: {:noreply, socket}
 
+  def handle_event("hide_plan", %{"seq" => seq}, socket) when is_binary(seq) do
+    with {seq, ""} <- Integer.parse(seq),
+         true <- seq != socket.assigns.explaining and shown?(socket, seq),
+         %{} = event <- find(socket, seq) do
+      {:noreply, show_plan(socket, event, nil)}
+    else
+      _unknown -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("hide_plan", _params, socket), do: {:noreply, socket}
+
+  # Clear is an event in the Store (ADR 08): the Ecto summary (the badge) and
+  # this tab fold it like any other, and a page re-read keeps it.
+  def handle_event("clear_n_plus_one", _params, socket) do
+    case List.last(socket.assigns.page.sids) do
+      nil ->
+        {:noreply, socket}
+
+      sid ->
+        _ = Store.insert(sid, Event.new(:ecto, :n_plus_one_cleared, %{}))
+        Notify.event(sid)
+        {:noreply, socket}
+    end
+  end
+
   @impl Phoenix.LiveComponent
   def handle_async(:explain, {:ok, {seq, result}}, socket) do
     socket = assign(socket, :explaining, nil)
 
-    case find(socket, seq) do
-      nil -> {:noreply, socket}
-      event -> {:noreply, show_plan(socket, event, result)}
+    case shown?(socket, seq) && find(socket, seq) do
+      %{} = event -> {:noreply, show_plan(socket, event, result)}
+      _gone -> {:noreply, socket}
     end
   end
 
@@ -128,9 +180,12 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
     seq = socket.assigns.explaining
     socket = assign(socket, :explaining, nil)
 
-    case seq && find(socket, seq) do
-      nil -> {:noreply, socket}
-      event -> {:noreply, show_plan(socket, event, {:error, Truncate.inspect_value(reason)})}
+    case seq && shown?(socket, seq) && find(socket, seq) do
+      %{} = event ->
+        {:noreply, show_plan(socket, event, {:error, Truncate.inspect_value(reason)})}
+
+      _gone ->
+        {:noreply, socket}
     end
   end
 
@@ -160,7 +215,13 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   def render(assigns) do
     ~H"""
     <div id="pdt-ecto">
-      <.n_plus_one_list :if={@detected > 0} groups={@groups} detected={@detected} root={@page.root} />
+      <.n_plus_one_list
+        :if={@detected > 0}
+        groups={@groups}
+        detected={@detected}
+        root={@page.root}
+        target={@myself}
+      />
       <ul id="pdt-queries" class="pdt-list" phx-update="stream">
         <li id="pdt-queries-empty" class="pdt-list__empty">No queries yet.</li>
         <.query_row

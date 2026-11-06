@@ -12,7 +12,8 @@
   --pdt-border: #e3e6eb;
   --pdt-accent: #fd4f00;
   --pdt-ok: #1f9d55;
-  --pdt-warn: #b7791f;
+  --pdt-warn: #8a5a12;
+  --pdt-header-warn: #e3a948;
   --pdt-error: #d64545;
   --pdt-error-bg: #fdf1f1;
   --pdt-code: #334155;
@@ -91,6 +92,7 @@ body.pdt {
 .pdt-row .pdt-badge { background: var(--pdt-bg-alt); }
 .pdt-badge--ok { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pdt-ok) 70%, transparent); }
 .pdt-badge--warn { color: var(--pdt-warn); box-shadow: inset 0 0 0 1px var(--pdt-warn); }
+.pdt-header .pdt-badge--warn { color: var(--pdt-header-warn); box-shadow: inset 0 0 0 1px var(--pdt-header-warn); }
 .pdt-badge--error { color: #fff; background: var(--pdt-error) !important; }
 
 .pdt-tabs { display: flex; gap: 2px; margin-left: auto; }
@@ -222,7 +224,9 @@ body.pdt {
 
 /* The N+1 groups above the Ecto queries (ADR 08). */
 .pdt-n-plus-one { border-bottom: 1px solid var(--pdt-border); background: var(--pdt-bg-alt); }
-.pdt-n-plus-one__title { margin: 0; padding: 8px 12px 0; font-size: 12px; color: var(--pdt-warn); }
+.pdt-n-plus-one__head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 0; }
+.pdt-n-plus-one__title { margin: 0; font-size: 12px; color: var(--pdt-warn); }
+#pdt-n-plus-one-advice { margin: 0; padding: 4px 12px; }
 .pdt-n-plus-one .pdt-hint { margin: 0; padding: 0 12px 8px; }
 .pdt-sr-only {
   position: absolute;
@@ -332,14 +336,14 @@ body.pdt {
 
 /* An EXPLAIN result under its query row (ADR 08). */
 .pdt-plan {
+  position: relative;
   margin: 6px 0 0;
   padding: 6px 8px;
   border-radius: 4px;
   background: var(--pdt-bg-alt);
-  font: 11px/1.5 var(--pdt-mono);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
+.pdt-plan pre { margin: 0; font: 11px/1.5 var(--pdt-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.pdt-plan__hide { position: absolute; top: 4px; right: 4px; }
 
 /* A plugin disabled after an error (ADR 05). */
 .pdt-badge--button { border: 0; cursor: pointer; }

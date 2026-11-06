@@ -87,6 +87,27 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
     refute has_element?(panel, "#pdt-n-plus-one-hint")
   end
 
+  test "repeats in later callbacks join the group; Clear empties the list and the badge" do
+    {host, panel} = start(PhoenixDevToolbar.Application.plugins())
+
+    for _click <- 1..2, do: render_hook(host, "queries", %{"sql" => "SELECT r", "count" => 5})
+    flush(panel)
+
+    assert has_element?(panel, "#pdt-badge-ecto-n-plus-one", "N+1 ×1")
+    assert has_element?(panel, "#pdt-n-plus-one li", "in 2 callbacks")
+
+    panel |> element("#pdt-n-plus-one-clear") |> render_click()
+    flush(panel)
+
+    refute has_element?(panel, "#pdt-badge-ecto-n-plus-one")
+    refute has_element?(panel, "#pdt-n-plus-one")
+
+    # Still there after a fix? It comes back on the next repeat.
+    render_hook(host, "queries", %{"sql" => "SELECT r", "count" => 5})
+    flush(panel)
+    assert has_element?(panel, "#pdt-n-plus-one li", "in 1 callback")
+  end
+
   test "the same query once per callback, five times, is not an N+1" do
     {host, panel} = start(PhoenixDevToolbar.Application.plugins())
 

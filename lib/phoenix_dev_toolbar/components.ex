@@ -73,7 +73,7 @@ defmodule PhoenixDevToolbar.Components do
         <span
           :if={@event.data[:n_plus_one?]}
           class="pdt-tag pdt-tag--warn"
-          title="Repeated in this callback: listed above the queries"
+          title="Repeated in one callback (or between two callbacks): see the N+1 list above"
         >
           N+1
         </span>
@@ -86,12 +86,19 @@ defmodule PhoenixDevToolbar.Components do
           phx-click="explain"
           phx-value-seq={@event.seq}
           phx-target={@target}
-          disabled={@event.data[:plan] == :running}
+          aria-label={"EXPLAIN query #{@event.seq}" <> on_source(@event)}
+          data-pdt-keep-focus
+          aria-busy={to_string(@event.data[:plan] == :running)}
         >
           {if(@event.data[:plan] == :running, do: "explaining…", else: "EXPLAIN")}
         </button>
       </div>
-      <.plan :if={@event.data[:plan] not in [nil, :running]} seq={@event.seq} plan={@event.data.plan} />
+      <.plan
+        :if={@event.data[:plan] not in [nil, :running]}
+        seq={@event.seq}
+        plan={@event.data.plan}
+        target={@target}
+      />
       <details class="pdt-details">
         <summary>details</summary>
         <dl>
@@ -121,18 +128,27 @@ defmodule PhoenixDevToolbar.Components do
 
   attr :seq, :integer, required: true
   attr :plan, :any, required: true, doc: "{:ok, text} or {:error, reason}"
+  attr :target, :any, required: true
 
   defp plan(%{plan: {:ok, text}} = assigns) do
     assigns = assign(assigns, :text, text)
 
     ~H"""
-    <pre
-      id={"pdt-plan-#{@seq}"}
-      class="pdt-plan"
-      role="region"
-      aria-label="Query plan"
-      aria-live="polite"
-    >{@text}</pre>
+    <div id={"pdt-plan-#{@seq}"} class="pdt-plan" role="region" aria-label={"Plan of query #{@seq}"}>
+      <button
+        id={"pdt-plan-hide-#{@seq}"}
+        type="button"
+        class="pdt-button pdt-button--small pdt-plan__hide"
+        phx-click="hide_plan"
+        phx-value-seq={@seq}
+        phx-target={@target}
+        aria-label={"Hide the plan of query #{@seq}"}
+        data-pdt-keep-focus={"pdt-explain-#{@seq}"}
+      >
+        Hide
+      </button>
+      <pre>{@text}</pre>
+    </div>
     """
   end
 
@@ -143,6 +159,9 @@ defmodule PhoenixDevToolbar.Components do
     <p id={"pdt-plan-#{@seq}"} class="pdt-error" role="alert">EXPLAIN failed: {@reason}</p>
     """
   end
+
+  defp on_source(%Event{data: %{source: source}}) when is_binary(source), do: " on " <> source
+  defp on_source(_event), do: ""
 
   # A SELECT that succeeded, with its params kept, on a supported adapter.
   defp explainable?(%Event{data: %{explain: {:ok, _params}, result: {:ok, _rows}, repo: repo}}),
@@ -167,37 +186,74 @@ defmodule PhoenixDevToolbar.Components do
   defp explain_reason(_event), do: "not captured"
 
   attr :groups, :list, required: true, doc: "PhoenixDevToolbar.NPlusOne.groups/1"
-  attr :detected, :integer, required: true, doc: "how many groups were detected in total"
+  attr :detected, :integer, required: true, doc: "how many distinct groups were detected"
   attr :root, :string, required: true
+  attr :target, :any, default: nil, doc: "the Ecto tab component, for the Clear button"
 
-  @doc "The N+1 groups detected on the page, newest first (ADR 08)."
+  @doc "The N+1 groups detected on the page, most recent first (ADR 08)."
   def n_plus_one_list(assigns) do
     ~H"""
-    <section id="pdt-n-plus-one" class="pdt-n-plus-one" aria-label="N+1 queries">
-      <h3 class="pdt-n-plus-one__title">
-        N+1: {@detected} repeated {noun_queries(@detected)}
-      </h3>
+    <section id="pdt-n-plus-one" class="pdt-n-plus-one" aria-labelledby="pdt-n-plus-one-title">
+      <div class="pdt-n-plus-one__head">
+        <h3 id="pdt-n-plus-one-title" class="pdt-n-plus-one__title">
+          N+1: {@detected} repeated {noun_queries(@detected)}
+        </h3>
+        <button
+          :if={@target}
+          id="pdt-n-plus-one-clear"
+          type="button"
+          class="pdt-button pdt-button--small"
+          phx-click="clear_n_plus_one"
+          phx-target={@target}
+          title="Forget these groups: after a fix, see whether they come back"
+        >
+          Clear
+        </button>
+      </div>
       <ul class="pdt-list">
         <li :for={group <- @groups} id={"pdt-n-plus-one-#{group.seq}"} class="pdt-row">
           <div class="pdt-row__head">
             <code class="pdt-sql">{group.sql}</code>
-            <span class="pdt-badge pdt-badge--warn" title={"Ran #{group.count} times in one callback"}>
+            <span
+              class="pdt-badge pdt-badge--warn"
+              title={"Up to #{group.count} times in one callback"}
+            >
               <span aria-hidden="true">×{group.count}</span>
-              <span class="pdt-sr-only">{group.count} times</span>
+              <span class="pdt-sr-only">up to {group.count} times in one callback</span>
             </span>
           </div>
           <div class="pdt-row__meta">
-            <.phase_tag sid={group.sid} root={@root} />
+            <.phase_tag :for={sid <- Enum.reverse(group.sids)} sid={sid} root={@root} />
+            <span class="pdt-tag" title="Callbacks where it repeated">
+              in {group.callbacks} {noun_callbacks(group.callbacks)}
+            </span>
+            <span :if={group.at} class="pdt-time" title="Last time it repeated">
+              last {clock(group.at)}
+            </span>
             <span :if={group.origin} class="pdt-origin">{group.origin}</span>
           </div>
         </li>
       </ul>
+      <p id="pdt-n-plus-one-advice" class="pdt-hint">
+        The same query, once per row: load the data in one query instead, with <code>Repo.preload/2</code>, a
+        <code>preload:</code>
+        in the query or a join.
+      </p>
       <p :if={Enum.any?(@groups, &is_nil(&1.origin))} id="pdt-n-plus-one-hint" class="pdt-hint">
         Without origins, queries are grouped by SQL alone: set <code>stacktrace: true</code>
         in your repo config to tell call sites apart.
       </p>
     </section>
     """
+  end
+
+  defp noun_callbacks(1), do: "callback"
+  defp noun_callbacks(_count), do: "callbacks"
+
+  # The server's local time (the developer's machine, in dev).
+  defp clock(at_us) do
+    {_date, {h, m, s}} = :calendar.system_time_to_local_time(at_us, :microsecond)
+    :io_lib.format("~2..0B:~2..0B:~2..0B", [h, m, s]) |> IO.iodata_to_binary()
   end
 
   defp noun_queries(1), do: "query"

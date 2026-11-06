@@ -19,11 +19,18 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
   (`Event.span`, ADR 02). The origin is the first stacktrace frame outside Ecto,
   DBConnection and the repo: it needs the repo's `stacktrace: true`; without it the
   SQL alone is the key and the tab says so.
-- A group reaching the threshold is an N+1. The threshold is the Ecto plugin's
+- A group reaching the threshold is an N+1. A group is one SQL and origin: repeats in
+  other callbacks or sessions (the dead render and the connected mount, every click)
+  join it, counted as callbacks, with the time it last repeated. The tab's Clear button
+  stores a `:n_plus_one_cleared` event in the page's session: the badge and the tab
+  fold it like any other event and start over, so after a fix the developer sees
+  whether the N+1 comes back. The threshold is the Ecto plugin's
   `n_plus_one:` option, 5 by default, an integer of at least 2, or `false` to turn the
   detector off.
-- UI: an "N+1 ×k" badge at `:warn` (k groups detected), the groups above the queries
-  (SQL, origin, count, HTTP or live), and an `N+1` tag on the rows from the threshold on.
+- UI: an "N+1 ×k" badge at `:warn` (k distinct groups), the groups above the queries
+  (SQL, origin, the most repeats in one callback, how many callbacks, HTTP or live, the
+  last time), advice (preload or join), and an `N+1` tag on the rows from the threshold
+  on.
 - Bounds: counts for the last 4 spans of each sid (processes of one sid, nested
   LiveViews, interleave their spans), at most 500 distinct queries per span, keyed by
   a hash of SQL and origin; at most 50 groups kept, newest first, with the true total.
@@ -44,13 +51,17 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
   succeeded (the database parsed that SQL as the query it ran, so the prefix can only
   explain it: a failed query could hide a comment that turns the prefix into `EXPLAIN
   ANALYZE`), with captured params, a `SELECT` or `WITH`, no MySQL versioned comment
-  (`/*!`), and no `;` separator outside quotes and comments (defence in depth: Postgrex
-  and MyXQL prepare single statements, Exqlite drops a statement's tail). The prefix depends on the adapter: `EXPLAIN` (Postgres, MyXQL), `EXPLAIN
+  (`/*!`), no backslash (an escape in MySQL strings, not in Postgres ones), and no `;`
+  separator outside quotes and comments (defence in depth: Postgrex and MyXQL prepare
+  single statements, Exqlite drops a statement's tail). The prefix depends on the
+  adapter: `EXPLAIN` (Postgres, MyXQL), `EXPLAIN
   QUERY PLAN` (SQLite3); other adapters get no button. Never `ANALYZE`, which runs the
   query. It runs through `repo.query/3` in a transaction that is always rolled back,
   with a 5 s timeout (and `SET LOCAL statement_timeout` on Postgres), in `start_async/3`,
   one at a time per panel; a page change cancels a running one, so it never holds a
-  pool connection past its page. The plan (Postgres' text lines, otherwise
+  pool connection past its page. A plan can be hidden; a late result for a row that
+  left the list is dropped. The button keeps focus while it runs (`aria-busy`) and is
+  named after its query. The plan (Postgres' text lines, otherwise
   `Ecto.Adapters.SQL.format_table/1`), truncated to 8 KB, or the error, replaces the row.
 
 ## Consequences
@@ -78,7 +89,14 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
   fast to observe it.
 - The planner may evaluate functions marked IMMUTABLE with constant arguments; MySQL
   before 5.6.3 executes derived tables during EXPLAIN.
-- N+1 spans follow LiveView callbacks: a render's components run in their own spans,
-  and work in `handle_info/2` shares the span of the gap it runs in.
+- N+1 spans follow LiveView callbacks (ADR 02), so the detector can be wrong both ways:
+  - consecutive `handle_info/2` or `handle_async/3` calls that render nothing share one
+    span: a poll that runs one query per tick is flagged after 5 ticks;
+  - a `start_async`/`assign_async` task that outlives its callback takes the span its
+    LiveView is in when it queries: a loop in it can be split across spans, and tasks
+    finishing in the same gap can be merged;
+  - a render's components run in their own spans.
+
+  The row tag says "in one callback (or between two callbacks)".
 - Queries run by Ecto's own tasks (parallel preloads) get a weak origin (a Task or
   Enum frame).

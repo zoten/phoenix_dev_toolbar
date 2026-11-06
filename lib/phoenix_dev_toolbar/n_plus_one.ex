@@ -5,11 +5,15 @@ defmodule PhoenixDevToolbar.NPlusOne do
   # span of one session (ADR 02) is an N+1. Without `stacktrace: true` the
   # origin is unknown and the SQL alone is the key.
   #
+  # A group is one SQL and origin, wherever it happens again: the dead render
+  # and the connected mount, or every click, add a callback to the same group.
+  # A `:n_plus_one_cleared` event (the Ecto tab's Clear button) starts over.
+  #
   # Bounded: counts are kept for the last @spans_per_sid spans of each sid
   # (processes of one sid, nested LiveViews, interleave their spans), at most
   # @max_keys distinct queries per span, keyed by a hash of SQL and origin;
-  # detected groups are capped at @max_groups, newest first, while `detected`
-  # keeps the true total.
+  # groups are capped at @max_groups, most recent first, while `detected` keeps
+  # the true number of distinct groups.
   #
   # The origin is the first stacktrace frame outside Ecto, DBConnection and the
   # repo: for queries run by Ecto's own tasks (parallel preloads) it is a weak
@@ -21,16 +25,19 @@ defmodule PhoenixDevToolbar.NPlusOne do
   @max_keys 500
   @max_groups 50
   @spans_per_sid 4
+  @sids_per_group 4
 
   defstruct threshold: 5, spans: %{}, groups: [], detected: 0
 
   @type group :: %{
-          sid: String.t(),
-          span: non_neg_integer() | nil,
+          key: integer(),
           sql: String.t() | nil,
           origin: String.t() | nil,
           count: pos_integer(),
-          seq: pos_integer() | nil
+          callbacks: pos_integer(),
+          sids: [String.t()],
+          seq: pos_integer() | nil,
+          at: integer() | nil
         }
   @type t :: %NPlusOne{
           threshold: pos_integer() | false,
@@ -45,10 +52,14 @@ defmodule PhoenixDevToolbar.NPlusOne do
     do: %NPlusOne{threshold: threshold}
 
   @doc """
-  Folds a query event. Returns `:detected` when its group reaches the threshold,
-  `:repeated` past it, `:ok` otherwise (and for anything that is not a query).
+  Folds an event. A query returns `:detected` when it reaches the threshold in
+  its callback, `:repeated` past it, `:ok` otherwise. A `:n_plus_one_cleared`
+  event starts over; anything else changes nothing.
   """
   @spec add(t(), Event.t()) :: {t(), :ok | :detected | :repeated}
+  def add(%NPlusOne{threshold: threshold}, %Event{kind: :n_plus_one_cleared}),
+    do: {new(threshold), :ok}
+
   def add(%NPlusOne{threshold: false} = state, _event), do: {state, :ok}
 
   def add(%NPlusOne{} = state, %Event{kind: :query, sid: sid, span: span} = event) do
@@ -69,11 +80,11 @@ defmodule PhoenixDevToolbar.NPlusOne do
 
   def add(state, _event), do: {state, :ok}
 
-  @doc "The detected groups, newest first (at most #{@max_groups})."
+  @doc "The detected groups, most recent first (at most 50)."
   @spec groups(t()) :: [group()]
   def groups(%NPlusOne{groups: groups}), do: groups
 
-  @doc "How many groups were detected in total."
+  @doc "How many distinct groups were detected (since the last clear)."
   @spec detected(t()) :: non_neg_integer()
   def detected(%NPlusOne{detected: detected}), do: detected
 
@@ -101,23 +112,45 @@ defmodule PhoenixDevToolbar.NPlusOne do
     end
   end
 
-  defp detect(state, %Event{sid: sid, span: span, seq: seq} = event, count) do
+  # A group seen again (another callback) moves to the front.
+  defp detect(state, %Event{sid: sid, seq: seq, at: at} = event, count) do
     {sql, origin} = key(event)
-    group = %{sid: sid, span: span, sql: sql, origin: origin, count: count, seq: seq}
+    key = :erlang.phash2({sql, origin})
 
-    %{
-      state
-      | groups: Enum.take([group | state.groups], @max_groups),
-        detected: state.detected + 1
-    }
+    case Enum.split_with(state.groups, &(&1.key == key)) do
+      {[group], others} ->
+        group = %{
+          group
+          | count: max(group.count, count),
+            callbacks: group.callbacks + 1,
+            sids: Enum.take(Enum.uniq([sid | group.sids]), @sids_per_group),
+            at: at
+        }
+
+        %{state | groups: [group | others]}
+
+      {[], groups} ->
+        group = %{
+          key: key,
+          sql: sql,
+          origin: origin,
+          count: count,
+          callbacks: 1,
+          sids: [sid],
+          seq: seq,
+          at: at
+        }
+
+        %{state | groups: Enum.take([group | groups], @max_groups), detected: state.detected + 1}
+    end
   end
 
-  defp grow(state, %Event{sid: sid, span: span} = event, count) do
-    {sql, origin} = key(event)
+  defp grow(state, %Event{} = event, count) do
+    key = :erlang.phash2(key(event))
 
     groups =
       Enum.map(state.groups, fn
-        %{sid: ^sid, span: ^span, sql: ^sql, origin: ^origin} = group -> %{group | count: count}
+        %{key: ^key} = group -> %{group | count: max(group.count, count)}
         group -> group
       end)
 

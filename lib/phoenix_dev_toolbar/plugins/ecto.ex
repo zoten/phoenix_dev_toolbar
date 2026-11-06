@@ -88,6 +88,11 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
     }
   end
 
+  def summary_add(summary, %Event{kind: :n_plus_one_cleared} = event) do
+    {n_plus_one, _result} = NPlusOne.add(summary.n_plus_one, event)
+    %{summary | n_plus_one: n_plus_one}
+  end
+
   def summary_add(summary, %Event{}), do: summary
 
   @impl true

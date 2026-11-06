@@ -72,6 +72,14 @@ defmodule PhoenixDevToolbar.ExplainTest do
     assert :binary.referenced_byte_size(array_item) == 100
   end
 
+  test "big integers and Decimal coefficients count their bytes" do
+    big = Integer.pow(2, 8 * 3000)
+    assert {:ok, _params} = capture("SELECT 1", [Integer.pow(2, 62), -Integer.pow(2, 62)])
+    assert {:ok, _params} = capture("SELECT 1", [big])
+    assert {:no, :params} = capture("SELECT 1", [big, big])
+    assert {:no, :params} = capture("SELECT 1", [Decimal.new(1, big, 0), big])
+  end
+
   test "invalid UTF-8 or a multibyte keyword never raise" do
     assert {:no, :not_select} = capture(<<0xFF, 0xFE, "SELECT">>, [])
     assert {:no, :not_select} = capture("sélectionner", [])
@@ -126,6 +134,9 @@ defmodule PhoenixDevToolbar.ExplainTest do
       failed = event("SELECT 1", [], %{result: {:error, "syntax error"}})
       assert {:error, :query_failed} = Explain.run(failed, @repos)
       assert {:error, :not_select} = Explain.run(event("SELECT /*!80018 1 */ 1", []), @repos)
+
+      assert {:error, :escapes} =
+               Explain.run(event("SELECT 'a\\'; DELETE FROM users", []), @repos)
 
       assert DemoWeb.SQLiteRepo.aggregate("users", :count) == 2
     end

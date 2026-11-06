@@ -69,6 +69,11 @@ defmodule PhoenixDevToolbar.ExplainPanelTest do
     render_async(panel)
 
     assert has_element?(panel, "#pdt-plan-#{seq}", "SEARCH users USING INTEGER PRIMARY KEY")
+    assert has_element?(panel, ~s|#pdt-explain-#{seq}[aria-label="EXPLAIN query #{seq}"]|)
+
+    panel |> element("#pdt-plan-hide-#{seq}") |> render_click()
+    refute has_element?(panel, "#pdt-plan-#{seq}")
+    assert has_element?(panel, "#pdt-explain-#{seq}", "EXPLAIN")
   end
 
   test "a query that failed has no button and says why", %{host: host, panel: panel} do

@@ -61,13 +61,16 @@ parent's sid, kept in the pdict as `:pdt_span`) at each LiveView callback bounda
 `handle_params`, `handle_event`, `render`, and a component's `update` and
 `handle_event`, before the plugins see it, and their `:stop` or `:exception`, after.
 The collector attaches these events even when no plugin asks for them. A span is one
-callback, or the gap between two callbacks (where `handle_info/2` runs, which has no
-telemetry). Nested spans split their parent: a render's components run in their own
+callback, or the gap between two callbacks (where `handle_info/2` and `handle_async/3`
+run, which have no telemetry: consecutive ones share the gap's span when nothing renders
+between them, as LiveView emits `render` only when assigns changed). Nested spans split their parent: a render's components run in their own
 spans, and the render's `:stop` lands in a later span than the queries before them.
 LiveView 1.2 also emits `render` for a component rendered on its own, 1.1 does not, so
 boundaries differ slightly between versions. Each edge costs a `Process.put` and an
 `:ets.update_element/3` on the process's index row, so a
-`$callers` child gets the span of the callback it was called from. Plugins see it in
+`$callers` child gets the span its caller is in **when the child's event happens**: the
+callback it was called from for `Task.async` awaited there, but a later one for a task
+that outlives its callback (`start_async`, `assign_async`). Plugins see it in
 `Context.span`, and the collector stamps it on every recorded event (`Event.span`),
 like `Event.plugin`. A request without LiveView callbacks is one span.
 

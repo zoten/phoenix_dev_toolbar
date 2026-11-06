@@ -126,6 +126,26 @@ document.addEventListener("click", (event) => {
   else if (event.target.closest("[role='tab']")) toParent("open")
 })
 
+// A stream row the server re-renders (an EXPLAIN result) is re-inserted in the
+// DOM, which blurs a focused button inside it: keyboard users would lose their
+// place. Buttons with data-pdt-keep-focus get it back (or the element its value
+// names, when the button itself is gone), unless the user clicked elsewhere.
+let pointerTarget = null
+document.addEventListener("pointerdown", (event) => { pointerTarget = event.target }, true)
+
+document.addEventListener("focusout", (event) => {
+  const el = event.target
+  if (event.relatedTarget || !el.matches || !el.matches("[data-pdt-keep-focus]")) return
+  if (pointerTarget && !el.contains(pointerTarget)) return
+  const fallback = el.dataset.pdtKeepFocus
+  requestAnimationFrame(() => {
+    if (document.activeElement && document.activeElement !== document.body) return
+    const target = el.isConnected ? el : fallback && document.getElementById(fallback)
+    if (target) target.focus()
+  })
+})
+document.addEventListener("keydown", () => { pointerTarget = null }, true)
+
 // WAI-ARIA tabs: arrow keys move between tabs and select them.
 document.addEventListener("keydown", (event) => {
   const tab = event.target.closest("[role='tab']")

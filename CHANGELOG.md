@@ -50,3 +50,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - N+1 detector: Ecto badge, groups and row tags, `n_plus_one:` plugin option (ADR 08)
 - EXPLAIN capture: raw params of SELECTs kept in the event, bounded, never rendered (ADR 03, ADR 08)
 - EXPLAIN button in the Ecto tab: rolled back, single SELECT, page scoped; SQLite test repo (ADR 08)
+- N+1 groups merged by SQL and origin, Clear button, advice; EXPLAIN focus, names, Hide (ADR 08)

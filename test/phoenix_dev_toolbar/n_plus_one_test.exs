@@ -29,7 +29,7 @@ defmodule PhoenixDevToolbar.NPlusOneTest do
     assert results == [:ok, :ok, :detected, :repeated]
     assert NPlusOne.detected(state) == 1
 
-    assert [%{sql: "SELECT u", origin: "lib/app.ex:1: App.f/0", count: 4, seq: 3}] =
+    assert [%{sql: "SELECT u", origin: "lib/app.ex:1: App.f/0", count: 4, callbacks: 1, seq: 3}] =
              NPlusOne.groups(state)
   end
 
@@ -78,6 +78,29 @@ defmodule PhoenixDevToolbar.NPlusOneTest do
     assert NPlusOne.detected(state) == 1
   end
 
+  test "the same query repeating in other callbacks or sessions is one group" do
+    events =
+      for {sid, span} <- [{"http", 1}, {"live", 2}, {"live", 3}],
+          _n <- 1..3,
+          do: query("SELECT u", sid: sid, span: span)
+
+    {_results, state} = fold(NPlusOne.new(3), events)
+
+    assert NPlusOne.detected(state) == 1
+    assert [%{callbacks: 3, count: 3, sids: ["live", "http"]}] = NPlusOne.groups(state)
+  end
+
+  test "a clear marker starts over, keeping the threshold" do
+    {_results, state} = fold(NPlusOne.new(2), [query("SELECT u"), query("SELECT u")])
+    assert NPlusOne.detected(state) == 1
+
+    cleared = %Event{plugin: :ecto, kind: :n_plus_one_cleared, at: 0}
+    {_results, state} = fold(state, [cleared, query("SELECT u", span: 2)])
+
+    assert NPlusOne.detected(state) == 0
+    assert {_state, :detected} = NPlusOne.add(state, query("SELECT u", span: 2))
+  end
+
   test "disabled, or events that are not queries, change nothing" do
     disabled = NPlusOne.new(false)
     assert {^disabled, :ok} = NPlusOne.add(disabled, query("SELECT u"))
@@ -99,11 +122,11 @@ defmodule PhoenixDevToolbar.NPlusOneTest do
 
     assert List.last(results) == :ok
 
-    events = for span <- 1..60, _n <- 1..2, do: query("SELECT u", span: span)
+    events = for n <- 1..60, _twice <- 1..2, do: query("SELECT #{n}")
     {_results, state} = fold(NPlusOne.new(2), events)
 
     assert NPlusOne.detected(state) == 60
     assert length(NPlusOne.groups(state)) == 50
-    assert [%{span: 60} | _older] = NPlusOne.groups(state)
+    assert [%{sql: "SELECT 60"} | _older] = NPlusOne.groups(state)
   end
 end
