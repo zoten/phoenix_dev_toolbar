@@ -8,7 +8,7 @@ defmodule PhoenixDevToolbar.LayoutsTest do
   defp render_root(request_path) do
     conn = %Plug.Conn{
       request_path: request_path,
-      private: %{phoenix_dev_toolbar_panel: %{path: "/__pdt", live_socket_path: "/live"}}
+      private: %{phoenix_dev_toolbar_panel: %{path: "/__pdt"}}
     }
 
     (&Layouts.root/1)
@@ -30,6 +30,19 @@ defmodule PhoenixDevToolbar.LayoutsTest do
              "/__pdt/assets/live_view.js",
              "/__pdt/assets/panel.js"
            ]
+  end
+
+  # The panel connects through its own socket (ADR 04), never the host's, and
+  # needs no CSRF token.
+  test "points the panel at its own socket, with no CSRF meta tag" do
+    document = render_root("/__pdt/panel")
+
+    assert ["/__pdt/live"] =
+             document
+             |> LazyHTML.query("script[data-socket-path]")
+             |> LazyHTML.attribute("data-socket-path")
+
+    assert document |> LazyHTML.query("meta[name=csrf-token]") |> Enum.to_list() == []
   end
 
   # `//__pdt/panel` reaches the panel too; a base derived from the request path

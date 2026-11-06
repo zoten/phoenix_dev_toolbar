@@ -47,6 +47,8 @@ defmodule PhoenixDevToolbar.MixProject do
       {:phoenix, "~> 1.8"},
       {:phoenix_live_view, live_view_requirement()},
       {:telemetry, "~> 1.0"},
+      # The panel's own socket (ADR 04); already a Phoenix dependency.
+      {:websock_adapter, "~> 0.5"},
       {:ecto_sql, "~> 3.12", optional: true},
       {:lazy_html, "~> 0.1", only: :test},
       # Builds priv/static (committed and shipped): never needed by host apps.
@@ -55,7 +57,8 @@ defmodule PhoenixDevToolbar.MixProject do
       {:ecto_sqlite3, "~> 0.22", only: [:dev, :test]},
       # The example plugin (examples/oban, ADR 05): never needed by host apps.
       {:oban, "~> 2.19", only: [:dev, :test]},
-      {:bandit, "~> 1.5", only: :dev},
+      # The harness server, and the panel socket's end to end test (ADR 04).
+      {:bandit, "~> 1.5", only: [:dev, :test]},
       {:jason, "~> 1.4", only: [:dev, :test]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:jump_credo_checks, "~> 0.7", only: [:dev, :test], runtime: false},

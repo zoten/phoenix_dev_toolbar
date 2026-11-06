@@ -13,8 +13,7 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 ## Decision
 
 - **Page requests**: `PhoenixDevToolbar.Plug` (endpoint, before the router, options
-  `:path` default `"/__pdt"`, `:live_socket_path` default `"/live"` and `:nonce_assign`
-  default `:csp_nonce`) tracks a request as
+  `:path` default `"/__pdt"` and `:nonce_assign` default `:csp_nonce`) tracks a request as
   a page when it is a `GET` for a top level document: `sec-fetch-dest: document`, or,
   for clients without that header, an `Accept` containing `text/html`. Iframes, fetch,
   htmx and Turbo partials, `/phoenix/live_reload/*` and the toolbar's own routes are not
@@ -59,9 +58,8 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   toolbar keeps working when the loader cannot reach `window.liveSocket`.
 - **Panel JS**: the root layout loads, deferred and in order, `phoenix.js`, `live_view.js`
   and `panel.js` (about 1 KB: no client bundled). `panel.js` takes `window.Phoenix` and
-  `window.LiveView`, connects the panel through the host's LiveView socket (path from the
-  layout's `data-socket-path`, CSRF token from the host page, see Panel route) and runs
-  the `postMessage` side of the bridge. Its `PdtPanel` hook, on the empty `#pdt-bridge`
+  `window.LiveView`, connects the panel through its own socket (`<path>/live`, see Panel
+  socket: WebSocket only, no CSRF param) and runs the `postMessage` side of the bridge. Its `PdtPanel` hook, on the empty `#pdt-bridge`
   element, reports visibility and forwards client events to `PanelLive` (ADR 07).
 - **Panel route**: there is no router integration (ADR 01). The plug answers
   `GET <path>/panel?sid=...` itself with `Phoenix.LiveView.Controller.live_render/3`
@@ -69,14 +67,34 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   `PhoenixDevToolbar.Layouts.root/1` root layout. The layout loads only `panel.css` and
   `panel.js`, at URLs built from the plug's configured `:path` (never from the request
   path: `//__pdt/panel` also reaches the panel and would yield a protocol relative URL
-  to another host), and passes the plug's
-  `:live_socket_path` (default `"/live"`) to `panel.js`, which connects through the
-  host's LiveView socket. The plug runs before the host's `Plug.Session` in a generated
-  endpoint, so the dead render never touches the cookie session (LiveView treats an
-  unfetched session as empty). The socket connection does: LiveView refuses to join when
-  the CSRF token does not match the host's session cookie, and a token minted by our
-  layout never can. `panel.js` therefore sends the host page's CSRF meta token (the
-  iframe is same origin; read only), falling back to its own for hosts without one.
+  to another host), and passes `<path>/live` to `panel.js`. The plug runs before the
+  host's `Plug.Session` in a generated endpoint, so the panel never touches the cookie
+  session (LiveView treats an unfetched session as empty).
+- **Panel socket**: `PhoenixDevToolbar.PanelSocket`. The plug upgrades
+  `GET <path>/live/websocket` itself, through Phoenix's documented custom transport API:
+  `Phoenix.Socket.Transport.check_origin/4` (the endpoint's `check_origin`) and
+  `connect_info/3`, then `Phoenix.LiveView.Socket.connect/1` and
+  `WebSockAdapter.upgrade/4`, with Phoenix's default WebSocket options (JSON serializers
+  1.0 and 2.0, 60 s timeout). It uses the host endpoint (PubSub, secret key base,
+  LiveView's session verification), but its `connect_info` has no session.
+  - Why: the host's own socket, configured with `connect_info: [session: ...]` as every
+    generated app is, gets a session only when the `_csrf_token` param matches the CSRF
+    state in the session cookie. Without one, LiveView refuses every join with `stale`,
+    and its client then sends the iframe to its own URL at once (outside its throttled
+    reload). A page without a CSRF meta tag, no session cookie yet, or a session renewed
+    in another tab (log in or out) put the panel in a reload loop.
+  - Security: the socket carries no session, so it gives nothing tied to the user's
+    login and reads nothing from it. Joining the panel needs its signed LiveView session
+    token (the sid inside, see Access), which only the panel's HTML holds and another
+    origin cannot read; the endpoint's `check_origin` applies to the upgrade.
+- **Reload breaker** (`assets/js/reloads.mjs`, the safety net for any join failure,
+  present or future): each panel load is recorded per sid in `sessionStorage`. The 4th
+  load within 10 s does not connect and shows, in the header (so in the collapsed bar
+  too), "The toolbar cannot connect to this page" with a Retry button that clears the
+  record. A panel that has not joined 8 s after connecting (its WebSocket refused or
+  blocked, which never reloads) shows the same notice until it joins. A joined panel
+  forgets its record; other pages' records past the window are pruned on load. Storage
+  blocked: no breaker, never an error.
 - **Panel**: `PhoenixDevToolbar.PanelLive` (`<path>/panel?sid=<request sid>`) shows one
   page: the request and its LiveView, or only the newest LiveView after live navigation.
   `PhoenixDevToolbar.Page` derives the page once at mount (catching up with navigation
@@ -114,6 +132,9 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 
 - Full CSS/JS isolation, no conflicts with host Tailwind, DaisyUI, hooks or `morphdom`.
 - Costs one extra WebSocket connection per page in dev, acceptable for a dev tool.
+- The panel works on every page the plug serves, whatever the host's session, CSRF and
+  socket configuration (the host's socket path no longer matters).
+- When it still cannot connect, it says so instead of reloading.
 - The panel cannot inspect the host DOM directly; anything DOM related goes through the loader.
 
 ## Open limits
@@ -122,4 +143,8 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   LiveView 1.1 row covers the server side through `LiveViewTest` and checks that the
   host client files exist, but does not execute them.
 - Strict CSP without a nonce (or `frame-src` restrictions) blocks the toolbar silently.
+- No long poll fallback: a proxy that blocks WebSockets leaves the panel unconnected
+  (the breaker's notice says so).
+- The panel socket mirrors Phoenix's WebSocket defaults by hand: a new Phoenix default
+  (a serializer version) needs a change here.
 - Pages that are not HTML responses from Plug (static files) get no toolbar.

@@ -10,6 +10,9 @@ export const record = (times, now) => [...times.filter((t) => now - t < WINDOW_M
 
 export const tripped = (times) => times.length > MAX_LOADS
 
+// A stored list whose newest load is past the window: its key can go.
+export const stale = (times, now) => times.every((t) => now - t >= WINDOW_MS)
+
 // Reads a stored list; anything unexpected counts as none.
 export const parse = (raw) => {
   try {

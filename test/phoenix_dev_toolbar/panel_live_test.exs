@@ -338,7 +338,9 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
 
     assert [_] =
              document
-             |> LazyHTML.query(~s(script[src="/__pdt/assets/panel.js"][data-socket-path="/live"]))
+             |> LazyHTML.query(
+               ~s(script[src="/__pdt/assets/panel.js"][data-socket-path="/__pdt/live"])
+             )
              |> Enum.to_list()
   end
 end

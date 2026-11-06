@@ -3,7 +3,7 @@
 import {test} from "node:test"
 import assert from "node:assert/strict"
 
-import {MAX_LOADS, WINDOW_MS, parse, record, tripped} from "../reloads.mjs"
+import {MAX_LOADS, WINDOW_MS, parse, record, stale, tripped} from "../reloads.mjs"
 
 test("trips on the load after MAX_LOADS within the window", () => {
   let times = []
@@ -16,6 +16,16 @@ test("loads older than the window are forgotten", () => {
   const times = [0, 1, 2]
   assert.deepEqual(record(times, WINDOW_MS + 5), [WINDOW_MS + 5])
   assert.equal(tripped(record(times, WINDOW_MS + 5)), false)
+})
+
+test("a load exactly WINDOW_MS old is forgotten", () => {
+  assert.deepEqual(record([0], WINDOW_MS), [WINDOW_MS])
+})
+
+test("a list is stale once its newest load is past the window", () => {
+  assert.equal(stale([0, 5], WINDOW_MS + 5), true)
+  assert.equal(stale([0, 6], WINDOW_MS + 5), false)
+  assert.equal(stale([], 0), true)
 })
 
 test("a stored list that is not one counts as empty", () => {

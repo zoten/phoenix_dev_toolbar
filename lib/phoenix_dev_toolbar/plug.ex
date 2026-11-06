@@ -17,8 +17,6 @@ defmodule PhoenixDevToolbar.Plug do
   ## Options
 
     * `:path` - where the toolbar lives. Defaults to `"/__pdt"`.
-    * `:live_socket_path` - the path of your `Phoenix.LiveView.Socket`, as
-      declared in your endpoint. Defaults to `"/live"`.
     * `:nonce_assign` - the `conn.assigns` key holding a CSP nonce for the
       injected script tag. Defaults to `:csp_nonce`.
 
@@ -34,6 +32,7 @@ defmodule PhoenixDevToolbar.Plug do
   alias PhoenixDevToolbar.Attribution
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
+  alias PhoenixDevToolbar.PanelSocket
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
 
@@ -61,7 +60,6 @@ defmodule PhoenixDevToolbar.Plug do
         %{
           path: path,
           segments: segments,
-          live_socket_path: Keyword.get(opts, :live_socket_path, "/live"),
           nonce_assign: Keyword.get(opts, :nonce_assign, :csp_nonce)
         }
 
@@ -84,6 +82,8 @@ defmodule PhoenixDevToolbar.Plug do
     case strip_prefix(conn.path_info, segments) do
       {:ok, ["assets", file]} -> serve_asset(conn, file)
       {:ok, ["panel"]} -> serve_panel(conn, opts)
+      # The panel's own LiveView socket (ADR 04): no host socket, no host token.
+      {:ok, ["live", "websocket"]} -> conn |> untracked() |> PanelSocket.upgrade()
       # Anything else under our path is not ours to answer: never tracked.
       {:ok, _rest} -> untracked(conn)
       :error -> maybe_track(conn, opts)
@@ -99,7 +99,7 @@ defmodule PhoenixDevToolbar.Plug do
     conn = conn |> untracked() |> Conn.fetch_query_params()
 
     conn
-    |> Conn.put_private(:phoenix_dev_toolbar_panel, Map.take(opts, [:path, :live_socket_path]))
+    |> Conn.put_private(:phoenix_dev_toolbar_panel, Map.take(opts, [:path]))
     |> Phoenix.Controller.put_root_layout(html: {PhoenixDevToolbar.Layouts, :root})
     |> Phoenix.LiveView.Controller.live_render(PhoenixDevToolbar.PanelLive,
       session: %{"pdt_sid" => panel_sid(conn.query_params)}

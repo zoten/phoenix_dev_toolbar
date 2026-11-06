@@ -1,12 +1,13 @@
 // phoenix_dev_toolbar panel (ADR 04): runs inside the iframe only.
-// Connects PhoenixDevToolbar.PanelLive through the host's LiveView socket and
+// Connects PhoenixDevToolbar.PanelLive through the panel's own socket
+// (PhoenixDevToolbar.PanelSocket, no host session or CSRF token involved) and
 // talks to the loader in the parent page with origin-checked postMessage.
 //
 // Phoenix and LiveView are not bundled: the layout loads the host's own
 // installed clients first (window.Phoenix, window.LiveView), so the client
 // always matches the host's server version.
 
-import {parse, record, tripped} from "./reloads.mjs"
+import {parse, record, stale, tripped} from "./reloads.mjs"
 import {countWrapped} from "./summary.mjs"
 
 const {Socket} = window.Phoenix
@@ -14,23 +15,6 @@ const {LiveSocket} = window.LiveView
 
 const script =
   document.currentScript || document.querySelector("script[data-socket-path]")
-
-const metaToken = (doc) => {
-  const meta = doc.querySelector("meta[name='csrf-token']")
-  return meta && meta.getAttribute("content")
-}
-
-// The LiveView socket only accepts a CSRF token that matches the host's session
-// cookie. Our panel is rendered before the host's session plug runs, so its own
-// token cannot match: use the host page's token (same origin, read only), and
-// fall back to ours for hosts without one.
-const csrfToken = () => {
-  try {
-    return metaToken(window.parent.document) || metaToken(document)
-  } catch (_error) {
-    return metaToken(document)
-  }
-}
 
 const toParent = (type) => {
   if (window.parent !== window) {
@@ -80,6 +64,7 @@ document.addEventListener("visibilitychange", pushVisibility)
 const PdtPanel = {
   mounted() {
     forgetLoads()
+    clearStalled()
     panelHook = this
     pushVisibility()
     const pending = clientBuffer
@@ -174,8 +159,25 @@ const storage = () => {
   }
 }
 
+// Other pages' records past the window are dropped: a page whose panel never
+// joins leaves its key behind.
+const pruneLoads = (now) => {
+  try {
+    const keys = []
+    for (let i = 0; i < storage().length; i++) keys.push(storage().key(i))
+
+    keys
+      .filter((key) => key && key.startsWith("pdt:loads:") && key !== loadsKey)
+      .filter((key) => stale(parse(storage().getItem(key)), now))
+      .forEach((key) => storage().removeItem(key))
+  } catch (_error) {
+    // Storage blocked: nothing to prune.
+  }
+}
+
 const recordLoad = () => {
   try {
+    pruneLoads(Date.now())
     const loads = record(parse(storage().getItem(loadsKey)), Date.now())
     storage().setItem(loadsKey, JSON.stringify(loads))
     return loads
@@ -192,15 +194,21 @@ function forgetLoads() {
   }
 }
 
-// In the header, so it shows in the collapsed bar too.
-const showStalled = () => {
+// In the header, so it shows in the collapsed bar too. `why` is read by screen
+// readers and shown as a tooltip.
+const showStalled = (why) => {
+  if (document.getElementById("pdt-stalled")) return
   const notice = document.createElement("div")
   notice.id = "pdt-stalled"
   notice.className = "pdt-stalled"
   notice.setAttribute("role", "alert")
-  notice.title =
-    "The panel was refused several times in a row and stopped retrying, instead of reloading without end."
+  notice.title = why
   notice.textContent = "The toolbar cannot connect to this page. "
+
+  const reason = document.createElement("span")
+  reason.className = "pdt-sr-only"
+  reason.textContent = why + " "
+  notice.appendChild(reason)
 
   const retry = document.createElement("button")
   retry.type = "button"
@@ -218,11 +226,27 @@ const showStalled = () => {
   else document.body.prepend(notice)
 }
 
-// A function, so reconnects pick up the host's current token.
+function clearStalled() {
+  const notice = document.getElementById("pdt-stalled")
+  if (notice) notice.remove()
+}
+
+// A panel that never joins (the WebSocket itself refused or blocked, for
+// example by a proxy) never reloads either: it says so after JOIN_MS, and the
+// notice goes away if it joins later.
+const JOIN_MS = 8000
+
+// The panel's own socket at <path>/live: WebSocket only (no long poll
+// fallback), no CSRF param (it carries no session).
 const liveSocket = new LiveSocket(script.dataset.socketPath, Socket, {
-  params: () => ({_csrf_token: csrfToken()}),
   hooks: {PdtPanel, PdtSummaryMore},
 })
 
-if (tripped(recordLoad())) showStalled()
-else liveSocket.connect()
+if (tripped(recordLoad())) {
+  showStalled("It was refused several times in a row and stopped retrying instead of reloading without end.")
+} else {
+  liveSocket.connect()
+  setTimeout(() => {
+    if (!panelHook) showStalled("It has not connected yet: its WebSocket may be blocked.")
+  }, JOIN_MS)
+}

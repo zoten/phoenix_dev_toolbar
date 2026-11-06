@@ -9,8 +9,8 @@ defmodule PhoenixDevToolbar.Layouts do
 
   @spec root(map()) :: Phoenix.LiveView.Rendered.t()
   def root(assigns) do
-    %{path: base, live_socket_path: socket_path} = assigns.conn.private.phoenix_dev_toolbar_panel
-    assigns = assign(assigns, base: base, socket_path: socket_path)
+    %{path: base} = assigns.conn.private.phoenix_dev_toolbar_panel
+    assigns = assign(assigns, base: base)
 
     ~H"""
     <!DOCTYPE html>
@@ -18,7 +18,6 @@ defmodule PhoenixDevToolbar.Layouts do
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="csrf-token" content={Phoenix.Controller.get_csrf_token()} />
         <title>Dev Toolbar</title>
         <link rel="stylesheet" href={@base <> "/assets/panel.css"} />
         <%!-- The host's own Phoenix and LiveView clients, then our glue: deferred
@@ -27,7 +26,8 @@ defmodule PhoenixDevToolbar.Layouts do
         </script>
         <script defer src={@base <> "/assets/live_view.js"}>
         </script>
-        <script defer src={@base <> "/assets/panel.js"} data-socket-path={@socket_path}>
+        <%!-- The panel's own socket (ADR 04, PhoenixDevToolbar.PanelSocket). --%>
+        <script defer src={@base <> "/assets/panel.js"} data-socket-path={@base <> "/live"}>
         </script>
       </head>
       <body class="pdt">
