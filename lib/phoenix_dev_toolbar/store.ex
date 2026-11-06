@@ -210,6 +210,17 @@ defmodule PhoenixDevToolbar.Store do
     ArgumentError -> %{}
   end
 
+  @doc "The event `seq` of `sid`, or nil (also while the Store restarts)."
+  @spec event(Session.sid(), pos_integer()) :: Event.t() | nil
+  def event(sid, seq) do
+    case :ets.lookup(@events, {sid, seq}) do
+      [{_key, event}] -> event
+      [] -> nil
+    end
+  rescue
+    ArgumentError -> nil
+  end
+
   @doc "Returns the events of `sid` with a seq greater than `after_seq`, oldest first."
   @spec events(Session.sid(), non_neg_integer()) :: [Event.t()]
   def events(sid, after_seq \\ 0) do

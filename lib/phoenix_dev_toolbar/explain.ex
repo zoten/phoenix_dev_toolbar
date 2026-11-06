@@ -12,8 +12,24 @@ defmodule PhoenixDevToolbar.Explain do
   # Not replayable, so not captured: maps (json params), tuples, and structs
   # other than the scalar ones below. Arrays are one level of scalars.
 
+  # ecto_sql is optional: run/2 is only reached for an attached Ecto plugin.
+  @compile {:no_warn_undefined, Ecto.Adapters.SQL}
+
   @max_params 50
   @max_bytes 4096
+  @timeout 5_000
+  @plan_bytes 8192
+
+  alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.Truncate
+
+  @type error ::
+          :not_query
+          | :repo_not_configured
+          | :not_explainable
+          | :not_select
+          | :multiple_statements
+          | :unsupported_adapter
 
   @type capture :: {:ok, [term()]} | {:no, :not_select | :sql_truncated | :params}
 
@@ -44,6 +60,125 @@ defmodule PhoenixDevToolbar.Explain do
   end
 
   def capture(_sql, _stored, _params), do: {:no, :not_select}
+
+  @doc """
+  Explains a captured query, in the calling process (the Ecto tab runs it in
+  `start_async/3`). The event must be an Ecto query of one of `repos`, with
+  captured params; its SQL is checked again: a single SELECT statement.
+
+  The prefix depends on the adapter (`EXPLAIN` for Postgres and MyXQL,
+  `EXPLAIN QUERY PLAN` for SQLite3; never `ANALYZE`, which runs the query). It
+  runs in a transaction that is always rolled back, with a #{@timeout} ms
+  timeout (and `statement_timeout` on Postgres). The plan is truncated.
+  """
+  @spec run(Event.t(), [module()]) :: {:ok, String.t()} | {:error, error() | String.t()}
+  def run(%Event{plugin: :ecto, kind: :query, data: data}, repos) do
+    with {:ok, repo} <- configured(data[:repo], repos),
+         {:ok, params} <- explainable(data[:explain]),
+         :ok <- single_select(data[:sql]),
+         {:ok, prefix} <- prefix(repo) do
+      explain(repo, prefix <> data.sql, params)
+    end
+  end
+
+  def run(_event, _repos), do: {:error, :not_query}
+
+  @doc "Why a query cannot be explained, for the Ecto tab."
+  @spec reason(error() | String.t()) :: String.t()
+  def reason(:not_query), do: "not a query"
+  def reason(:repo_not_configured), do: "its repo is not configured"
+  def reason(:not_explainable), do: "its params could not be kept"
+  def reason(:not_select), do: "only SELECT queries are explained"
+  def reason(:multiple_statements), do: "only single statements are explained"
+  def reason(:unsupported_adapter), do: "this database adapter is not supported"
+  def reason(message) when is_binary(message), do: message
+
+  @doc "Whether the adapter of `repo` has an EXPLAIN prefix."
+  @spec supported?(module()) :: boolean()
+  def supported?(repo), do: match?({:ok, _prefix}, prefix(repo))
+
+  defp configured(repo, repos) when is_atom(repo) and repo != nil do
+    case repo in repos do
+      true -> {:ok, repo}
+      false -> {:error, :repo_not_configured}
+    end
+  end
+
+  defp configured(_repo, _repos), do: {:error, :repo_not_configured}
+
+  defp explainable({:ok, params}) when is_list(params), do: {:ok, params}
+  defp explainable(_capture), do: {:error, :not_explainable}
+
+  defp single_select(sql) when is_binary(sql) do
+    cond do
+      not select?(sql) -> {:error, :not_select}
+      separator?(sql) -> {:error, :multiple_statements}
+      true -> :ok
+    end
+  end
+
+  defp single_select(_sql), do: {:error, :not_select}
+
+  # A `;` outside quotes and comments: SQL is at most 8 KB (stored whole).
+  defp separator?(<<"'", rest::binary>>), do: rest |> after_quote(?') |> separator?()
+  defp separator?(<<"\"", rest::binary>>), do: rest |> after_quote(?") |> separator?()
+  defp separator?("--" <> rest), do: rest |> after_line() |> separator?()
+  defp separator?("/*" <> rest), do: rest |> after_block() |> separator?()
+  defp separator?(";" <> rest), do: String.trim(rest) != ""
+  defp separator?(<<_c, rest::binary>>), do: separator?(rest)
+  defp separator?(<<>>), do: false
+
+  # Doubled quotes ('it''s') close and reopen: both halves are skipped alike.
+  defp after_quote(sql, quote) do
+    case :binary.split(sql, <<quote>>) do
+      [_quoted, rest] -> rest
+      [_unterminated] -> ""
+    end
+  end
+
+  defp prefix(repo) do
+    case Code.ensure_loaded?(repo) and function_exported?(repo, :__adapter__, 0) and
+           repo.__adapter__() do
+      Ecto.Adapters.Postgres -> {:ok, "EXPLAIN "}
+      Ecto.Adapters.MyXQL -> {:ok, "EXPLAIN "}
+      Ecto.Adapters.SQLite3 -> {:ok, "EXPLAIN QUERY PLAN "}
+      _other -> {:error, :unsupported_adapter}
+    end
+  end
+
+  defp explain(repo, sql, params) do
+    result =
+      repo.transaction(
+        fn ->
+          _ = postgres?(repo) && repo.query!("SET LOCAL statement_timeout = #{@timeout}")
+          repo.rollback(query(repo, sql, params))
+        end,
+        timeout: @timeout
+      )
+
+    case result do
+      {:error, {:ok, plan}} -> {:ok, plan}
+      {:error, {:error, message}} -> {:error, message}
+      {:error, other} -> {:error, Truncate.inspect_value(other)}
+    end
+  rescue
+    exception -> {:error, exception |> Exception.message() |> Truncate.string()}
+  catch
+    kind, reason -> {:error, Truncate.banner(kind, reason)}
+  end
+
+  defp postgres?(repo), do: repo.__adapter__() == Ecto.Adapters.Postgres
+
+  defp query(repo, sql, params) do
+    case repo.query(sql, params, timeout: @timeout) do
+      {:ok, result} -> {:ok, result |> format() |> Truncate.string(@plan_bytes)}
+      {:error, error} -> {:error, error |> Exception.message() |> Truncate.string()}
+    end
+  end
+
+  # Postgres answers one "QUERY PLAN" line per row: shown as text.
+  defp format(%{columns: ["QUERY PLAN"], rows: rows}), do: Enum.map_join(rows, "\n", &Enum.join/1)
+  defp format(result), do: Ecto.Adapters.SQL.format_table(result)
 
   @doc """
   Whether `sql` starts with `SELECT` or `WITH`, after whitespace and comments.

@@ -27,6 +27,12 @@ defmodule DemoWeb.PageLive do
     {:noreply, socket}
   end
 
+  # A real query on the SQLite test repo (EXPLAIN, ADR 08); errors are ignored.
+  def handle_event("sqlite", %{"sql" => sql, "params" => params}, socket) do
+    _ = DemoWeb.SQLiteRepo.query(sql, params)
+    {:noreply, socket}
+  end
+
   # The span Oban.Engine.insert_job/3 emits in the inserting process
   # (deps/oban/lib/oban/engine.ex, with_span/4), for the Oban example plugin.
   def handle_event("enqueue", %{"worker" => worker, "queue" => queue}, socket) do

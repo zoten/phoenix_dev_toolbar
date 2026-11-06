@@ -51,8 +51,8 @@ defmodule PhoenixDevToolbar.MixProject do
       {:lazy_html, "~> 0.1", only: :test},
       # Builds priv/static (committed and shipped): never needed by host apps.
       {:esbuild, "~> 0.10", only: :dev, runtime: false},
-      # The `mix dev` harness (dev.exs, ADR 06).
-      {:ecto_sqlite3, "~> 0.22", only: :dev},
+      # The `mix dev` harness (dev.exs, ADR 06) and the EXPLAIN tests (ADR 08).
+      {:ecto_sqlite3, "~> 0.22", only: [:dev, :test]},
       # The example plugin (examples/oban, ADR 05): never needed by host apps.
       {:oban, "~> 2.19", only: [:dev, :test]},
       {:bandit, "~> 1.5", only: :dev},

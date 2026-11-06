@@ -1,0 +1,111 @@
+defmodule PhoenixDevToolbar.ExplainPanelTest do
+  # EXPLAIN end to end (ADR 08): a real host LiveView through DemoWeb.Endpoint
+  # runs real SQLite queries; the Ecto tab explains them on click.
+  use ExUnit.Case, async: false
+
+  import Phoenix.ConnTest
+  import Phoenix.LiveViewTest
+
+  alias PhoenixDevToolbar.Collector
+  alias PhoenixDevToolbar.Plugins
+  alias PhoenixDevToolbar.Store
+
+  @endpoint DemoWeb.Endpoint
+
+  setup do
+    Store.reset()
+    Collector.attach([{Plugins.Ecto, repos: [DemoWeb.SQLiteRepo]}, Plugins.LiveView])
+
+    on_exit(fn ->
+      Collector.attach(PhoenixDevToolbar.Application.plugins())
+      Store.reset()
+    end)
+
+    {host, sid} = visit()
+    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    %{host: host, panel: panel}
+  end
+
+  defp visit do
+    conn =
+      build_conn()
+      |> Plug.Conn.put_req_header("accept", "text/html")
+      |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
+      |> get("/demo")
+
+    [sid] =
+      conn
+      |> html_response(200)
+      |> LazyHTML.from_document()
+      |> LazyHTML.query("script[data-pdt-sid]")
+      |> LazyHTML.attribute("data-pdt-sid")
+
+    {:ok, host, _html} = live(conn)
+    {host, sid}
+  end
+
+  # Runs `sql` in the host LiveView; returns the seq of its row in the panel.
+  defp run(host, panel, sql, params \\ []) do
+    render_hook(host, "sqlite", %{"sql" => sql, "params" => params})
+    send(panel.pid, :pdt_flush)
+    _ = render(panel)
+
+    [id] =
+      panel
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("#pdt-queries li.pdt-row")
+      |> Enum.filter(&(LazyHTML.text(&1) =~ sql))
+      |> Enum.map(&(&1 |> LazyHTML.attribute("id") |> hd()))
+
+    "pdt-query-" <> seq = id
+    seq
+  end
+
+  test "a SELECT is explained under its row", %{host: host, panel: panel} do
+    seq = run(host, panel, "SELECT * FROM users WHERE id = ?", [1])
+
+    panel |> element("#pdt-explain-#{seq}") |> render_click()
+    render_async(panel)
+
+    assert has_element?(panel, "#pdt-plan-#{seq}", "SEARCH users USING INTEGER PRIMARY KEY")
+  end
+
+  test "a database error shows in the row, the tab keeps working", %{host: host, panel: panel} do
+    seq = run(host, panel, "SELECT * FROM no_such_table")
+
+    panel |> element("#pdt-explain-#{seq}") |> render_click()
+    render_async(panel)
+
+    assert has_element?(panel, "#pdt-plan-#{seq}.pdt-error", "no such table")
+    refute has_element?(panel, "#pdt-disabled-ecto")
+  end
+
+  test "a write has no button and says why", %{host: host, panel: panel} do
+    seq = run(host, panel, "UPDATE users SET name = name WHERE id = ?", [1])
+
+    refute has_element?(panel, "#pdt-explain-#{seq}")
+
+    assert has_element?(
+             panel,
+             "#pdt-query-#{seq} .pdt-details",
+             "only SELECT queries are explained"
+           )
+  end
+
+  test "a seq of another page is never explained", %{host: host, panel: panel} do
+    own = run(host, panel, "SELECT id FROM users")
+
+    {other_host, other_sid} = visit()
+    {:ok, other_panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{other_sid}")
+    other = run(other_host, other_panel, "SELECT name FROM users")
+
+    # A tampered client: this page's button, another page's seq.
+    panel |> element("#pdt-explain-#{own}") |> render_click(%{"seq" => other})
+    render_async(panel)
+
+    refute has_element?(panel, "#pdt-plan-#{other}")
+    refute has_element?(panel, "#pdt-plan-#{own}")
+    refute render(panel) =~ "SCAN users"
+  end
+end

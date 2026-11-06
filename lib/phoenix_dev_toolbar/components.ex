@@ -56,6 +56,7 @@ defmodule PhoenixDevToolbar.Components do
   attr :id, :string, required: true
   attr :event, Event, required: true
   attr :root, :string, required: true, doc: "the request sid: its events ran in the dead render"
+  attr :target, :any, default: nil, doc: "the Ecto tab component, for the EXPLAIN button"
 
   def query_row(assigns) do
     ~H"""
@@ -77,7 +78,20 @@ defmodule PhoenixDevToolbar.Components do
           N+1
         </span>
         <span :if={origin(@event)} class="pdt-origin">{origin(@event)}</span>
+        <button
+          :if={@target && explainable?(@event)}
+          id={"pdt-explain-#{@event.seq}"}
+          type="button"
+          class="pdt-button pdt-button--small"
+          phx-click="explain"
+          phx-value-seq={@event.seq}
+          phx-target={@target}
+          disabled={@event.data[:plan] == :running}
+        >
+          {if(@event.data[:plan] == :running, do: "explaining…", else: "EXPLAIN")}
+        </button>
       </div>
+      <.plan :if={@event.data[:plan] not in [nil, :running]} seq={@event.seq} plan={@event.data.plan} />
       <details class="pdt-details">
         <summary>details</summary>
         <dl>
@@ -89,6 +103,8 @@ defmodule PhoenixDevToolbar.Components do
           <dd class="pdt-timings">
             <span :for={{key, us} <- timings(@event.data.times)}>{key} {duration(us)}</span>
           </dd>
+          <dt :if={not explainable?(@event)}>explain</dt>
+          <dd :if={not explainable?(@event)} class="pdt-hint">{explain_reason(@event)}</dd>
           <dt>origin</dt>
           <dd :if={@event.data.stacktrace != []}>
             <pre>{Enum.join(@event.data.stacktrace, "\n")}</pre>
@@ -102,6 +118,45 @@ defmodule PhoenixDevToolbar.Components do
     </li>
     """
   end
+
+  attr :seq, :integer, required: true
+  attr :plan, :any, required: true, doc: "{:ok, text} or {:error, reason}"
+
+  defp plan(%{plan: {:ok, text}} = assigns) do
+    assigns = assign(assigns, :text, text)
+
+    ~H"""
+    <pre id={"pdt-plan-#{@seq}"} class="pdt-plan" aria-label="Query plan">{@text}</pre>
+    """
+  end
+
+  defp plan(%{plan: {:error, reason}} = assigns) do
+    assigns = assign(assigns, :reason, PhoenixDevToolbar.Explain.reason(reason))
+
+    ~H"""
+    <p id={"pdt-plan-#{@seq}"} class="pdt-error">EXPLAIN failed: {@reason}</p>
+    """
+  end
+
+  # A SELECT with its params kept, on a supported adapter.
+  defp explainable?(%Event{data: %{explain: {:ok, _params}, repo: repo}}),
+    do: PhoenixDevToolbar.Explain.supported?(repo)
+
+  defp explainable?(_event), do: false
+
+  defp explain_reason(%Event{data: %{explain: {:no, :not_select}}}),
+    do: "only SELECT queries are explained"
+
+  defp explain_reason(%Event{data: %{explain: {:no, :sql_truncated}}}),
+    do: "the SQL is too long to keep whole"
+
+  defp explain_reason(%Event{data: %{explain: {:no, :params}}}),
+    do: "its params cannot be replayed (too many, too large, or maps and tuples)"
+
+  defp explain_reason(%Event{data: %{explain: {:ok, _params}}}),
+    do: "this database adapter is not supported"
+
+  defp explain_reason(_event), do: "not captured"
 
   attr :groups, :list, required: true, doc: "PhoenixDevToolbar.NPlusOne.groups/1"
   attr :detected, :integer, required: true, doc: "how many groups were detected in total"

@@ -327,6 +327,19 @@ body.pdt {
 
 .pdt-button:hover { background: var(--pdt-bg-alt); }
 .pdt-button:focus-visible { outline: 2px solid var(--pdt-accent); outline-offset: 1px; }
+.pdt-button--small { height: 18px; padding: 0 6px; font: 600 10px/16px var(--pdt-mono); }
+.pdt-button:disabled { opacity: .6; cursor: progress; }
+
+/* An EXPLAIN result under its query row (ADR 08). */
+.pdt-plan {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--pdt-bg-alt);
+  font: 11px/1.5 var(--pdt-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 /* A plugin disabled after an error (ADR 05). */
 .pdt-badge--button { border: 0; cursor: pointer; }
