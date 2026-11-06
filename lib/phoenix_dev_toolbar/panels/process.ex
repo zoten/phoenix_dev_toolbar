@@ -111,7 +111,8 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
       # The last result stays; a note says when the next collection is allowed.
       false ->
-        {:noreply, socket |> assign(:gc_note, "at most one collection a second") |> gc_ready_later()}
+        {:noreply,
+         socket |> assign(:gc_note, "at most one collection a second") |> gc_ready_later()}
     end
   end
 

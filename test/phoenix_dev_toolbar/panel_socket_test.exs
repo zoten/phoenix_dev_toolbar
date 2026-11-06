@@ -212,6 +212,42 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
            } = WebSocketClient.recv_json(socket)
   end
 
+  # Frames the serializers read differently from a plain 5 element join.
+  test "a join with extra elements closes; duplicate keys read as the serializer does",
+       %{port: port} do
+    {id, join} = host_join()
+
+    socket = connect!(port)
+    :ok = WebSocketClient.send_json(socket, ["1", "1", "lv:#{id}", "phx_join", join, "x"])
+    assert WebSocketClient.closed?(socket)
+
+    # Duplicate keys: our check and the serializer decode with the same JSON
+    # library, so they read the same pair. Here that is the join: refused.
+    socket = connect!(port, "1.0.0")
+
+    raw =
+      ~s({"topic":"lv:#{id}","event":"phx_join","topic":"phoenix","event":"heartbeat","ref":"1","payload":) <>
+        Jason.encode!(join) <> "}"
+
+    :ok = WebSocketClient.send_frame(socket, raw)
+
+    assert %{
+             "topic" => "lv:" <> _,
+             "payload" => %{"status" => "error", "response" => %{"reason" => "stale"}}
+           } = WebSocketClient.recv_json(socket)
+  end
+
+  test "non string refs still get a stale reply, not a crash", %{port: port} do
+    {id, join} = host_join()
+    socket = connect!(port)
+    :ok = WebSocketClient.send_json(socket, [%{"a" => 1}, [1, 2], "lv:#{id}", "phx_join", join])
+
+    assert [%{"a" => 1}, [1, 2], _topic, "phx_reply", _payload] =
+             reply = WebSocketClient.recv_json(socket)
+
+    assert_stale(reply)
+  end
+
   test "other topics, binary frames and garbage close the connection", %{port: port} do
     for frame <- [
           {:text, Jason.encode!(["1", "1", "room:lobby", "phx_join", %{}])},

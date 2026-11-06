@@ -326,5 +326,13 @@ defmodule PhoenixDevToolbar.StoreTest do
       assert Enum.count(ids, &Store.panel_allowed?/1) == 1000
       assert Store.panel_allowed?("phx-panel-1001")
     end
+
+    test "registering a panel again at the cap evicts nobody" do
+      ids = for n <- 1..1000, do: "phx-panel-#{n}"
+      Enum.each(ids, &Store.allow_panel/1)
+      Store.allow_panel("phx-panel-1")
+
+      assert Enum.all?(ids, &Store.panel_allowed?/1)
+    end
   end
 end

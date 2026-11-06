@@ -223,7 +223,7 @@ defmodule PhoenixDevToolbar.Store do
   """
   @spec allow_panel(String.t()) :: :ok
   def allow_panel(id) when is_binary(id) do
-    evict_panel(:ets.info(@panels, :size) >= @max_panels)
+    evict_panel(:ets.info(@panels, :size) >= @max_panels and not :ets.member(@panels, id))
     :ets.insert(@panels, {id, System.monotonic_time(:second)})
     :ok
   rescue
