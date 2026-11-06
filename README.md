@@ -9,6 +9,9 @@ you are working on.
 
 > Status: early development, not on Hex yet. See the [roadmap](https://github.com/zoten/phoenix_dev_toolbar/blob/main/docs/2026-11-05-roadmap.md).
 
+> **Disclaimer:** this project is currently fully AI-coded and has not been reviewed
+> by a human yet. Use it at your own risk.
+
 ## Installation
 
 ```elixir
