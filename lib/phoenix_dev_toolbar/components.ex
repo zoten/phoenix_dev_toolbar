@@ -65,10 +65,17 @@ defmodule PhoenixDevToolbar.Components do
         <span class="pdt-time" title={times_title(@event.data.times)}>{duration(@event.duration)}</span>
       </div>
       <div class="pdt-row__meta">
-        <.phase_tag event={@event} root={@root} />
+        <.phase_tag sid={@event.sid} root={@root} />
         <span :if={@event.data.source} class="pdt-tag">{@event.data.source}</span>
         <span class="pdt-tag">{result(@event.data.result)}</span>
         <span :if={@event.data.caller?} class="pdt-tag" title="Run by a Task.async child of the page">task</span>
+        <span
+          :if={@event.data[:n_plus_one?]}
+          class="pdt-tag pdt-tag--warn"
+          title="Repeated in this callback: listed above the queries"
+        >
+          N+1
+        </span>
         <span :if={origin(@event)} class="pdt-origin">{origin(@event)}</span>
       </div>
       <details class="pdt-details">
@@ -96,10 +103,50 @@ defmodule PhoenixDevToolbar.Components do
     """
   end
 
-  attr :event, Event, required: true
+  attr :n_plus_one, PhoenixDevToolbar.NPlusOne, required: true
+  attr :origins?, :boolean, required: true, doc: "whether every query had an origin"
   attr :root, :string, required: true
 
-  defp phase_tag(%{event: %Event{sid: sid}, root: sid} = assigns) do
+  @doc "The N+1 groups detected on the page, newest first (ADR 08)."
+  def n_plus_one_list(assigns) do
+    ~H"""
+    <section id="pdt-n-plus-one" class="pdt-n-plus-one">
+      <h3 class="pdt-n-plus-one__title">
+        N+1: {PhoenixDevToolbar.NPlusOne.detected(@n_plus_one)} repeated {noun_queries(
+          PhoenixDevToolbar.NPlusOne.detected(@n_plus_one)
+        )}
+      </h3>
+      <ul class="pdt-list">
+        <li
+          :for={{group, index} <- Enum.with_index(PhoenixDevToolbar.NPlusOne.groups(@n_plus_one))}
+          id={"pdt-n-plus-one-#{index}"}
+          class="pdt-row"
+        >
+          <div class="pdt-row__head">
+            <code class="pdt-sql">{group.sql}</code>
+            <span class="pdt-badge pdt-badge--warn">×{group.count}</span>
+          </div>
+          <div class="pdt-row__meta">
+            <.phase_tag sid={group.sid} root={@root} />
+            <span :if={group.origin} class="pdt-origin">{group.origin}</span>
+          </div>
+        </li>
+      </ul>
+      <p :if={not @origins?} id="pdt-n-plus-one-hint" class="pdt-hint">
+        Without origins, queries are grouped by SQL alone: set <code>stacktrace: true</code>
+        in your repo config to tell call sites apart.
+      </p>
+    </section>
+    """
+  end
+
+  defp noun_queries(1), do: "query"
+  defp noun_queries(_count), do: "queries"
+
+  attr :sid, :string, required: true
+  attr :root, :string, required: true
+
+  defp phase_tag(%{sid: sid, root: sid} = assigns) do
     ~H"""
     <span class="pdt-tag pdt-tag--http" title="Ran during the HTTP request (dead render)">HTTP</span>
     """

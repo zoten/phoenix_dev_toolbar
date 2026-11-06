@@ -3,6 +3,8 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   # Built-in Ecto panel collector (ADR 02): one event per query of the repos in
   # `config :phoenix_dev_toolbar, repos: [MyApp.Repo]`, or in the plugin's own
   # `repos:` option (`{PhoenixDevToolbar.Plugins.Ecto, repos: [...]}`), which wins.
+  # `n_plus_one:` (default 5) is the N+1 detector's threshold, `false` turns
+  # it off (ADR 08).
   # `ecto_sql` stays an optional dependency: without repos, or without Ecto
   # loaded, this plugin attaches to nothing.
 
@@ -13,22 +15,44 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   alias PhoenixDevToolbar.Components
   alias PhoenixDevToolbar.Context
   alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.NPlusOne
   alias PhoenixDevToolbar.Panels
   alias PhoenixDevToolbar.Truncate
 
   # Frames hidden from the query origin: the caller's code is what matters.
   @skip_frames [Ecto, DBConnection]
   @times [:query_time, :queue_time, :decode_time, :idle_time, :total_time]
+  @n_plus_one 5
 
   @impl true
   def init(opts) do
-    case Keyword.get_lazy(opts, :repos, fn ->
-           Application.get_env(:phoenix_dev_toolbar, :repos, [])
-         end) do
-      repos when is_list(repos) -> {:ok, %{repos: repos}}
-      other -> {:error, "repos must be a list of modules, got: #{inspect(other, limit: 5)}"}
+    repos =
+      Keyword.get_lazy(opts, :repos, fn ->
+        Application.get_env(:phoenix_dev_toolbar, :repos, [])
+      end)
+
+    with {:ok, repos} <- repos(repos),
+         {:ok, threshold} <- threshold(Keyword.get(opts, :n_plus_one, @n_plus_one)) do
+      {:ok, %{repos: repos, n_plus_one: threshold}}
     end
   end
+
+  defp repos(repos) when is_list(repos), do: {:ok, repos}
+
+  defp repos(other),
+    do: {:error, "repos must be a list of modules, got: #{inspect(other, limit: 5)}"}
+
+  defp threshold(threshold) when (is_integer(threshold) and threshold >= 2) or threshold == false,
+    do: {:ok, threshold}
+
+  defp threshold(other),
+    do: {:error, "n_plus_one must be an integer >= 2 or false, got: #{inspect(other, limit: 5)}"}
+
+  @doc false
+  # The detector's threshold in a config (the default for a config without one).
+  @spec n_plus_one(term()) :: pos_integer() | false
+  def n_plus_one(%{n_plus_one: threshold}), do: threshold
+  def n_plus_one(_config), do: @n_plus_one
 
   @impl true
   def telemetry_events(%{repos: repos}) do
@@ -39,27 +63,53 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   def panel, do: Panels.Ecto
 
   @impl true
-  def summary_init(_config), do: %{queries: 0, db_us: 0, slowest_us: 0, failed: 0}
+  def summary_init(config),
+    do: %{
+      queries: 0,
+      db_us: 0,
+      slowest_us: 0,
+      failed: 0,
+      n_plus_one: NPlusOne.new(n_plus_one(config))
+    }
 
   @impl true
-  def summary_add(summary, %Event{kind: :query, duration: duration, data: data}) do
+  def summary_add(summary, %Event{kind: :query, duration: duration, data: data} = event) do
     duration = duration || 0
+    {n_plus_one, _result} = NPlusOne.add(summary.n_plus_one, event)
 
     %{
       summary
       | queries: summary.queries + 1,
         db_us: summary.db_us + duration,
         slowest_us: max(summary.slowest_us, duration),
-        failed: summary.failed + failed(data)
+        failed: summary.failed + failed(data),
+        n_plus_one: n_plus_one
     }
   end
 
   def summary_add(summary, %Event{}), do: summary
 
   @impl true
-  def badges(%{queries: queries, db_us: db_us, failed: failed}) do
+  def badges(%{queries: queries, db_us: db_us, failed: failed} = summary) do
     text = "#{queries} #{noun(queries)} · #{Components.duration(db_us)}"
-    [%{id: "ecto-queries", text: text, level: queries_level(failed)}]
+    [%{id: "ecto-queries", text: text, level: queries_level(failed)} | n_plus_one_badge(summary)]
+  end
+
+  defp n_plus_one_badge(%{n_plus_one: n_plus_one}) do
+    case NPlusOne.detected(n_plus_one) do
+      0 ->
+        []
+
+      detected ->
+        [
+          %{
+            id: "ecto-n-plus-one",
+            text: "N+1 ×#{detected}",
+            level: :warn,
+            title: "The same query repeated in one callback: see the Ecto tab"
+          }
+        ]
+    end
   end
 
   defp noun(1), do: "query"

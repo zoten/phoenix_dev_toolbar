@@ -81,6 +81,16 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
     assert message =~ "list of modules"
   end
 
+  test "n_plus_one: defaults to 5, takes an integer >= 2 or false, and is validated" do
+    assert {:ok, %{n_plus_one: 5}} = EctoPlugin.init([])
+    assert {:ok, %{n_plus_one: 3}} = EctoPlugin.init(n_plus_one: 3)
+    assert {:ok, %{n_plus_one: false}} = EctoPlugin.init(n_plus_one: false)
+
+    for bad <- [1, true, "5", nil] do
+      assert {:error, "n_plus_one must be" <> _} = EctoPlugin.init(n_plus_one: bad)
+    end
+  end
+
   test "records SQL, timings, rows and the caller's origin", %{sid: sid} do
     run_query(sid, query_metadata(%{}))
 

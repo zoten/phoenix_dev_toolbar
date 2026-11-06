@@ -22,6 +22,15 @@ defmodule PhoenixDevToolbar.Plugins.SummariesTest do
     assert [%{text: "2 queries · 1.50 ms", level: :error}] = badges(Plugins.Ecto, [ok, failed])
   end
 
+  test "Ecto flags an N+1 with its own warning badge" do
+    queries = for _n <- 1..5, do: %{event(:ecto, :query, %{sql: "SELECT u"}) | sid: "a", span: 1}
+
+    assert [%{id: "ecto-queries"}, %{id: "ecto-n-plus-one", text: "N+1 ×1", level: :warn}] =
+             badges(Plugins.Ecto, queries)
+
+    assert [%{id: "ecto-queries"}] = badges(Plugins.Ecto, Enum.take(queries, 4))
+  end
+
   test "Request keeps the last response and counts exceptions" do
     response = event(:request, :response, %{status: 404}, 900)
     exception = event(:request, :exception, %{})
