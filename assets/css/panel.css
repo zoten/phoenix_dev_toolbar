@@ -68,7 +68,13 @@ body.pdt {
   color: var(--pdt-accent);
 }
 
-.pdt-summary { display: flex; gap: 6px; min-width: 0; overflow: hidden; }
+/* One row tall: badges that do not fit wrap out of sight and are counted by
+   #pdt-summary-more. Open, the header grows to show them all. */
+.pdt-summary { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; height: 20px; overflow: hidden; }
+.pdt-open .pdt-header { height: auto; min-height: 34px; padding-block: 7px; }
+.pdt-open .pdt-summary { height: auto; }
+.pdt-summary-more { flex: none; }
+.pdt-summary-more[hidden] { display: none; }
 
 .pdt-badge {
   display: inline-flex;

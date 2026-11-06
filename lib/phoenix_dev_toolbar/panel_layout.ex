@@ -35,6 +35,17 @@ defmodule PhoenixDevToolbar.PanelLayout do
       <header class="pdt-header">
         <span class="pdt-logo">dev toolbar</span>
         <.summary_bar badges={Shell.badges(@shell)} dropped={@gaps.dropped} trimmed={@gaps.trimmed} />
+        <%!-- Counts the badges the collapsed bar has no room for (assets/js/panel.js). --%>
+        <button
+          id="pdt-summary-more"
+          type="button"
+          class="pdt-badge pdt-badge--button pdt-summary-more"
+          phx-hook="PdtSummaryMore"
+          phx-update="ignore"
+          data-pdt-open
+          title="More badges: open the toolbar to see them all"
+          hidden
+        ></button>
         <button
           :for={{id, name, banner} <- disabled_without_tab(@shell, @tabs, @quarantined)}
           id={"pdt-badge-disabled-" <> id}

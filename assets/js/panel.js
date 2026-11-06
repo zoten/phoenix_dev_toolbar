@@ -6,6 +6,8 @@
 // installed clients first (window.Phoenix, window.LiveView), so the client
 // always matches the host's server version.
 
+import {countWrapped} from "./summary.mjs"
+
 const {Socket} = window.Phoenix
 const {LiveSocket} = window.LiveView
 
@@ -90,11 +92,37 @@ const PdtPanel = {
   },
 }
 
+// On #pdt-summary-more (phx-update="ignore", so its text and hidden state are
+// ours): counts the badges that do not fit the collapsed bar. Clicking it opens
+// the panel, where the summary shows every badge.
+const PdtSummaryMore = {
+  mounted() {
+    this.summary = document.getElementById("pdt-summary")
+    this.count = () => {
+      // Open, the summary is as tall as it needs: nothing is hidden. Toggling
+      // resizes it, so the observer recounts.
+      const hidden = open ? 0 : countWrapped([...this.summary.children].map((badge) => badge.offsetTop))
+      this.el.hidden = hidden === 0
+      this.el.textContent = "+" + hidden
+    }
+    this.resize = new ResizeObserver(this.count)
+    this.resize.observe(this.summary)
+    this.mutation = new MutationObserver(this.count)
+    this.mutation.observe(this.summary, {childList: true, subtree: true, characterData: true})
+    this.count()
+  },
+  destroyed() {
+    this.resize.disconnect()
+    this.mutation.disconnect()
+  },
+}
+
 // The toggle button collapses or expands, hide shrinks the toolbar to a corner
 // pill, and picking a tab always expands.
 document.addEventListener("click", (event) => {
   if (event.target.closest("[data-pdt-toggle]")) toParent("toggle")
   else if (event.target.closest("[data-pdt-hide]")) toParent("hide")
+  else if (event.target.closest("[data-pdt-open]")) toParent("open")
   else if (event.target.closest("[role='tab']")) toParent("open")
 })
 
@@ -114,7 +142,7 @@ document.addEventListener("keydown", (event) => {
 // A function, so reconnects pick up the host's current token.
 const liveSocket = new LiveSocket(script.dataset.socketPath, Socket, {
   params: () => ({_csrf_token: csrfToken()}),
-  hooks: {PdtPanel},
+  hooks: {PdtPanel, PdtSummaryMore},
 })
 
 liveSocket.connect()

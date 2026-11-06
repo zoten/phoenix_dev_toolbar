@@ -90,12 +90,14 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   mount is not missed, and to every sid shown. It re-reads new events at most every
   100 ms, including a window of 64 seqs below the last one seen (seqs are allocated
   before their row is written, so concurrent writers can land out of order), skipping
-  seqs already shown. Each tab is a plugin's `PhoenixDevToolbar.Panel` component, fed
+  seqs already shown (remembered per sid, only within that sid's window). Each tab is a plugin's `PhoenixDevToolbar.Panel` component, fed
   its plugin's events (ADR 05); lists are LiveView streams capped at 500 rows. The
   summary bar shows the plugins' badges, folded incrementally (query count and database
   time, status and duration, router errors, LiveView callbacks), "+N dropped" when the
   flood guard discarded events and "N older trimmed" past the caps, so counts are never
-  silently low. Tabs follow the configuration: Ecto, Request, LiveView (ADR 07) and any
+  silently low. The bar is one row: badges that do not fit wrap out of sight and a "+N"
+  chip (`PdtSummaryMore` hook in `panel.js`) counts them; it opens the panel, whose
+  header grows to show every badge. Tabs follow the configuration: Ecto, Request, LiveView (ADR 07) and any
   third party plugin, as WAI-ARIA tabs
   (`aria-controls`, `tabpanel`, roving `tabindex`, arrow keys in `panel.js`). Each query
   row says where it ran (`HTTP` for the dead render, `live` for the connected LiveView)
