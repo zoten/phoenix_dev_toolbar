@@ -34,6 +34,8 @@ Everything is optional and goes in `config/dev.exs`:
 config :phoenix_dev_toolbar,
   # Panels: the built-ins plus your own (guides/writing-a-plugin.md)
   plugins: [:defaults, {MyApp.Toolbar.Jobs, queues: [:default]}],
+  # The Ecto tab flags an N+1 at 5 repeats in one callback: change it, or false
+  # plugins: [:defaults, {PhoenixDevToolbar.Plugins.Ecto, n_plus_one: 10}],
   # Values of keys containing these words are shown as [REDACTED]
   redact: ["password", "token", "secret"],
   # Memory bounds (ADR 03), these are the defaults. A session is one request

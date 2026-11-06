@@ -79,6 +79,10 @@ serialize every query of the app behind one mailbox.
   whatever is not walked becomes `"…"` (so a sensitive key past the budget is cut, never
   shown), then `inspect(limit: 20, printable_limit: 256)` capped at 360 bytes per value.
   A `:callback` event stays around 4 KB at most.
+- One payload is kept raw, by size instead of truncation: the params an Ecto SELECT
+  needs for EXPLAIN (ADR 08), at most 50 scalars and 4 KB of binaries (copied), never
+  rendered. An Ecto event stays under about 13 KB (8 KB of SQL, the params, the rest
+  truncated).
 - Live updates: our own `Registry` (`PhoenixDevToolbar.Registry`, duplicate keys) keyed
   by sid. Writers `Registry.dispatch/3` a `{:pdt_event, sid}` notification (no payload);
   the panel reads from ETS and throttles re-renders to every 100 ms. No dependency on

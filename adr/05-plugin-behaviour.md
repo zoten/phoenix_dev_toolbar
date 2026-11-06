@@ -39,8 +39,9 @@ atom other than the reserved `:client` and the name a string):
   `{module, opts}`, a module that is missing, does not implement the callbacks, defines
   only part of the summary trio, has a `panel/0` that is not a `Panel`, has an id that
   is not an atom (or is `nil` or a boolean), is reserved or taken, a name that is not a
-  string, or whose `id/0` or `name/0` raises, throws or exits, is logged and skipped. The Ecto plugin takes `repos:`, falling back to the top level
-  `repos` config.
+  string, or whose `id/0` or `name/0` raises, throws or exits, is logged and skipped.
+  The Ecto plugin takes `repos:`, falling back to the top level `repos` config, and
+  `n_plus_one:` (the N+1 detector's threshold, ADR 08).
 - **Attach** (`PhoenixDevToolbar.Collector.attach/1`): runs each plugin's `init/1` and
   `telemetry_events/1`; a plugin whose `init/1` returns an error, raises, or whose
   events are not non empty lists of atoms is logged and left out (`:telemetry.attach/4`
