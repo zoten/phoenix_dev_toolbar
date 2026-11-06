@@ -25,10 +25,11 @@ defmodule PhoenixDevToolbar.Attribution do
   @doc """
   Starts a new callback span in the current (tracked) process, bumped at each
   LiveView callback start and stop, and published for its `$callers` children.
+  Unique across processes: nested LiveViews share their parent's sid.
   """
   @spec next_span() :: non_neg_integer()
   def next_span do
-    span = Process.get(@span_key, 0) + 1
+    span = :erlang.unique_integer([:monotonic, :positive])
     Process.put(@span_key, span)
     Store.put_span(self(), span)
     span
@@ -39,7 +40,9 @@ defmodule PhoenixDevToolbar.Attribution do
   # Index first, then mark: a failure (Store tables missing while it restarts)
   # leaves the process unmarked rather than half tracked.
   def track(sid) do
-    Store.track_pid(self(), sid)
+    # A reused process (keep-alive connection) keeps its current span, so its
+    # `$callers` children agree with it.
+    Store.track_pid(self(), sid, Process.get(@span_key, 0))
     Process.put(@key, sid)
     :ok
   rescue

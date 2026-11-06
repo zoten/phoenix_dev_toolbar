@@ -7,7 +7,7 @@ defmodule PhoenixDevToolbar.Event do
   a map that must already be bounded (see `PhoenixDevToolbar.Truncate`): it is
   stored as is. `sid` and `seq` are set by the toolbar on insert; `plugin` and
   `span` (the callback span, see `PhoenixDevToolbar.Context`) are stamped by the
-  collector.
+  collector: `span` is nil only on an event not recorded yet.
   """
 
   alias PhoenixDevToolbar.Event

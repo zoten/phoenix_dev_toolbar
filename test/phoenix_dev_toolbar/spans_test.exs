@@ -7,8 +7,10 @@ defmodule PhoenixDevToolbar.SpansTest do
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
 
+  alias PhoenixDevToolbar.Attribution
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.ProcessHelpers
   alias PhoenixDevToolbar.Store
 
   @endpoint DemoWeb.Endpoint
@@ -66,5 +68,42 @@ defmodule PhoenixDevToolbar.SpansTest do
     assert t1.data.caller? and t2.data.caller?
     assert t1.span == t2.span
     assert handle_event_spans(sid) == [t1.span]
+  end
+
+  describe "span ids" do
+    test "two processes of one sid (nested LiveViews) never share a span" do
+      {_a, span_a} = ProcessHelpers.in_process(fn -> track_and_bump("shared") end)
+      {_b, span_b} = ProcessHelpers.in_process(fn -> track_and_bump("shared") end)
+
+      refute span_a == span_b
+    end
+
+    test "a re-tracked process and its $callers children agree on the span" do
+      {_pid, {own, child}} =
+        ProcessHelpers.in_process(fn ->
+          track_and_bump("first")
+          Attribution.track("second")
+          {_sid, :self, own} = Attribution.current()
+          child = fn -> Attribution.current() end |> Task.async() |> Task.await()
+          {own, child}
+        end)
+
+      assert {"second", :caller, ^own} = child
+    end
+
+    test "an untracked process gets no span" do
+      {_pid, result} =
+        ProcessHelpers.in_process(fn ->
+          :telemetry.execute([:phoenix, :live_view, :handle_event, :start], %{}, %{})
+          {Attribution.current(), Process.get(:pdt_span)}
+        end)
+
+      assert result == {nil, nil}
+    end
+
+    defp track_and_bump(sid) do
+      Attribution.track(sid)
+      Attribution.next_span()
+    end
   end
 end

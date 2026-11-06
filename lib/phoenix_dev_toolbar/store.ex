@@ -117,8 +117,8 @@ defmodule PhoenixDevToolbar.Store do
   ## Indexes
 
   @doc "Attributes a process to a session (used for `$callers` lookups)."
-  @spec track_pid(pid(), Session.sid()) :: true
-  def track_pid(pid, sid) when is_pid(pid), do: :ets.insert(@pids, {pid, sid, 0})
+  @spec track_pid(pid(), Session.sid(), non_neg_integer()) :: true
+  def track_pid(pid, sid, span \\ 0) when is_pid(pid), do: :ets.insert(@pids, {pid, sid, span})
 
   @spec untrack_pid(pid()) :: true
   def untrack_pid(pid) when is_pid(pid), do: :ets.delete(@pids, pid)
