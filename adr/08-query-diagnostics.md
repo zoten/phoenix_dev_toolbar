@@ -76,7 +76,9 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
   and a single EXPLAIN never run together.
 - The payload is a map with string keys, sent with `push_event/3` (encoded by the host's
   JSON library: the toolbar adds none); the panel's `PdtExport` hook downloads it as a
-  `.json` file or copies it to the clipboard.
+  `.json` file (its blob URL kept until the next download or a minute, for browsers that
+  ask where to save) or copies it to the clipboard. The form's choices are kept by the
+  component, so a re-render does not reset them.
 
 ## Consequences
 
@@ -100,8 +102,10 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
   the client's only: the server may keep waiting on a metadata lock.
 - A database error is shown as the database words it, which may quote a param value
   (the export carries it too).
-- Copying an export can be refused by the browser when building it took long (a full
-  export with EXPLAIN): the click no longer counts as a user action. Download still works.
+- Copy starts the clipboard write in the click, with the text promised for when the
+  export arrives (`ClipboardItem`), so a slow export keeps the click's user activation.
+  A browser without `ClipboardItem` writes on arrival and can refuse a slow export:
+  the tab says so, Download still works.
 - The busy state (one EXPLAIN at a time) is not covered by a test: SQLite answers too
   fast to observe it.
 - The planner may evaluate functions marked IMMUTABLE with constant arguments; MySQL

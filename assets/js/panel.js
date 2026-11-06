@@ -109,41 +109,93 @@ const PdtSummaryMore = {
 
 // On #pdt-ecto-export (ADR 08): the Ecto tab pushes its JSON export, saved as a
 // file or copied. The result line (#pdt-export-result, phx-update="ignore") is
-// ours. Copying after a long EXPLAIN run can be refused (the click is too old):
-// it says so, Download still works.
+// ours.
+// - Download: the blob URL stays alive until the next download (or a minute):
+//   with "ask where to save", the browser reads it after its dialog closes.
+// - Copy: the export arrives after a round trip (and EXPLAINs), too late for
+//   the click's user activation. Where ClipboardItem exists, the write starts in
+//   the click itself with a promised blob, resolved when the export arrives.
+const EXPORT_WAIT_MS = 60000
+const URL_TTL_MS = 60000
+
 const PdtExport = {
   mounted() {
     this.result = this.el.querySelector("#pdt-export-result")
+    this.url = null
+    this.pending = null
+    this.onClick = (event) => {
+      if (event.target.closest("#pdt-export-copy")) this.startCopy()
+    }
+    this.el.addEventListener("click", this.onClick)
     this.handleEvent("pdt:export", ({action, filename, payload}) => {
       const json = JSON.stringify(payload, null, 2)
       if (action === "copy") this.copy(json)
       else this.download(json, filename)
     })
   },
+  destroyed() {
+    this.el.removeEventListener("click", this.onClick)
+    this.settle(null)
+    this.revoke()
+  },
   say(text) {
     if (this.result) this.result.textContent = text
   },
+  revoke() {
+    if (this.url) URL.revokeObjectURL(this.url)
+    this.url = null
+  },
   download(json, filename) {
+    this.revoke()
     const url = URL.createObjectURL(new Blob([json], {type: "application/json"}))
+    this.url = url
+    setTimeout(() => { if (this.url === url) this.revoke() }, URL_TTL_MS)
     const link = document.createElement("a")
     link.href = url
     link.download = filename
     document.body.appendChild(link)
     link.click()
     link.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 0)
-    this.say("Downloaded " + filename)
+    this.say("Download started: " + filename)
+  },
+  // In the click: claims the clipboard now, the text comes later.
+  startCopy() {
+    const clipboard = navigator.clipboard
+    if (!clipboard || !clipboard.write || typeof ClipboardItem === "undefined") return
+    this.settle(null)
+    let resolve, reject
+    const text = new Promise((ok, fail) => { resolve = ok; reject = fail })
+    const timer = setTimeout(() => this.settle(null), EXPORT_WAIT_MS)
+    this.pending = {resolve, reject, timer}
+    this.say("Copying…")
+    clipboard.write([new ClipboardItem({"text/plain": text})]).then(
+      () => this.say("Copied"),
+      (error) => this.copyFailed(error),
+    )
+  },
+  // Resolves the pending copy with `json`, or abandons it (null).
+  settle(json) {
+    const pending = this.pending
+    if (!pending) return false
+    this.pending = null
+    clearTimeout(pending.timer)
+    if (json === null) pending.reject(new Error("no export arrived"))
+    else pending.resolve(new Blob([json], {type: "text/plain"}))
+    return true
   },
   copy(json) {
+    if (this.settle(json)) return
     const clipboard = navigator.clipboard
     if (!clipboard || !clipboard.writeText) {
       this.say("Copy is not available here: use Download")
       return
     }
-    clipboard.writeText(json).then(
-      () => this.say("Copied"),
-      () => this.say("Copy failed: use Download"),
-    )
+    clipboard.writeText(json).then(() => this.say("Copied"), (error) => this.copyFailed(error))
+  },
+  copyFailed(error) {
+    const why = (error && (error.name || error.message)) || "refused"
+    console.warn("[phoenix_dev_toolbar] copy failed:", error)
+    this.say("Copy failed (" + why + "): use Download")
   },
 }
 

@@ -61,6 +61,23 @@ defmodule PhoenixDevToolbar.EctoExportPanelTest do
     assert %{"phase" => "live", "repo" => "DemoWeb.SQLiteRepo"} = select
   end
 
+  test "the chosen format and EXPLAIN survive an export", %{host: host, panel: panel} do
+    run(host, panel, "SELECT id FROM users", [])
+    choice = %{"format" => "full", "explain" => "true"}
+
+    panel |> form("#pdt-ecto-export", choice) |> render_change()
+    export(panel, choice, "#pdt-export-download")
+    assert_push_event(panel, "pdt:export", %{})
+
+    assert has_element?(panel, "#pdt-export-full[checked]")
+    assert has_element?(panel, "#pdt-export-explain[checked]")
+    refute has_element?(panel, "#pdt-export-short[checked]")
+
+    panel |> form("#pdt-ecto-export", %{"format" => "short"}) |> render_change()
+    assert has_element?(panel, "#pdt-export-short[checked]")
+    refute has_element?(panel, "#pdt-export-full[checked]")
+  end
+
   test "full export without EXPLAIN runs none", %{host: host, panel: panel} do
     run(host, panel, "SELECT id FROM users", [])
 

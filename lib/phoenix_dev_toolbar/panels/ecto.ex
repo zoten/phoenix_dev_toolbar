@@ -39,7 +39,8 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
        explaining: nil,
        exporting: nil,
        export_error: nil,
-       queries?: false
+       queries?: false,
+       export_choice: %{format: "short", explain?: false}
      )}
   end
 
@@ -153,8 +154,18 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
 
   def handle_event("explain", _params, socket), do: {:noreply, socket}
 
-  # The form's choices live in the browser until it is submitted.
-  def handle_event("export_form", _params, socket), do: {:noreply, socket}
+  # The form's choices, kept so a re-render (an export, a new query) shows
+  # them instead of the defaults. Kept across pages.
+  def handle_event("export_form", params, socket) do
+    case export_format(params["format"]) do
+      {:ok, format} ->
+        choice = %{format: Atom.to_string(format), explain?: params["explain"] == "true"}
+        {:noreply, assign(socket, :export_choice, choice)}
+
+      :error ->
+        {:noreply, socket}
+    end
+  end
 
   # Fixed strings only: never an atom from the client.
   def handle_event("export", params, socket) do
@@ -314,6 +325,7 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
         :if={@queries?}
         exporting={@exporting}
         error={@export_error}
+        choice={@export_choice}
         target={@myself}
       />
       <ul id="pdt-queries" class="pdt-list" phx-update="stream">
@@ -331,6 +343,7 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   end
 
   attr :exporting, :any, required: true
+  attr :choice, :map, required: true, doc: "%{format: \"short\" | \"full\", explain?: boolean}"
   attr :error, :string, default: nil
   attr :target, :any, required: true
 
@@ -347,13 +360,31 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
     >
       <span class="pdt-export__label">Export JSON</span>
       <label>
-        <input type="radio" name="format" value="short" checked /> short
+        <input
+          id="pdt-export-short"
+          type="radio"
+          name="format"
+          value="short"
+          checked={@choice.format == "short"}
+        /> short
       </label>
       <label title="Every captured detail, N+1 tags and timings">
-        <input type="radio" name="format" value="full" /> full
+        <input
+          id="pdt-export-full"
+          type="radio"
+          name="format"
+          value="full"
+          checked={@choice.format == "full"}
+        /> full
       </label>
       <label title="Full export only: runs EXPLAIN for up to 50 SELECTs (15 s at most)">
-        <input type="checkbox" name="explain" value="true" /> with EXPLAIN
+        <input
+          id="pdt-export-explain"
+          type="checkbox"
+          name="explain"
+          value="true"
+          checked={@choice.explain?}
+        /> with EXPLAIN
       </label>
       <button
         id="pdt-export-download"
