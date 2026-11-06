@@ -107,6 +107,46 @@ const PdtSummaryMore = {
   },
 }
 
+// On #pdt-ecto-export (ADR 08): the Ecto tab pushes its JSON export, saved as a
+// file or copied. The result line (#pdt-export-result, phx-update="ignore") is
+// ours. Copying after a long EXPLAIN run can be refused (the click is too old):
+// it says so, Download still works.
+const PdtExport = {
+  mounted() {
+    this.result = this.el.querySelector("#pdt-export-result")
+    this.handleEvent("pdt:export", ({action, filename, payload}) => {
+      const json = JSON.stringify(payload, null, 2)
+      if (action === "copy") this.copy(json)
+      else this.download(json, filename)
+    })
+  },
+  say(text) {
+    if (this.result) this.result.textContent = text
+  },
+  download(json, filename) {
+    const url = URL.createObjectURL(new Blob([json], {type: "application/json"}))
+    const link = document.createElement("a")
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+    this.say("Downloaded " + filename)
+  },
+  copy(json) {
+    const clipboard = navigator.clipboard
+    if (!clipboard || !clipboard.writeText) {
+      this.say("Copy is not available here: use Download")
+      return
+    }
+    clipboard.writeText(json).then(
+      () => this.say("Copied"),
+      () => this.say("Copy failed: use Download"),
+    )
+  },
+}
+
 // The toggle button collapses or expands, hide shrinks the toolbar to a corner
 // pill, and picking a tab always expands.
 document.addEventListener("click", (event) => {
@@ -256,7 +296,7 @@ let joinedOnce = false
 // The panel's own socket at <path>/live: WebSocket only (no long poll
 // fallback), no CSRF param (it carries no session).
 const liveSocket = new LiveSocket(script.dataset.socketPath, Socket, {
-  hooks: {PdtPanel, PdtSummaryMore},
+  hooks: {PdtPanel, PdtSummaryMore, PdtExport},
 })
 
 if (tripped(recordLoad())) {

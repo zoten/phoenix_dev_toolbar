@@ -38,6 +38,30 @@ defmodule PhoenixDevToolbar.PageHelpers do
     {host, sid}
   end
 
+  @doc """
+  ExUnit setup for the Ecto tab on real SQLite queries: the Store reset, the Ecto
+  plugin on `DemoWeb.SQLiteRepo`, `/demo` visited and its panel connected.
+  Restores the plugins and the Store on exit.
+  """
+  @spec sqlite_panel(map()) :: %{host: struct(), panel: struct()}
+  def sqlite_panel(_context) do
+    PhoenixDevToolbar.Store.reset()
+
+    Collector.attach([
+      {PhoenixDevToolbar.Plugins.Ecto, repos: [DemoWeb.SQLiteRepo]},
+      PhoenixDevToolbar.Plugins.LiveView
+    ])
+
+    ExUnit.Callbacks.on_exit(fn ->
+      attach_plugins()
+      PhoenixDevToolbar.Store.reset()
+    end)
+
+    {host, sid} = visit("/demo")
+    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    %{host: host, panel: panel}
+  end
+
   @doc "Attaches the configured plugins followed by `extra`."
   @spec attach_plugins([module() | PhoenixDevToolbar.Config.entry()]) :: :ok
   def attach_plugins(extra \\ []) do

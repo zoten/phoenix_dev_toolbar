@@ -5,11 +5,15 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   # A SELECT with captured params has an EXPLAIN button: the browser sends only
   # its seq, the query is read back from the Store (this page's sids only) and
   # explained in start_async, one at a time; the plan replaces the row.
+  # The export form pushes the page's queries as JSON (EctoExport) to the
+  # PdtExport hook, which downloads or copies it; built in start_async, since a
+  # full export may run EXPLAINs. One EXPLAIN or export at a time.
 
   use PhoenixDevToolbar.Panel
 
   import PhoenixDevToolbar.Components
 
+  alias PhoenixDevToolbar.EctoExport
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Explain
   alias PhoenixDevToolbar.Notify
@@ -32,7 +36,10 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
        detected: 0,
        flagged: MapSet.new(),
        shown: :queue.new(),
-       explaining: nil
+       explaining: nil,
+       exporting: nil,
+       export_error: nil,
+       queries?: false
      )}
   end
 
@@ -45,13 +52,17 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
     socket =
       socket
       |> cancel_explain()
+      |> cancel_export()
       |> assign(
         n_plus_one: NPlusOne.new(threshold),
         groups: [],
         detected: 0,
         flagged: MapSet.new(),
         shown: :queue.new(),
-        explaining: nil
+        explaining: nil,
+        exporting: nil,
+        export_error: nil,
+        queries?: false
       )
 
     {queries, socket} = detect(events, socket)
@@ -86,6 +97,7 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
       |> assign(:detected, NPlusOne.detected(n_plus_one))
       |> update(:flagged, &flag(&1, queries))
       |> update(:shown, &show(&1, queries))
+      |> update(:queries?, &(&1 or queries != []))
 
     {queries, socket}
   end
@@ -123,6 +135,7 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   @impl Phoenix.LiveComponent
   def handle_event("explain", %{"seq" => seq}, socket) do
     with nil <- socket.assigns.explaining,
+         nil <- socket.assigns.exporting,
          true <- is_binary(seq),
          {seq, ""} <- Integer.parse(seq),
          %{} = event <- find(socket, seq) do
@@ -139,6 +152,27 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   end
 
   def handle_event("explain", _params, socket), do: {:noreply, socket}
+
+  # The form's choices live in the browser until it is submitted.
+  def handle_event("export_form", _params, socket), do: {:noreply, socket}
+
+  # Fixed strings only: never an atom from the client.
+  def handle_event("export", params, socket) do
+    with nil <- socket.assigns.explaining,
+         nil <- socket.assigns.exporting,
+         {:ok, format} <- export_format(params["format"]),
+         {:ok, action} <- export_action(params["action"]) do
+      events = page_events(socket)
+      opts = export_opts(socket, format, params["explain"] == "true")
+
+      {:noreply,
+       socket
+       |> assign(exporting: {format, action}, export_error: nil)
+       |> start_async(:export, fn -> EctoExport.build(events, format, opts) end)}
+    else
+      _busy_or_invalid -> {:noreply, socket}
+    end
+  end
 
   def handle_event("hide_plan", %{"seq" => seq}, socket) when is_binary(seq) do
     with {seq, ""} <- Integer.parse(seq),
@@ -189,8 +223,62 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
     end
   end
 
+  def handle_async(:export, {:ok, payload}, socket) do
+    {format, action} = socket.assigns.exporting
+    stamp = payload["exported_at"] |> String.replace(~r/[^0-9T]/, "") |> String.slice(0, 15)
+
+    {:noreply,
+     socket
+     |> assign(:exporting, nil)
+     |> push_event("pdt:export", %{
+       action: action,
+       filename: "ecto-queries-#{format}-#{stamp}.json",
+       payload: payload
+     })}
+  end
+
+  def handle_async(:export, {:exit, reason}, socket) do
+    {:noreply,
+     assign(socket,
+       exporting: nil,
+       export_error: "Export failed: " <> Truncate.inspect_value(reason)
+     )}
+  end
+
   defp cancel_explain(%{assigns: %{explaining: nil}} = socket), do: socket
   defp cancel_explain(socket), do: cancel_async(socket, :explain)
+
+  defp cancel_export(%{assigns: %{exporting: nil}} = socket), do: socket
+  defp cancel_export(socket), do: cancel_async(socket, :export)
+
+  defp export_format("short"), do: {:ok, :short}
+  defp export_format("full"), do: {:ok, :full}
+  defp export_format(_other), do: :error
+
+  defp export_action("download"), do: {:ok, "download"}
+  defp export_action("copy"), do: {:ok, "copy"}
+  defp export_action(_other), do: :error
+
+  defp export_opts(socket, format, explain?) do
+    config = socket.assigns.config || %{}
+    repos = Map.get(config, :repos, [])
+
+    [
+      root: socket.assigns.page.root,
+      path: socket.assigns.page.path,
+      threshold: Plugins.Ecto.n_plus_one(config)
+    ] ++ explain_opt(format, explain?, repos)
+  end
+
+  defp explain_opt(:full, true, repos), do: [explain: &Explain.run(&1, repos)]
+  defp explain_opt(_format, _explain?, _repos), do: []
+
+  # This page's Ecto events, from the Store: what the export reads.
+  defp page_events(socket) do
+    Enum.flat_map(socket.assigns.page.sids, fn sid ->
+      for %Event{plugin: :ecto} = event <- Store.events(sid), do: event
+    end)
+  end
 
   # Only this page's sids: a seq from another page is not found.
   defp find(socket, seq) do
@@ -222,6 +310,12 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
         root={@page.root}
         target={@myself}
       />
+      <.export_form
+        :if={@queries?}
+        exporting={@exporting}
+        error={@export_error}
+        target={@myself}
+      />
       <ul id="pdt-queries" class="pdt-list" phx-update="stream">
         <li id="pdt-queries-empty" class="pdt-list__empty">No queries yet.</li>
         <.query_row
@@ -233,6 +327,65 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
         />
       </ul>
     </div>
+    """
+  end
+
+  attr :exporting, :any, required: true
+  attr :error, :string, default: nil
+  attr :target, :any, required: true
+
+  defp export_form(assigns) do
+    ~H"""
+    <form
+      id="pdt-ecto-export"
+      class="pdt-export"
+      phx-change="export_form"
+      phx-submit="export"
+      phx-target={@target}
+      phx-hook="PdtExport"
+      aria-label="Export queries as JSON"
+    >
+      <span class="pdt-export__label">Export JSON</span>
+      <label>
+        <input type="radio" name="format" value="short" checked /> short
+      </label>
+      <label title="Every captured detail, N+1 tags and timings">
+        <input type="radio" name="format" value="full" /> full
+      </label>
+      <label title="Full export only: runs EXPLAIN for up to 50 SELECTs (15 s at most)">
+        <input type="checkbox" name="explain" value="true" /> with EXPLAIN
+      </label>
+      <button
+        id="pdt-export-download"
+        type="submit"
+        name="action"
+        value="download"
+        class="pdt-button pdt-button--small"
+        disabled={@exporting != nil}
+        aria-busy={to_string(@exporting != nil)}
+      >
+        Download
+      </button>
+      <button
+        id="pdt-export-copy"
+        type="submit"
+        name="action"
+        value="copy"
+        class="pdt-button pdt-button--small"
+        disabled={@exporting != nil}
+        aria-busy={to_string(@exporting != nil)}
+      >
+        Copy
+      </button>
+      <span id="pdt-export-status" class="pdt-hint" aria-live="polite">
+        {cond do
+          @exporting != nil -> "exporting…"
+          @error -> @error
+          true -> ""
+        end}
+      </span>
+      <span id="pdt-export-result" class="pdt-hint" phx-update="ignore" aria-live="polite"></span>
+    </form>
     """
   end
 end

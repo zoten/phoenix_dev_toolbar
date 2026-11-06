@@ -7,25 +7,9 @@ defmodule PhoenixDevToolbar.ExplainPanelTest do
   import Phoenix.LiveViewTest
   import PhoenixDevToolbar.PageHelpers
 
-  alias PhoenixDevToolbar.Collector
-  alias PhoenixDevToolbar.Plugins
-  alias PhoenixDevToolbar.Store
-
   @endpoint DemoWeb.Endpoint
 
-  setup do
-    Store.reset()
-    Collector.attach([{Plugins.Ecto, repos: [DemoWeb.SQLiteRepo]}, Plugins.LiveView])
-
-    on_exit(fn ->
-      attach_plugins()
-      Store.reset()
-    end)
-
-    {host, sid} = visit("/demo")
-    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
-    %{host: host, panel: panel}
-  end
+  setup :sqlite_panel
 
   # Runs `sql` in the host LiveView; returns the seq of its row in the panel.
   defp run(host, panel, sql, params \\ []) do

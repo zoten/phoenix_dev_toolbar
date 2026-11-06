@@ -223,6 +223,9 @@ body.pdt {
 .pdt-tag--warn { color: var(--pdt-warn); border-color: color-mix(in srgb, var(--pdt-warn) 45%, transparent); }
 
 /* The N+1 groups above the Ecto queries (ADR 08). */
+.pdt-export { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 12px; border-bottom: 1px solid var(--pdt-border); font-size: 11px; }
+.pdt-export__label { font-weight: 600; color: var(--pdt-muted); }
+.pdt-export label { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
 .pdt-n-plus-one { border-bottom: 1px solid var(--pdt-border); background: var(--pdt-bg-alt); }
 .pdt-n-plus-one__head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 0; }
 .pdt-n-plus-one__title { margin: 0; font-size: 12px; color: var(--pdt-warn); }

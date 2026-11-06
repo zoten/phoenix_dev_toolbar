@@ -98,6 +98,32 @@ defmodule PhoenixDevToolbar.Explain do
   def reason(:unsupported_adapter), do: "this database adapter is not supported"
   def reason(message) when is_binary(message), do: message
 
+  @doc "Whether the Ecto tab offers EXPLAIN: a SELECT that succeeded, params kept, a supported adapter."
+  @spec explainable?(Event.t()) :: boolean()
+  def explainable?(%Event{data: %{explain: {:ok, _params}, result: {:ok, _rows}, repo: repo}}),
+    do: supported?(repo)
+
+  def explainable?(_event), do: false
+
+  @doc "Why `explainable?/1` is false for a query, for the Ecto tab and its export."
+  @spec unexplainable_reason(Event.t()) :: String.t()
+  def unexplainable_reason(%Event{data: %{explain: {:no, :not_select}}}),
+    do: "only SELECT queries are explained"
+
+  def unexplainable_reason(%Event{data: %{explain: {:no, :sql_truncated}}}),
+    do: "the SQL is too long to keep whole"
+
+  def unexplainable_reason(%Event{data: %{explain: {:no, :params}}}),
+    do: "its params cannot be replayed (too many, too large, or maps and tuples)"
+
+  def unexplainable_reason(%Event{data: %{result: {:error, _message}}}),
+    do: "the query itself failed"
+
+  def unexplainable_reason(%Event{data: %{explain: {:ok, _params}}}),
+    do: "this database adapter is not supported"
+
+  def unexplainable_reason(_event), do: "not captured"
+
   @doc "Whether the adapter of `repo` has an EXPLAIN prefix."
   @spec supported?(module()) :: boolean()
   def supported?(repo), do: match?({:ok, _prefix}, prefix(repo))

@@ -6,6 +6,7 @@ defmodule PhoenixDevToolbar.Components do
   use Phoenix.Component
 
   alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.Explain
 
   attr :badges, :list,
     required: true,
@@ -79,7 +80,7 @@ defmodule PhoenixDevToolbar.Components do
         </span>
         <span :if={origin(@event)} class="pdt-origin">{origin(@event)}</span>
         <button
-          :if={@target && explainable?(@event)}
+          :if={@target && Explain.explainable?(@event)}
           id={"pdt-explain-#{@event.seq}"}
           type="button"
           class="pdt-button pdt-button--small"
@@ -110,8 +111,10 @@ defmodule PhoenixDevToolbar.Components do
           <dd class="pdt-timings">
             <span :for={{key, us} <- timings(@event.data.times)}>{key} {duration(us)}</span>
           </dd>
-          <dt :if={not explainable?(@event)}>explain</dt>
-          <dd :if={not explainable?(@event)} class="pdt-hint">{explain_reason(@event)}</dd>
+          <dt :if={not Explain.explainable?(@event)}>explain</dt>
+          <dd :if={not Explain.explainable?(@event)} class="pdt-hint">
+            {Explain.unexplainable_reason(@event)}
+          </dd>
           <dt>origin</dt>
           <dd :if={@event.data.stacktrace != []}>
             <pre>{Enum.join(@event.data.stacktrace, "\n")}</pre>
@@ -162,28 +165,6 @@ defmodule PhoenixDevToolbar.Components do
 
   defp on_source(%Event{data: %{source: source}}) when is_binary(source), do: " on " <> source
   defp on_source(_event), do: ""
-
-  # A SELECT that succeeded, with its params kept, on a supported adapter.
-  defp explainable?(%Event{data: %{explain: {:ok, _params}, result: {:ok, _rows}, repo: repo}}),
-    do: PhoenixDevToolbar.Explain.supported?(repo)
-
-  defp explainable?(_event), do: false
-
-  defp explain_reason(%Event{data: %{explain: {:no, :not_select}}}),
-    do: "only SELECT queries are explained"
-
-  defp explain_reason(%Event{data: %{explain: {:no, :sql_truncated}}}),
-    do: "the SQL is too long to keep whole"
-
-  defp explain_reason(%Event{data: %{explain: {:no, :params}}}),
-    do: "its params cannot be replayed (too many, too large, or maps and tuples)"
-
-  defp explain_reason(%Event{data: %{result: {:error, _message}}}), do: "the query itself failed"
-
-  defp explain_reason(%Event{data: %{explain: {:ok, _params}}}),
-    do: "this database adapter is not supported"
-
-  defp explain_reason(_event), do: "not captured"
 
   attr :groups, :list, required: true, doc: "PhoenixDevToolbar.NPlusOne.groups/1"
   attr :detected, :integer, required: true, doc: "how many distinct groups were detected"

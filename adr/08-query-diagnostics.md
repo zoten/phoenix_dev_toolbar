@@ -64,6 +64,20 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
   named after its query. The plan (Postgres' text lines, otherwise
   `Ecto.Adapters.SQL.format_table/1`), truncated to 8 KB, or the error, replaces the row.
 
+**Export** (`PhoenixDevToolbar.EctoExport`, pure; the form above the Ecto tab's list).
+- Two formats of the page's queries (its sids, read from the Store, oldest first):
+  `short` (seq, SQL, params, location: the origin frame) and `full` (adds time, duration,
+  phase HTTP or live, repo, source, result, timings, task, N+1 tag folded like the tab,
+  stacktrace, and an `explain` status). Params are the stored, redacted string: the raw
+  params kept for EXPLAIN are never exported.
+- `full` with EXPLAIN runs `Explain.run/2` (same checks and rollback as the button) one
+  query at a time, at most 50 queries within 15 s; the rest are `skipped`, non explainable
+  ones carry the reason. It runs in `start_async/3`, cancelled by a page change; an export
+  and a single EXPLAIN never run together.
+- The payload is a map with string keys, sent with `push_event/3` (encoded by the host's
+  JSON library: the toolbar adds none); the panel's `PdtExport` hook downloads it as a
+  `.json` file or copies it to the clipboard.
+
 ## Consequences
 
 - One click explains the exact query the page ran, with its real params, without
@@ -84,7 +98,10 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
 - EXPLAIN takes a connection from the host's pool for up to 5 s, and planning takes the
   same locks as the query: it can wait behind a migration. On MySQL the 5 s timeout is
   the client's only: the server may keep waiting on a metadata lock.
-- A database error is shown as the database words it, which may quote a param value.
+- A database error is shown as the database words it, which may quote a param value
+  (the export carries it too).
+- Copying an export can be refused by the browser when building it took long (a full
+  export with EXPLAIN): the click no longer counts as a user action. Download still works.
 - The busy state (one EXPLAIN at a time) is not covered by a test: SQLite answers too
   fast to observe it.
 - The planner may evaluate functions marked IMMUTABLE with constant arguments; MySQL
