@@ -56,3 +56,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Panel reload breaker: stops after 3 refused loads in 10 s, with a notice and Retry (ADR 04)
 - Panel socket at `<path>/live`: no host CSRF token or session needed; fixes the reload loop (ADR 04)
 - Breaking: the plug's `:live_socket_path` option is gone (ADR 04)
+- Panel socket review fixes: decoded join check, stale on unknown panels, host socket options (ADR 04)

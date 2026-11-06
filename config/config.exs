@@ -27,4 +27,9 @@ if config_env() == :test do
     live_view: [signing_salt: "pdt-test-lv-salt"],
     pubsub_server: DemoWeb.PubSub,
     server: false
+
+  config :phoenix_dev_toolbar, PhoenixDevToolbar.OriginEndpoint,
+    secret_key_base: String.duplicate("pdt-test-secret-key-base-", 4),
+    pubsub_server: DemoWeb.PubSub,
+    server: false
 end

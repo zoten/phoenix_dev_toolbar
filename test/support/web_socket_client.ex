@@ -42,12 +42,16 @@ defmodule PhoenixDevToolbar.WebSocketClient do
   end
 
   @spec send_json(port(), term()) :: :ok
-  def send_json(socket, term) do
-    payload = Jason.encode!(term)
+  def send_json(socket, term), do: send_frame(socket, Jason.encode!(term))
+
+  # A raw frame: text (0x1) by default, or binary (0x2).
+  @spec send_frame(port(), binary(), :text | :binary) :: :ok
+  def send_frame(socket, payload, kind \\ :text) do
+    opcode = %{text: 0x81, binary: 0x82} |> Map.fetch!(kind)
     mask = :crypto.strong_rand_bytes(4)
 
     :ok =
-      :gen_tcp.send(socket, [0x81, length_header(byte_size(payload)), mask, mask(payload, mask)])
+      :gen_tcp.send(socket, [opcode, length_header(byte_size(payload)), mask, mask(payload, mask)])
   end
 
   # Whether the server closed the connection (a close frame or the TCP close).

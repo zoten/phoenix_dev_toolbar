@@ -221,6 +221,19 @@ defmodule PhoenixDevToolbar.PlugTest do
   end
 
   describe "init/1" do
+    test "warns once that :live_socket_path is gone" do
+      :persistent_term.erase({ToolbarPlug, :live_socket_path})
+      on_exit(fn -> :persistent_term.erase({ToolbarPlug, :live_socket_path}) end)
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          ToolbarPlug.init(live_socket_path: "/live")
+          ToolbarPlug.init(live_socket_path: "/live")
+        end)
+
+      assert [_one] = Regex.scan(~r/:live_socket_path option is gone/, log)
+    end
+
     test "rejects paths that are not absolute and below the root" do
       for path <- ["/", "", "pdt"] do
         assert_raise ArgumentError, ~r/:path must be an absolute path/, fn ->

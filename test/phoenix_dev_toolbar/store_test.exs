@@ -315,4 +315,16 @@ defmodule PhoenixDevToolbar.StoreTest do
       assert {:ok, _} = Store.session(sid)
     end
   end
+
+  describe "panel allowlist" do
+    # Enforced on every insert, not only on the sweep: an unauthenticated GET of
+    # the panel page adds a row.
+    test "never holds more than 1000 panels, and the newest is always in" do
+      ids = for n <- 1..1001, do: "phx-panel-#{n}"
+      Enum.each(ids, &Store.allow_panel/1)
+
+      assert Enum.count(ids, &Store.panel_allowed?/1) == 1000
+      assert Store.panel_allowed?("phx-panel-1001")
+    end
+  end
 end

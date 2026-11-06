@@ -72,20 +72,26 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   session (LiveView treats an unfetched session as empty).
 - **Panel socket**: `PhoenixDevToolbar.PanelSocket`. The plug upgrades
   `GET <path>/live/websocket` itself, through Phoenix's documented custom transport API:
-  `Phoenix.Socket.Transport.check_origin/4` (the endpoint's `check_origin`) and
-  `connect_info/3`, then `Phoenix.LiveView.Socket.connect/1` and
-  `WebSockAdapter.upgrade/4`, with Phoenix's default WebSocket options (JSON serializers
-  1.0 and 2.0, 60 s timeout). It uses the host endpoint (PubSub, secret key base,
+  `Phoenix.Socket.Transport.check_origin/4` and `connect_info/3`, then
+  `Phoenix.LiveView.Socket.connect/1` and `WebSockAdapter.upgrade/4`, with Phoenix's
+  default WebSocket options (JSON serializers 1.0 and 2.0, 60 s timeout). The host
+  socket's own `websocket:` options that apply here (`check_origin`, `timeout`,
+  `max_frame_size`) override those defaults, so the origin policy is the host socket's,
+  falling back to the endpoint's. It uses the host endpoint (PubSub, secret key base,
   LiveView's session verification) and the endpoint's mounted LiveView socket handler
   (`Phoenix.LiveView.Socket`, or a host module that uses it), but its `connect_info`
-  has no session. An endpoint without a LiveView socket gets a 404 and one warning.
-  - Panels only: the handler is wrapped as a `WebSock` that lets a `phx_join` through
-    only for `lv:<id>` where a panel's dead render registered `id`
-    (`Store.allow_panel/1`, a day and 1000 panels at most; LiveView checks that the
-    topic is the id signed in the session token). Any other join (a host LiveView,
-    uploads) closes the connection: the session free socket never becomes a way into
-    the host's own LiveViews, whose tokens would otherwise join without the host's
-    CSRF and session checks.
+  has no session. An endpoint without a LiveView socket gets a 404 and one warning; a
+  host still passing the removed `:live_socket_path` gets one warning.
+  - Panels only: the handler is wrapped as a `WebSock` that decodes every text frame
+    (an escaped event name is still a join) and refuses binary frames. A `phx_join` goes
+    through only for `lv:<id>` where a panel's dead render registered `id`
+    (`Store.allow_panel/1`, a day at most, 1000 panels at most enforced on insert; LiveView
+    checks that the topic is the id signed in the session token). Any other `lv:` join
+    (a host LiveView, or a panel the Store forgot after a restart) gets LiveView's own
+    `stale` reply: the panel reloads, its new dead render registers it, and the breaker
+    caps any loop. Any other topic (uploads, channels) closes the connection. The
+    session free socket never becomes a way into the host's own LiveViews, whose tokens
+    would otherwise join without the host's CSRF and session checks.
   - Why: the host's own socket, configured with `connect_info: [session: ...]` as every
     generated app is, gets a session only when the `_csrf_token` param matches the CSRF
     state in the session cookie. Without one, LiveView refuses every join with `stale`,
@@ -95,7 +101,7 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   - Security: the socket carries no session, so it gives nothing tied to the user's
     login and reads nothing from it. Joining the panel needs its signed LiveView session
     token (the sid inside, see Access), which only the panel's HTML holds and another
-    origin cannot read; the endpoint's `check_origin` applies to the upgrade.
+    origin cannot read; the host socket's `check_origin` applies to the upgrade.
 - **Reload breaker** (`assets/js/reloads.mjs`, the safety net for any join failure,
   present or future): each panel load is recorded per sid in `sessionStorage`. The 4th
   load within 10 s does not connect and shows, in the header (so in the collapsed bar
@@ -160,6 +166,6 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   close abruptly as the endpoint stops).
 - The upgrade from a plug is tested with Bandit only; Cowboy relies on the same halted
   conn contract.
-- A panel left open for more than a day cannot rejoin after a disconnect (its id
-  expired): a reload fixes it.
+- A panel left open for more than a day, or pushed out by 1000 newer panel renders,
+  reloads on its next rejoin (its id is gone, so it gets `stale`).
 - Pages that are not HTML responses from Plug (static files) get no toolbar.

@@ -218,14 +218,25 @@ defmodule PhoenixDevToolbar.Store do
 
   @doc """
   Lets the panel socket accept joins for the panel LiveView `id` (its dead
-  render registers it). A day at most, 1000 panels at most.
+  render registers it). A day at most, 1000 panels at most: past the cap an
+  arbitrary one gives way (O(1)), and that panel reloads if it rejoins.
   """
   @spec allow_panel(String.t()) :: :ok
   def allow_panel(id) when is_binary(id) do
+    evict_panel(:ets.info(@panels, :size) >= @max_panels)
     :ets.insert(@panels, {id, System.monotonic_time(:second)})
     :ok
   rescue
     ArgumentError -> :ok
+  end
+
+  defp evict_panel(false), do: :ok
+
+  defp evict_panel(true) do
+    case :ets.first(@panels) do
+      :"$end_of_table" -> :ok
+      id -> :ets.delete(@panels, id)
+    end
   end
 
   @doc "Whether the panel socket accepts a join for `id` (false while the Store restarts)."
@@ -520,18 +531,6 @@ defmodule PhoenixDevToolbar.Store do
   defp expire_panels do
     cutoff = System.monotonic_time(:second) - @panel_ttl_s
     :ets.select_delete(@panels, [{{:_, :"$1"}, [{:<, :"$1", cutoff}], [true]}])
-
-    case :ets.info(@panels, :size) - @max_panels do
-      over when over > 0 ->
-        @panels
-        |> :ets.tab2list()
-        |> Enum.sort_by(&elem(&1, 1))
-        |> Enum.take(over)
-        |> Enum.each(fn {id, _at} -> :ets.delete(@panels, id) end)
-
-      _within ->
-        :ok
-    end
   end
 
   # Index rows written after their session was deleted, and pid rows of

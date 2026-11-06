@@ -50,8 +50,24 @@ defmodule PhoenixDevToolbar.Plug do
   # Other HTML documents that must never get a toolbar of their own.
   @skip_prefixes [["phoenix", "live_reload"]]
 
+  # `:live_socket_path` is gone (ADR 04: the panel has its own socket). Once per
+  # VM: init/1 runs on every request with `plug_init_mode: :runtime` (dev).
+  defp warn_removed(opts) do
+    key = {PhoenixDevToolbar.Plug, :live_socket_path}
+
+    if Keyword.has_key?(opts, :live_socket_path) and :persistent_term.get(key, false) == false do
+      :persistent_term.put(key, true)
+
+      Logger.warning(
+        "[phoenix_dev_toolbar] the :live_socket_path option is gone and is ignored: " <>
+          "the panel connects through its own socket"
+      )
+    end
+  end
+
   @impl true
   def init(opts) do
+    warn_removed(opts)
     path = opts |> Keyword.get(:path, @default_path) |> String.trim_trailing("/")
     segments = String.split(path, "/", trim: true)
 
