@@ -315,6 +315,57 @@ defmodule PhoenixDevToolbar.Components do
   end
 
   @doc """
+  Formats a byte count: `"512 B"`, `"1.5 KB"`, `"2.3 MB"`, `"1.1 GB"`.
+
+      iex> PhoenixDevToolbar.Components.bytes(1536)
+      "1.5 KB"
+
+  """
+  @spec bytes(non_neg_integer()) :: String.t()
+  def bytes(n) when n >= 1_073_741_824, do: decimal(n / 1_073_741_824) <> " GB"
+  def bytes(n) when n >= 1_048_576, do: decimal(n / 1_048_576) <> " MB"
+  def bytes(n) when n >= 1024, do: decimal(n / 1024) <> " KB"
+  def bytes(n), do: "#{n} B"
+
+  defp decimal(value), do: :erlang.float_to_binary(value, decimals: 1)
+
+  attr :values, :list, required: true, doc: "numbers, oldest first"
+  attr :label, :string, required: true, doc: "what the line shows, for screen readers"
+
+  @doc "A small inline SVG line of `values`, scaled to their own max."
+  def sparkline(assigns) do
+    assigns = assign(assigns, :points, sparkline_points(assigns.values))
+
+    ~H"""
+    <svg
+      class="pdt-sparkline"
+      viewBox="0 0 120 24"
+      preserveAspectRatio="none"
+      role="img"
+      aria-label={@label}
+    >
+      <polyline :if={@points != ""} points={@points} fill="none" />
+    </svg>
+    """
+  end
+
+  defp sparkline_points([]), do: ""
+  defp sparkline_points([_one]), do: ""
+
+  defp sparkline_points(values) do
+    max = max(Enum.max(values), 1)
+    step = 120 / (length(values) - 1)
+
+    values
+    |> Enum.with_index()
+    |> Enum.map_join(" ", fn {value, index} ->
+      x = Float.round(index * step, 1)
+      y = Float.round(22 - value / max * 20, 1)
+      "#{x},#{y}"
+    end)
+  end
+
+  @doc """
   Formats a duration in microseconds.
 
       iex> PhoenixDevToolbar.Components.duration(nil)

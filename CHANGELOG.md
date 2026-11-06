@@ -51,3 +51,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - EXPLAIN capture: raw params of SELECTs kept in the event, bounded, never rendered (ADR 03, ADR 08)
 - EXPLAIN button in the Ecto tab: rolled back, single SELECT, page scoped; SQLite test repo (ADR 08)
 - N+1 groups merged by SQL and origin, Clear button, advice; EXPLAIN focus, names, Hide (ADR 08)
+- Process tab: vital signs, sparklines, links and monitors, nested LiveViews; in `:defaults` (ADR 09)

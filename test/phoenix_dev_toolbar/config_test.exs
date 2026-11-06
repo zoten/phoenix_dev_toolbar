@@ -13,7 +13,12 @@ defmodule PhoenixDevToolbar.ConfigTest do
   alias PhoenixDevToolbar.TestPlugins.SameId
   alias PhoenixDevToolbar.TestPlugins.ThrowingId
 
-  @defaults [{Plugins.Ecto, []}, {Plugins.Request, []}, {Plugins.LiveView, []}]
+  @defaults [
+    {Plugins.Ecto, []},
+    {Plugins.Request, []},
+    {Plugins.LiveView, []},
+    {Plugins.Process, []}
+  ]
 
   test ":defaults expands to the built-ins, in place" do
     assert Config.expand([:defaults]) == @defaults
@@ -24,13 +29,14 @@ defmodule PhoenixDevToolbar.ConfigTest do
     assert Config.expand([:defaults, {Plugins.Ecto, repos: [Demo.Repo]}]) == [
              {Plugins.Ecto, repos: [Demo.Repo]},
              {Plugins.Request, []},
-             {Plugins.LiveView, []}
+             {Plugins.LiveView, []},
+             {Plugins.Process, []}
            ]
   end
 
   test "{:exclude, module} removes a plugin wherever it is listed" do
     assert Config.expand([:defaults, {:exclude, Plugins.LiveView}]) ==
-             [{Plugins.Ecto, []}, {Plugins.Request, []}]
+             [{Plugins.Ecto, []}, {Plugins.Request, []}, {Plugins.Process, []}]
   end
 
   test "invalid entries are logged and skipped, never raised" do

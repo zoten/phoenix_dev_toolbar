@@ -80,6 +80,11 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
     assert name =~ "in PhoenixDevToolbar.ProcessInfoTest"
   end
 
+  test "a supervisor is named after its module" do
+    sup = start_supervised!({Task.Supervisor, name: __MODULE__.Sup})
+    assert ProcessInfo.about(sup).initial_call == "Task.Supervisor (supervisor)"
+  end
+
   test "a linked port is listed as a port" do
     test = self()
 

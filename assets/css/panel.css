@@ -384,3 +384,22 @@ body.pdt {
 .pdt-tree__view { font-weight: 600; }
 .pdt-tree .pdt-hint { margin-left: 6px; font-size: 11px; }
 .pdt-tag--client { color: var(--pdt-accent); border-color: color-mix(in srgb, var(--pdt-accent) 40%, transparent); }
+
+/* Process tab (ADR 09) */
+
+.pdt-process__vitals { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; padding: 8px 12px; }
+.pdt-vital { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 6px 8px; border: 1px solid var(--pdt-border); border-radius: 4px; }
+.pdt-vital__label { color: var(--pdt-muted); }
+.pdt-vital__value { font: 600 12px var(--pdt-mono); text-align: right; }
+.pdt-vital--warn .pdt-vital__value { color: var(--pdt-warn); }
+.pdt-sparkline { grid-column: 1 / -1; width: 100%; height: 24px; }
+.pdt-sparkline polyline { stroke: var(--pdt-accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.pdt-vital--warn .pdt-sparkline polyline { stroke: var(--pdt-warn); }
+.pdt-process__details { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0; padding: 4px 12px 8px; }
+.pdt-process__details dt { color: var(--pdt-muted); }
+.pdt-process__details dd { margin: 0; overflow-wrap: anywhere; }
+.pdt-process__relations { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 12px; padding: 0 12px 8px; border-top: 1px solid var(--pdt-border); }
+.pdt-process__title { margin: 8px 0 4px; font-size: 12px; }
+.pdt-process__relation { display: flex; justify-content: flex-start; gap: 8px; align-items: center; padding: 3px 0; }
+.pdt-process__paused { padding: 0 12px; }
+#pdt-process-select { display: flex; gap: 6px; align-items: center; }

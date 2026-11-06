@@ -189,6 +189,8 @@ defmodule PhoenixDevToolbar.ProcessInfo do
   # :erlang.apply/2: what it runs now says more.
   defp initial_call(pid, initial_call, current_function) do
     case dictionary(pid, :"$initial_call") do
+      # A supervisor's is {:supervisor, Module, 1}: Module is the useful part.
+      {:supervisor, module, 1} -> inspect(module) <> " (supervisor)"
       {_m, _f, _a} = mfa -> mfa(mfa)
       _missing when initial_call == {:erlang, :apply, 2} -> mfa(current_function)
       _missing -> mfa(initial_call)
