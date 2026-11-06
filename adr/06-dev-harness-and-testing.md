@@ -59,7 +59,9 @@ correctness and boundedness need tests, not just eyeballing.
 - **Gate**: `mix precommit` (compile with warnings as errors, format, tests, Credo strict,
   Dialyzer, ExDoc warnings as errors) locally. Credo runs its defaults plus the opt-in
   checks listed in `.credo.exs` (`extra:`; `enabled:` would run only those), Dialyzer
-  adds `:unmatched_returns`, `:extra_return` and `:missing_return`. CI runs two rows: the minimum supported
+  adds `:unmatched_returns`, `:error_handling`, `:extra_return` and `:missing_return`.
+  `.dialyzer_ignore.exs` lists only the test fixtures that raise on purpose, by file and
+  warning type, and an unused entry fails the run. CI runs two rows: the minimum supported
   stack (Elixir 1.17 / OTP 26 / LiveView `~> 1.1.0`, through the `PDT_LIVE_VIEW`
   override read by `mix.exs`) runs compile and tests with warnings as errors; the latest
   (Elixir 1.20 / OTP 29 / the locked LiveView) also runs format, unused deps, Credo,
