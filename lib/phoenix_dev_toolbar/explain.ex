@@ -27,6 +27,7 @@ defmodule PhoenixDevToolbar.Explain do
           :not_query
           | :repo_not_configured
           | :not_explainable
+          | :query_failed
           | :not_select
           | :multiple_statements
           | :unsupported_adapter
@@ -74,6 +75,7 @@ defmodule PhoenixDevToolbar.Explain do
   @spec run(Event.t(), [module()]) :: {:ok, String.t()} | {:error, error() | String.t()}
   def run(%Event{plugin: :ecto, kind: :query, data: data}, repos) do
     with {:ok, repo} <- configured(data[:repo], repos),
+         :ok <- succeeded(data[:result]),
          {:ok, params} <- explainable(data[:explain]),
          :ok <- single_select(data[:sql]),
          {:ok, prefix} <- prefix(repo) do
@@ -88,6 +90,7 @@ defmodule PhoenixDevToolbar.Explain do
   def reason(:not_query), do: "not a query"
   def reason(:repo_not_configured), do: "its repo is not configured"
   def reason(:not_explainable), do: "its params could not be kept"
+  def reason(:query_failed), do: "the query itself failed"
   def reason(:not_select), do: "only SELECT queries are explained"
   def reason(:multiple_statements), do: "only single statements are explained"
   def reason(:unsupported_adapter), do: "this database adapter is not supported"
@@ -106,6 +109,12 @@ defmodule PhoenixDevToolbar.Explain do
 
   defp configured(_repo, _repos), do: {:error, :repo_not_configured}
 
+  # The database parsed the stored SQL as the query it ran: with the prefix it
+  # can only be EXPLAIN of that query. A failed one could be anything (a
+  # comment trick that turns the prefix into EXPLAIN ANALYZE).
+  defp succeeded({:ok, _rows}), do: :ok
+  defp succeeded(_result), do: {:error, :query_failed}
+
   defp explainable({:ok, params}) when is_list(params), do: {:ok, params}
   defp explainable(_capture), do: {:error, :not_explainable}
 
@@ -113,6 +122,8 @@ defmodule PhoenixDevToolbar.Explain do
     cond do
       not select?(sql) -> {:error, :not_select}
       separator?(sql) -> {:error, :multiple_statements}
+      # MySQL runs the text of a versioned comment (/*!80018 ... */).
+      String.contains?(sql, "/*!") -> {:error, :not_select}
       true -> :ok
     end
   end
@@ -177,6 +188,7 @@ defmodule PhoenixDevToolbar.Explain do
   end
 
   # Postgres answers one "QUERY PLAN" line per row: shown as text.
+  defp format(%{rows: rows}) when rows in [nil, []], do: "(no plan rows)"
   defp format(%{columns: ["QUERY PLAN"], rows: rows}), do: Enum.map_join(rows, "\n", &Enum.join/1)
   defp format(result), do: Ecto.Adapters.SQL.format_table(result)
 

@@ -126,7 +126,13 @@ defmodule PhoenixDevToolbar.Components do
     assigns = assign(assigns, :text, text)
 
     ~H"""
-    <pre id={"pdt-plan-#{@seq}"} class="pdt-plan" aria-label="Query plan">{@text}</pre>
+    <pre
+      id={"pdt-plan-#{@seq}"}
+      class="pdt-plan"
+      role="region"
+      aria-label="Query plan"
+      aria-live="polite"
+    >{@text}</pre>
     """
   end
 
@@ -134,12 +140,12 @@ defmodule PhoenixDevToolbar.Components do
     assigns = assign(assigns, :reason, PhoenixDevToolbar.Explain.reason(reason))
 
     ~H"""
-    <p id={"pdt-plan-#{@seq}"} class="pdt-error">EXPLAIN failed: {@reason}</p>
+    <p id={"pdt-plan-#{@seq}"} class="pdt-error" role="alert">EXPLAIN failed: {@reason}</p>
     """
   end
 
-  # A SELECT with its params kept, on a supported adapter.
-  defp explainable?(%Event{data: %{explain: {:ok, _params}, repo: repo}}),
+  # A SELECT that succeeded, with its params kept, on a supported adapter.
+  defp explainable?(%Event{data: %{explain: {:ok, _params}, result: {:ok, _rows}, repo: repo}}),
     do: PhoenixDevToolbar.Explain.supported?(repo)
 
   defp explainable?(_event), do: false
@@ -152,6 +158,8 @@ defmodule PhoenixDevToolbar.Components do
 
   defp explain_reason(%Event{data: %{explain: {:no, :params}}}),
     do: "its params cannot be replayed (too many, too large, or maps and tuples)"
+
+  defp explain_reason(%Event{data: %{result: {:error, _message}}}), do: "the query itself failed"
 
   defp explain_reason(%Event{data: %{explain: {:ok, _params}}}),
     do: "this database adapter is not supported"

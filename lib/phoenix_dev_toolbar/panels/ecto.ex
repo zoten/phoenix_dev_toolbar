@@ -14,6 +14,7 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   alias PhoenixDevToolbar.NPlusOne
   alias PhoenixDevToolbar.Plugins
   alias PhoenixDevToolbar.Store
+  alias PhoenixDevToolbar.Truncate
 
   # Rows kept in the DOM; the Store keeps 500 events per plugin and session.
   @dom_limit 500
@@ -30,8 +31,12 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   def handle_reset(events, socket) do
     threshold = Plugins.Ecto.n_plus_one(socket.assigns[:config])
 
+    # A new page: an EXPLAIN still running is stopped, so it never holds a
+    # pool connection past its page (the task's exit rolls it back).
     socket =
-      assign(socket,
+      socket
+      |> cancel_explain()
+      |> assign(
         n_plus_one: NPlusOne.new(threshold),
         groups: [],
         detected: 0,
@@ -92,7 +97,8 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   @impl Phoenix.LiveComponent
   def handle_event("explain", %{"seq" => seq}, socket) do
     with nil <- socket.assigns.explaining,
-         {seq, ""} <- Integer.parse(to_string(seq)),
+         true <- is_binary(seq),
+         {seq, ""} <- Integer.parse(seq),
          %{} = event <- find(socket, seq) do
       repos = Map.get(socket.assigns.config || %{}, :repos, [])
 
@@ -105,6 +111,8 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
       _busy_or_unknown -> {:noreply, socket}
     end
   end
+
+  def handle_event("explain", _params, socket), do: {:noreply, socket}
 
   @impl Phoenix.LiveComponent
   def handle_async(:explain, {:ok, {seq, result}}, socket) do
@@ -122,9 +130,12 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
 
     case seq && find(socket, seq) do
       nil -> {:noreply, socket}
-      event -> {:noreply, show_plan(socket, event, {:error, inspect(reason, limit: 5)})}
+      event -> {:noreply, show_plan(socket, event, {:error, Truncate.inspect_value(reason)})}
     end
   end
+
+  defp cancel_explain(%{assigns: %{explaining: nil}} = socket), do: socket
+  defp cancel_explain(socket), do: cancel_async(socket, :explain)
 
   # Only this page's sids: a seq from another page is not found.
   defp find(socket, seq) do

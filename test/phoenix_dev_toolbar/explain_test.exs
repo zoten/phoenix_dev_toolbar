@@ -86,6 +86,7 @@ defmodule PhoenixDevToolbar.ExplainTest do
           %{
             repo: DemoWeb.SQLiteRepo,
             sql: sql,
+            result: {:ok, 1},
             explain: Explain.capture(sql, Truncate.sql(sql), params)
           },
           overrides
@@ -119,6 +120,12 @@ defmodule PhoenixDevToolbar.ExplainTest do
 
       assert {:error, :not_query} =
                Explain.run(%Event{plugin: :request, kind: :query, at: 0}, @repos)
+
+      # A query that failed could be anything (a comment that turns the prefix
+      # into EXPLAIN ANALYZE); MySQL runs the text of versioned comments.
+      failed = event("SELECT 1", [], %{result: {:error, "syntax error"}})
+      assert {:error, :query_failed} = Explain.run(failed, @repos)
+      assert {:error, :not_select} = Explain.run(event("SELECT /*!80018 1 */ 1", []), @repos)
 
       assert DemoWeb.SQLiteRepo.aggregate("users", :count) == 2
     end

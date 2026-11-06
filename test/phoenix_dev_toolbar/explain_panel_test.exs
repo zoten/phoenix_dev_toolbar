@@ -71,14 +71,23 @@ defmodule PhoenixDevToolbar.ExplainPanelTest do
     assert has_element?(panel, "#pdt-plan-#{seq}", "SEARCH users USING INTEGER PRIMARY KEY")
   end
 
-  test "a database error shows in the row, the tab keeps working", %{host: host, panel: panel} do
+  test "a query that failed has no button and says why", %{host: host, panel: panel} do
     seq = run(host, panel, "SELECT * FROM no_such_table")
 
-    panel |> element("#pdt-explain-#{seq}") |> render_click()
-    render_async(panel)
+    refute has_element?(panel, "#pdt-explain-#{seq}")
+    assert has_element?(panel, "#pdt-query-#{seq} .pdt-details", "the query itself failed")
+  end
 
-    assert has_element?(panel, "#pdt-plan-#{seq}.pdt-error", "no such table")
+  test "malformed clicks are ignored, never break the tab", %{host: host, panel: panel} do
+    seq = run(host, panel, "SELECT id FROM users")
+
+    for params <- [%{"seq" => "x"}, %{"seq" => %{"a" => 1}}, %{"seq" => "1.5"}] do
+      panel |> element("#pdt-explain-#{seq}") |> render_click(params)
+    end
+
+    render_async(panel)
     refute has_element?(panel, "#pdt-disabled-ecto")
+    refute has_element?(panel, "#pdt-plan-#{seq}")
   end
 
   test "a write has no button and says why", %{host: host, panel: panel} do
