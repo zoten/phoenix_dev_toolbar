@@ -105,4 +105,15 @@ defmodule PhoenixDevToolbar.LiveViewCompatTest do
       assert log =~ "phoenix_live_view"
     end
   end
+
+  describe "component_to_html_error?/1" do
+    test "recognises LiveView refusing to turn a live component into HTML" do
+      component = %Phoenix.LiveView.Component{id: "c", component: DemoWeb.CounterComponent}
+      error = catch_error(Phoenix.HTML.Safe.to_iodata(component))
+
+      assert LiveViewCompat.component_to_html_error?(error)
+      refute LiveViewCompat.component_to_html_error?(%ArgumentError{message: "other"})
+      refute LiveViewCompat.component_to_html_error?(%RuntimeError{message: "cannot convert"})
+    end
+  end
 end

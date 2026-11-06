@@ -63,6 +63,7 @@ defmodule PhoenixDevToolbar.Panel do
 
   alias Phoenix.LiveView.Socket
   alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.LiveViewCompat
   alias PhoenixDevToolbar.Panel
   alias PhoenixDevToolbar.Truncate
 
@@ -211,7 +212,7 @@ defmodule PhoenixDevToolbar.Panel do
     :ok
   rescue
     exception in ArgumentError ->
-      case Exception.message(exception) =~ "cannot convert component" do
+      case LiveViewCompat.component_to_html_error?(exception) do
         true -> :ok
         false -> reraise exception, __STACKTRACE__
       end
@@ -219,17 +220,19 @@ defmodule PhoenixDevToolbar.Panel do
 
   # No socket in render: tell the toolbar (it shows the error), log once per
   # panel process, and render the broken placeholder.
+  defp log_render_failure(nil = _first_time, id, kind, reason, stacktrace) do
+    Logger.error(
+      "[phoenix_dev_toolbar] panel #{inspect(id)} raised while rendering:\n" <>
+        Exception.format(kind, reason, stacktrace)
+    )
+  end
+
+  defp log_render_failure(_already_logged, _id, _kind, _reason, _stacktrace), do: :ok
+
   defp render_failed(assigns, kind, reason, stacktrace) do
     key = {Panel, :render_logged, assigns[:id]}
 
-    if Process.get(key) == nil do
-      Process.put(key, true)
-
-      Logger.error(
-        "[phoenix_dev_toolbar] panel #{inspect(assigns[:id])} raised while rendering:\n" <>
-          Exception.format(kind, reason, stacktrace)
-      )
-    end
+    log_render_failure(Process.put(key, true), assigns[:id], kind, reason, stacktrace)
 
     send(self(), {:pdt_panel_error, assigns[:id], Truncate.banner(kind, reason)})
     __broken__(assigns)

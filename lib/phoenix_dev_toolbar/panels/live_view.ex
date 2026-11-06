@@ -13,6 +13,7 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Page
   alias PhoenixDevToolbar.Panel
+  alias PhoenixDevToolbar.Panels.LiveView
   alias PhoenixDevToolbar.Panels.LiveViewSections
   alias PhoenixDevToolbar.Profile
   alias PhoenixDevToolbar.Session
@@ -221,7 +222,7 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
     do: socket
 
   defp throttled_snapshot(socket, wait) do
-    ref = Panel.send_after(__MODULE__, socket.assigns.id, :snapshot, wait)
+    ref = Panel.send_after(LiveView, socket.assigns.id, :snapshot, wait)
     assign(socket, :snapshot_timer, ref)
   end
 
@@ -273,7 +274,7 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
         assign(
           socket,
           :tree_timer,
-          Panel.send_after(__MODULE__, socket.assigns.id, :tree_poll, @tree_ms)
+          Panel.send_after(LiveView, socket.assigns.id, :tree_poll, @tree_ms)
         )
 
       false ->

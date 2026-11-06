@@ -127,6 +127,18 @@ defmodule PhoenixDevToolbar.LiveViewCompat do
     end
   end
 
+  @doc """
+  Whether `exception` is LiveView refusing to convert a live component to HTML
+  (`Phoenix.LiveView.Component`'s `Phoenix.HTML.Safe` implementation): a
+  rendered tree that holds a component is fine, it only cannot become iodata.
+  LiveView has no public check, so this matches its message (1.1 and 1.2).
+  """
+  @spec component_to_html_error?(Exception.t()) :: boolean()
+  def component_to_html_error?(%ArgumentError{message: message}),
+    do: String.starts_with?(message, "cannot convert component")
+
+  def component_to_html_error?(_exception), do: false
+
   @doc false
   @spec reset_warnings() :: :ok
   def reset_warnings do

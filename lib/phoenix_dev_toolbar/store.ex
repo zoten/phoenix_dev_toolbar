@@ -432,8 +432,9 @@ defmodule PhoenixDevToolbar.Store do
       |> Enum.frequencies_by(fn {_seq, plugin} -> plugin end)
       |> Enum.each(fn {plugin, n} -> bump_plugin(sid, plugin, -n, n) end)
 
-      bump_by(sid, 5, length(rows))
-      bump_by(sid, 3, -length(rows))
+      trimmed = length(rows)
+      bump_by(sid, 5, trimmed)
+      bump_by(sid, 3, -trimmed)
       trim(sid, scope, max)
     end
   end

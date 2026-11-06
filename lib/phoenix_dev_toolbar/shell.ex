@@ -22,10 +22,10 @@ defmodule PhoenixDevToolbar.Shell do
           plugin: module(),
           panel: module(),
           name: String.t(),
-          config: term()
+          config: PhoenixDevToolbar.Plugin.config()
         }
   @type t :: %Shell{
-          plugins: [{module(), term()}],
+          plugins: [{module(), PhoenixDevToolbar.Plugin.config()}],
           by_id: %{atom() => module()},
           tab_ids: MapSet.t(String.t()),
           summaries: %{atom() => term()},
@@ -34,7 +34,7 @@ defmodule PhoenixDevToolbar.Shell do
         }
 
   @doc "The shell of the attached plugins (`Collector.plugins/0`), summaries empty."
-  @spec new([{module(), term()}]) :: t()
+  @spec new([{module(), PhoenixDevToolbar.Plugin.config()}]) :: t()
   def new(plugins) do
     shell = %Shell{
       plugins: plugins,
