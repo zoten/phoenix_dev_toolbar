@@ -116,6 +116,9 @@ const PdtSummaryMore = {
 //   blob, resolved when the export arrives. Elsewhere (plain http on a LAN IP)
 //   there is no Clipboard API: execCommand("copy") on arrival, and when the
 //   activation has expired the JSON is held and the next Copy click copies it.
+// An export names the page it was built from (the form's data-pdt-page): one
+// that no longer matches, because the LiveView joined or the tab navigated
+// meanwhile, is dropped, never copied.
 const EXPORT_WAIT_MS = 60000
 const HELD_MS = 60000
 
@@ -163,7 +166,22 @@ const PdtExport = {
     this.onChange = () => this.drop()
     this.el.addEventListener("click", this.onClick, true)
     this.el.addEventListener("change", this.onChange)
-    this.handleEvent("pdt:export", ({payload}) => this.copy(JSON.stringify(payload, null, 2)))
+    this.page = this.el.dataset.pdtPage
+    this.handleEvent("pdt:export", ({payload, page}) => {
+      if (page === this.el.dataset.pdtPage) this.copy(JSON.stringify(payload, null, 2))
+      else this.pageChanged()
+    })
+  },
+  updated() {
+    if (this.el.dataset.pdtPage === this.page) return
+    this.page = this.el.dataset.pdtPage
+    if (this.held) this.pageChanged()
+  },
+  pageChanged() {
+    this.drop()
+    this.changed = true
+    if (!this.settle(null)) this.changed = false
+    this.say("The page changed: click Copy again")
   },
   destroyed() {
     this.el.removeEventListener("click", this.onClick, true)
@@ -221,6 +239,11 @@ const PdtExport = {
     }
   },
   copyFailed(error) {
+    // The pending copy was abandoned by pageChanged(): its message stays.
+    if (this.changed) {
+      this.changed = false
+      return
+    }
     const why = (error && (error.name || error.message)) || "refused"
     console.warn("[phoenix_dev_toolbar] copy failed:", error)
     this.say("Copy failed (" + why + "): use Download")

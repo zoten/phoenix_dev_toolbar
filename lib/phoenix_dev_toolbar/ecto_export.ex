@@ -68,10 +68,21 @@ defmodule PhoenixDevToolbar.EctoExport do
       Enum.flat_map(sids, &for(%Event{plugin: :ecto} = event <- Store.events(&1), do: event))
 
     opts =
-      [root: root, path: path, threshold: Plugins.Ecto.n_plus_one(config)] ++
+      [root: root, path: path || latest_path(sids), threshold: Plugins.Ecto.n_plus_one(config)] ++
         explain_opt(format, explain?, Map.get(config, :repos, []))
 
     build(events, format, opts)
+  end
+
+  # A page without its LiveView yet has no path of its own (Page): the
+  # request's, as Download reads it.
+  defp latest_path(sids) do
+    Enum.reduce(sids, nil, fn sid, path ->
+      case Store.session(sid) do
+        {:ok, session} -> session.path || path
+        :error -> path
+      end
+    end)
   end
 
   defp explain_opt(:full, true, repos), do: [explain: &Explain.run(&1, repos)]

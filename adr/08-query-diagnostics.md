@@ -82,7 +82,12 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
   in the request process, untracked, so its EXPLAINs are never recorded.
 - **Copy** builds the same map in `start_async/3` (cancelled by a page change; a copy and
   a single EXPLAIN never run together) and sends it with `push_event/3` to the panel's
-  `PdtExport` hook.
+  `PdtExport` hook, with the page it was built from (its sids). The form carries the
+  page it shows (`data-pdt-page`): the hook drops an export, arriving or held, whose page
+  is no longer the form's, for example a Copy clicked before the LiveView joined, and
+  asks for a new Copy.
+- Both exports take their `path` from the page, or from the Store sessions when the page
+  has none yet (only the request): the request's path.
 - The form's choices are kept by the component, so a re-render does not reset them, and
   the Download link follows them.
 
@@ -108,6 +113,9 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
   the client's only: the server may keep waiting on a metadata lock.
 - A database error is shown as the database words it, which may quote a param value
   (the export carries it too).
+- EXPLAIN plans and params can quote secrets (a session token, an API key in a WHERE
+  clause): the redaction covers params by key only, so the tab, the plans and both
+  exports may show them. Treat an export like a log before sharing it.
 - Copy starts the clipboard write in the click, with the text promised for when the
   export arrives (`ClipboardItem`), so a slow export keeps the click's user activation.
   Outside a secure context (plain http on a LAN IP) there is no Clipboard API: the

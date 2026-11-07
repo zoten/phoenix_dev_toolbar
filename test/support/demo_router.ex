@@ -25,6 +25,7 @@ defmodule DemoWeb.Router do
       live "/demo/other", DemoWeb.PageLive
       live "/demo/components", DemoWeb.ComponentsLive
       live "/demo/nested", DemoWeb.NestedLive
+      live "/demo/loaders", DemoWeb.LoaderLive
     end
   end
 end

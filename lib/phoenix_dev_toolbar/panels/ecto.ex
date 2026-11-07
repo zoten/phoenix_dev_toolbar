@@ -180,7 +180,9 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
       {:noreply,
        socket
        |> assign(exporting: format, export_error: nil)
-       |> start_async(:export, fn -> EctoExport.page(page, format, explain?, config) end)}
+       |> start_async(:export, fn ->
+         {page_key(page), EctoExport.page(page, format, explain?, config)}
+       end)}
     else
       _busy_or_invalid -> {:noreply, socket}
     end
@@ -235,11 +237,13 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
     end
   end
 
-  def handle_async(:export, {:ok, payload}, socket) do
+  # `page` is the page the export was built from: the hook drops an export
+  # whose page is no longer the form's (the LiveView joined meanwhile).
+  def handle_async(:export, {:ok, {page, payload}}, socket) do
     {:noreply,
      socket
      |> assign(:exporting, nil)
-     |> push_event("pdt:export", %{payload: payload})}
+     |> push_event("pdt:export", %{payload: payload, page: page})}
   end
 
   def handle_async(:export, {:exit, reason}, socket) do
@@ -259,6 +263,9 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   defp export_format("short"), do: {:ok, :short}
   defp export_format("full"), do: {:ok, :full}
   defp export_format(_other), do: :error
+
+  # The page an export is built from, as the hook compares it.
+  defp page_key(page), do: Enum.join(page.sids, ",")
 
   # Relative to the panel's URL (<path>/panel): <path>/export/ecto.json.
   defp download_href(page, %{format: format, explain?: explain?}) do
@@ -307,6 +314,7 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
         error={@export_error}
         choice={@export_choice}
         href={download_href(@page, @export_choice)}
+        page={page_key(@page)}
         target={@myself}
       />
       <ul id="pdt-queries" class="pdt-list" phx-update="stream">
@@ -326,6 +334,7 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   attr :exporting, :any, required: true
   attr :href, :string, required: true, doc: "the Download link, relative to the panel"
   attr :choice, :map, required: true, doc: "%{format: \"short\" | \"full\", explain?: boolean}"
+  attr :page, :string, required: true, doc: "the page's sids, comma separated"
   attr :error, :string, default: nil
   attr :target, :any, required: true
 
@@ -338,6 +347,7 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
       phx-submit="export"
       phx-target={@target}
       phx-hook="PdtExport"
+      data-pdt-page={@page}
       aria-label="Export queries as JSON"
     >
       <span class="pdt-export__label">Export JSON</span>
