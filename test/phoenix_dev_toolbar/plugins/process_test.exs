@@ -23,7 +23,11 @@ defmodule PhoenixDevToolbar.Plugins.ProcessTest do
   end
 
   test "a missing config falls back to the defaults" do
-    assert ProcessPlugin.config(nil) == %{sample_ms: 1000, samples: 60, relations_ms: 5000}
+    assert PhoenixDevToolbar.ProcessOptions.config(nil) == %{
+             sample_ms: 1000,
+             samples: 60,
+             relations_ms: 5000
+           }
   end
 
   test "it is a tab only: no telemetry, no summary" do

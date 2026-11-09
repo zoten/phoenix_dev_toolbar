@@ -168,4 +168,14 @@ defmodule PhoenixDevToolbar.ProcessView do
   end
 
   defp words(words), do: bytes(words * :erlang.system_info(:wordsize))
+
+  @doc "What a GC now did, for the line next to its button."
+  @spec gc_result(term()) :: String.t()
+  def gc_result({:ok, before, after_gc}) when before > after_gc,
+    do: "freed #{bytes(before - after_gc)}: #{bytes(before)} → #{bytes(after_gc)}"
+
+  def gc_result({:ok, _before, after_gc}), do: "nothing to free: #{bytes(after_gc)} held"
+  def gc_result(:dead), do: "the process exited"
+  def gc_result(:too_soon), do: "one collection a second: try again"
+  def gc_result(_none_or_running), do: ""
 end

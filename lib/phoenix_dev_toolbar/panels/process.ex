@@ -3,38 +3,28 @@ defmodule PhoenixDevToolbar.Panels.Process do
   # The Process tab (ADR 09): the page's LiveView process (or a nested one),
   # read with PhoenixDevToolbar.ProcessInfo only while the tab is shown and the
   # panel visible: vital signs every `sample_ms`, kept as `samples` points for
-  # the sparklines, links and monitors every `relations_ms`.
+  # the sparklines, links and monitors every `relations_ms`. The inspected
+  # process's state and polling: PhoenixDevToolbar.ProcessInspector.
   #
   # The browser picks a process by its index in this page's list, never by pid.
-  # Each timer carries a token: a tick that is not the pending timer of its
-  # kind (replaced meanwhile) is dropped, so there is one loop per kind.
 
   use PhoenixDevToolbar.Panel
-
-  import PhoenixDevToolbar.Components, only: [bytes: 1]
 
   alias PhoenixDevToolbar.Page
   alias PhoenixDevToolbar.Panel
   alias PhoenixDevToolbar.Panels.Process, as: ProcessPanel
-  alias PhoenixDevToolbar.Plugins
   alias PhoenixDevToolbar.ProcessInfo
+  alias PhoenixDevToolbar.ProcessInspector
   alias PhoenixDevToolbar.ProcessView
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
 
   # Nested LiveViews of one page listed at most.
   @max_targets 10
-  # At most one garbage collection per second, on the selected process only.
-  @gc_every_ms 1000
 
   @impl Phoenix.LiveComponent
-  def mount(socket) do
-    {:ok,
-     socket
-     |> assign(prev: nil, targets: [], selected: nil, timers: %{})
-     |> assign(gc: nil, gc_at: nil, gc_note: nil, gc_timer: nil)
-     |> assign(about: nil, sample: nil, relations: nil, series: empty_series())}
-  end
+  def mount(socket),
+    do: {:ok, socket |> assign(prev: nil, targets: []) |> ProcessInspector.init()}
 
   # A reset also follows Re-enable (after an error broke the tab): polling
   # restarts if someone looks.
@@ -54,7 +44,11 @@ defmodule PhoenixDevToolbar.Panels.Process do
     cond do
       # The list itself is only Store reads: the host process is read once polling.
       prev.page != assigns.page ->
-        socket |> cancel_timers() |> select(nil) |> refresh_targets(false) |> poll_now()
+        socket
+        |> ProcessInspector.cancel_timers()
+        |> ProcessInspector.select(nil)
+        |> refresh_targets(false)
+        |> poll_now()
 
       not (prev.shown? and prev.visible?) and polling?(socket) ->
         poll_now(socket)
@@ -64,34 +58,27 @@ defmodule PhoenixDevToolbar.Panels.Process do
     end
   end
 
-  # A tick is honoured only if it is the pending timer of its kind: one loop per
-  # kind, whatever raced (a tick already queued when its timer was replaced).
   @impl Panel
   def handle_info({kind, token}, socket) when kind in [:sample, :relations] do
-    case socket.assigns.timers do
-      %{^kind => {_ref, ^token}} ->
-        socket = update(socket, :timers, &Map.delete(&1, kind))
-
-        case polling?(socket) do
-          true -> socket |> tick(kind) |> schedule(kind)
-          false -> socket
-        end
-
-      _stale ->
-        socket
+    case ProcessInspector.take_tick(socket, kind, token) do
+      {:ok, socket} -> continue(socket, kind, polling?(socket))
+      :stale -> socket
     end
   end
 
-  def handle_info(:gc_ready, socket), do: assign(socket, gc_note: nil, gc_timer: nil)
-
+  def handle_info(:gc_ready, socket), do: ProcessInspector.gc_ready(socket)
   def handle_info(_message, socket), do: socket
+
+  defp continue(socket, kind, true), do: socket |> tick(kind) |> schedule(kind)
+  defp continue(socket, _kind, false), do: socket
 
   # The index is into the list the user saw (rendered), never recomputed first.
   @impl Phoenix.LiveComponent
   def handle_event("select", %{"index" => index}, socket) when is_binary(index) do
     with {index, ""} <- Integer.parse(index),
          %{pid: pid} <- index >= 0 && Enum.at(socket.assigns.targets, index) do
-      {:noreply, socket |> cancel_timers() |> select(pid) |> poll_now()}
+      {:noreply,
+       socket |> ProcessInspector.cancel_timers() |> ProcessInspector.select(pid) |> poll_now()}
     else
       _other -> {:noreply, socket}
     end
@@ -99,70 +86,13 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
   def handle_event("select", _params, socket), do: {:noreply, socket}
 
-  # The only thing the toolbar does to a host process (ADR 09): a garbage
-  # collection, to tell retained memory from garbage. In a task, so a target
-  # busy in a long NIF never blocks the panel.
-  def handle_event("gc", _params, %{assigns: %{selected: pid, gc: gc}} = socket)
-      when is_pid(pid) and gc != :running do
-    case gc_allowed?(socket) do
-      true ->
-        {:noreply,
-         socket
-         |> assign(gc: :running, gc_at: System.monotonic_time(:millisecond))
-         |> start_async(:gc, fn -> {pid, ProcessInfo.collect(pid)} end)}
-
-      # The last result stays; a note says when the next collection is allowed.
-      false ->
-        {:noreply,
-         socket |> assign(:gc_note, "at most one collection a second") |> gc_ready_later()}
-    end
-  end
-
-  def handle_event("gc", _params, socket), do: {:noreply, socket}
+  def handle_event("gc", _params, socket),
+    do: {:noreply, ProcessInspector.gc(socket, ProcessPanel)}
 
   @impl Phoenix.LiveComponent
-  def handle_async(:gc, {:ok, {pid, result}}, %{assigns: %{selected: pid}} = socket),
-    do: {:noreply, socket |> assign(:gc, result) |> read_sample()}
-
-  # The target changed meanwhile (its task was cancelled), or the task exited.
-  def handle_async(:gc, _result, socket), do: {:noreply, assign(socket, :gc, nil)}
-
-  defp gc_ready_later(%{assigns: %{gc_timer: nil, gc_at: at}} = socket) do
-    wait = max(@gc_every_ms - (System.monotonic_time(:millisecond) - at), 0)
-    assign(socket, :gc_timer, Panel.send_after(ProcessPanel, socket.assigns.id, :gc_ready, wait))
-  end
-
-  defp gc_ready_later(socket), do: socket
-
-  defp gc_allowed?(%{assigns: %{gc_at: nil}}), do: true
-
-  defp gc_allowed?(%{assigns: %{gc_at: at}}),
-    do: System.monotonic_time(:millisecond) - at >= @gc_every_ms
+  def handle_async(:gc, result, socket), do: {:noreply, ProcessInspector.gc_done(socket, result)}
 
   ## Targets
-
-  # A new target (nil: the page's LiveView, the first of the list): its data
-  # starts over.
-  defp select(socket, pid) do
-    socket
-    |> cancel_gc()
-    |> assign(
-      selected: pid,
-      gc: nil,
-      about: nil,
-      gc_note: nil,
-      sample: nil,
-      relations: nil,
-      series: empty_series()
-    )
-  end
-
-  # A collection still running for the previous target (a process stuck in a
-  # NIF) would otherwise leave its task behind.
-  defp cancel_gc(%{assigns: %{gc: :running}} = socket),
-    do: socket |> cancel_async(:gc) |> assign(:gc, nil)
-
-  defp cancel_gc(socket), do: socket
 
   # The list is refreshed when polling starts and on every relations tick: a
   # nested LiveView mounts after its parent (same sid, so the page does not
@@ -172,12 +102,11 @@ defmodule PhoenixDevToolbar.Panels.Process do
   defp refresh_targets(socket, named?) do
     targets = targets(socket.assigns.page, named?)
     selected = socket.assigns.selected
-
     socket = assign(socket, :targets, targets)
 
     case Enum.any?(targets, &(&1.pid == selected)) do
       true -> socket
-      false -> select(socket, first_pid(targets))
+      false -> ProcessInspector.select(socket, first_pid(targets))
     end
   end
 
@@ -232,16 +161,12 @@ defmodule PhoenixDevToolbar.Panels.Process do
   defp polling?(%{assigns: %{shown?: true, visible?: true}}), do: true
   defp polling?(_socket), do: false
 
-  defp config(socket), do: Plugins.Process.config(socket.assigns[:config])
-
   defp poll_now(socket) do
     case polling?(socket) do
       true ->
         socket
         |> refresh_targets(true)
-        |> read_about()
-        |> read_sample()
-        |> read_relations()
+        |> ProcessInspector.read_all()
         |> schedule(:sample)
         |> schedule(:relations)
 
@@ -250,95 +175,26 @@ defmodule PhoenixDevToolbar.Panels.Process do
     end
   end
 
-  defp tick(socket, :sample), do: read_sample(socket)
+  defp tick(socket, :sample), do: ProcessInspector.read_sample(socket)
 
   # A new target found here (the LiveView crashed and rejoined with a new pid,
   # the selected nested one exited) restarts the sample loop, stopped on :dead.
   defp tick(socket, :relations) do
     before = socket.assigns.selected
-    socket = socket |> refresh_targets(true) |> read_about() |> read_relations()
+
+    socket =
+      socket
+      |> refresh_targets(true)
+      |> ProcessInspector.read_about()
+      |> ProcessInspector.read_relations()
 
     case socket.assigns.selected do
       ^before -> socket
-      _new -> socket |> read_sample() |> schedule(:sample)
+      _new -> socket |> ProcessInspector.read_sample() |> schedule(:sample)
     end
   end
 
-  # Replaces any pending timer of that kind. Nothing is scheduled without a
-  # target; a dead one stops the sample loop, while the relations loop goes on
-  # to find its replacement (a rejoin) or drop it from the list.
-  defp schedule(%{assigns: %{selected: pid, sample: sample}} = socket, kind)
-       when is_pid(pid) and (kind == :relations or sample != :dead) do
-    socket = cancel_timer(socket, kind)
-    token = make_ref()
-    every = Map.fetch!(config(socket), interval_key(kind))
-    ref = Panel.send_after(ProcessPanel, socket.assigns.id, {kind, token}, every)
-    update(socket, :timers, &Map.put(&1, kind, {ref, token}))
-  end
-
-  defp schedule(socket, kind), do: cancel_timer(socket, kind)
-
-  defp interval_key(:sample), do: :sample_ms
-  defp interval_key(:relations), do: :relations_ms
-
-  defp cancel_timers(socket), do: socket |> cancel_timer(:sample) |> cancel_timer(:relations)
-
-  defp cancel_timer(socket, kind) do
-    case socket.assigns.timers do
-      %{^kind => {ref, _token}} ->
-        _ = Process.cancel_timer(ref)
-        update(socket, :timers, &Map.delete(&1, kind))
-
-      _none ->
-        socket
-    end
-  end
-
-  defp read_about(%{assigns: %{selected: pid, about: nil}} = socket) when is_pid(pid),
-    do: assign(socket, :about, ProcessInfo.about(pid))
-
-  defp read_about(socket), do: socket
-
-  defp read_sample(%{assigns: %{selected: pid}} = socket) when is_pid(pid) do
-    case ProcessInfo.sample(pid) do
-      {:ok, sample} ->
-        rate = rate(socket.assigns.sample, sample)
-        samples = config(socket).samples
-
-        socket
-        |> assign(:sample, Map.put(sample, :reductions_per_second, rate))
-        |> update(:series, &push(&1, sample, rate, samples))
-
-      :dead ->
-        assign(socket, :sample, :dead)
-    end
-  end
-
-  defp read_sample(socket), do: socket
-
-  defp read_relations(%{assigns: %{selected: pid}} = socket) when is_pid(pid),
-    do: assign(socket, :relations, ProcessInfo.relations(pid))
-
-  defp read_relations(socket), do: socket
-
-  defp rate(%{at: _at} = previous, sample),
-    do: ProcessInfo.reductions_per_second(previous, sample)
-
-  defp rate(_none, _sample), do: nil
-
-  defp empty_series, do: %{memory: [], queue: [], reductions: []}
-
-  # Newest first, at most `samples` points per series (reversed to render).
-  defp push(series, sample, rate, samples) do
-    %{
-      memory: keep(series.memory, sample.memory, samples),
-      queue: keep(series.queue, sample.message_queue_len, samples),
-      reductions: keep(series.reductions, rate, samples)
-    }
-  end
-
-  defp keep(values, nil, _samples), do: values
-  defp keep(values, value, samples), do: Enum.take([value | values], samples)
+  defp schedule(socket, kind), do: ProcessInspector.schedule(socket, kind, ProcessPanel)
 
   ## Render
 
@@ -387,7 +243,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
           {if(@gc == :running, do: "collecting…", else: "GC now")}
         </button>
         <span :if={is_map(@sample)} id="pdt-process-gc-result" class="pdt-hint" role="status">
-          {gc_result(@gc)}<span :if={@gc_note} id="pdt-process-gc-note"> · {@gc_note}</span>
+          {ProcessView.gc_result(@gc)}<span :if={@gc_note} id="pdt-process-gc-note"> · {@gc_note}</span>
         </span>
       </div>
       <p :if={@targets != [] and not (@shown? and @visible?)} class="pdt-hint pdt-process__paused">
@@ -410,12 +266,4 @@ defmodule PhoenixDevToolbar.Panels.Process do
     </div>
     """
   end
-
-  defp gc_result({:ok, before, after_gc}) when before > after_gc,
-    do: "freed #{bytes(before - after_gc)}: #{bytes(before)} → #{bytes(after_gc)}"
-
-  defp gc_result({:ok, _before, after_gc}), do: "nothing to free: #{bytes(after_gc)} held"
-  defp gc_result(:dead), do: "the process exited"
-  defp gc_result(:too_soon), do: "one collection a second: try again"
-  defp gc_result(_none_or_running), do: ""
 end
