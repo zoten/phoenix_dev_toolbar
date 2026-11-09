@@ -235,5 +235,68 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
       assert has_element?(panel, "#pdt-system-messages-list li", "[REDACTED]")
       refute has_element?(panel, "#pdt-system-messages-list li", "hunter2")
     end
+
+    test "a watched exit reaches the System tab only: a strict plugin tab keeps working" do
+      attach_plugins([PhoenixDevToolbar.TestPlugins.Strict])
+      on_exit(fn -> attach_plugins() end)
+      pid = idle_process()
+      panel = open()
+      search(panel, inspect(pid))
+      panel |> element("#pdt-system-watch") |> render_click()
+
+      stop(pid)
+
+      assert has_element?(panel, "#pdt-system-watched-0", "exited at")
+      assert has_element?(panel, "#strict")
+      refute has_element?(panel, "#pdt-disabled-strict")
+    end
+
+    test "Forget drops a watch; at ten, Watch is off" do
+      panel = open()
+
+      for _ <- 1..10 do
+        search(panel, inspect(idle_process()))
+        panel |> element("#pdt-system-watch") |> render_click()
+      end
+
+      search(panel, inspect(idle_process()))
+      assert has_element?(panel, "#pdt-system-watch[disabled]")
+
+      panel |> element("#pdt-system-forget-0") |> render_click()
+      refute has_element?(panel, "#pdt-system-watch[disabled]")
+      refute has_element?(panel, "#pdt-system-watched-9")
+    end
+
+    test "the kill reason survives a change and a cancel" do
+      pid = idle_process()
+      panel = open()
+      search(panel, inspect(pid))
+
+      panel |> form("#pdt-system-kill-form", %{"reason" => "crash"}) |> render_change()
+      panel |> form("#pdt-system-kill-form", %{"reason" => "crash"}) |> render_submit()
+      panel |> element("#pdt-system-cancel") |> render_click()
+
+      assert has_element?(panel, "#pdt-system-kill-reason option[value=crash][selected]")
+      refute has_element?(panel, "#pdt-disabled-system")
+    end
+
+    test "one action a second" do
+      pid = idle_process()
+      panel = open()
+      search(panel, inspect(pid))
+
+      panel |> element("#pdt-system-suspend") |> render_click()
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        panel |> element("#pdt-system-confirm") |> render_click()
+      end)
+
+      panel |> form("#pdt-system-kill-form", %{"reason" => "kill"}) |> render_submit()
+      panel |> element("#pdt-system-confirm") |> render_click()
+
+      assert has_element?(panel, "#pdt-system-action-note", "One action a second")
+      assert Process.alive?(pid)
+      PhoenixDevToolbar.Suspender.resume(pid)
+    end
   end
 end

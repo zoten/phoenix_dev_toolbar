@@ -184,11 +184,12 @@ defmodule PhoenixDevToolbar.ProcessView do
   attr :note, :any, default: nil, doc: "{:ok | :error, text}: what the last action did"
   attr :suspended?, :boolean, default: false
   attr :suspend?, :boolean, default: true, doc: "offer Suspend and Resume"
+  attr :kill_reason, :string, default: "kill", doc: "the reason selected"
 
   @doc """
   Kill (with a reason) and Suspend for a process, each behind a confirm click,
   or why they are off (ADR 10). Events: `arm` (`action`, `reason`), `confirm`,
-  `cancel`, `resume`.
+  `cancel`, `resume`, `kill_reason` (the select changed).
   """
   def actions(assigns) do
     ~H"""
@@ -205,6 +206,7 @@ defmodule PhoenixDevToolbar.ProcessView do
               id={"#{@prefix}-confirm"}
               type="button"
               class="pdt-button pdt-button--small pdt-button--danger"
+              phx-mounted={Phoenix.LiveView.JS.focus()}
               phx-click="confirm"
               phx-target={@target}
             >
@@ -223,15 +225,15 @@ defmodule PhoenixDevToolbar.ProcessView do
             <form
               id={"#{@prefix}-kill-form"}
               class="pdt-actions__kill"
-              phx-change="noop"
+              phx-change="kill_reason"
               phx-submit="arm"
               phx-target={@target}
             >
               <input type="hidden" name="action" value="kill" />
               <select id={"#{@prefix}-kill-reason"} name="reason" aria-label="Exit reason">
-                <option value="kill">kill (untrappable)</option>
-                <option value="shutdown">shutdown</option>
-                <option value="crash">crash (RuntimeError)</option>
+                <option value="kill" selected={@kill_reason == "kill"}>kill (untrappable)</option>
+                <option value="shutdown" selected={@kill_reason == "shutdown"}>shutdown</option>
+                <option value="crash" selected={@kill_reason == "crash"}>crash (RuntimeError)</option>
               </select>
               <button id={"#{@prefix}-kill"} type="submit" class="pdt-button pdt-button--small">
                 Kill

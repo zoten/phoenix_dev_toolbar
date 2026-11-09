@@ -137,6 +137,10 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     Process.flag(:trap_exit, true)
     ref = Process.monitor(host.pid)
 
+    # Changing the reason is an event the tab handles (it once disabled the tab).
+    panel |> form("#pdt-process-kill-form", %{"reason" => "shutdown"}) |> render_change()
+    refute has_element?(panel, "#pdt-disabled-process")
+
     panel |> form("#pdt-process-kill-form", %{"reason" => "shutdown"}) |> render_submit()
     assert has_element?(panel, "#pdt-process-confirm-text", "shutdown")
     refute_received {:DOWN, ^ref, :process, _pid, _reason}

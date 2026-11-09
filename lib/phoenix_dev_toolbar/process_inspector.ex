@@ -32,7 +32,7 @@ defmodule PhoenixDevToolbar.ProcessInspector do
     |> assign(selected: nil, timers: %{})
     |> assign(gc: nil, gc_at: nil, gc_note: nil, gc_timer: nil)
     |> assign(about: nil, sample: nil, relations: nil, series: empty_series())
-    |> assign(confirm: nil, note: nil, action_at: nil)
+    |> assign(confirm: nil, note: nil, action_at: nil, kill_reason: "kill")
   end
 
   @doc "A new target (nil: none): its data starts over, a running GC is cancelled."
@@ -245,10 +245,17 @@ defmodule PhoenixDevToolbar.ProcessInspector do
   @doc "The first click: the action waits for a confirm (`arm` event params)."
   @spec arm(Socket.t(), map()) :: Socket.t()
   def arm(socket, %{"action" => "kill", "reason" => reason}) when reason in @kill_reasons,
-    do: assign(socket, confirm: {:kill, reason}, note: nil)
+    do: assign(socket, confirm: {:kill, reason}, note: nil, kill_reason: reason)
 
   def arm(socket, %{"action" => "suspend"}), do: assign(socket, confirm: :suspend, note: nil)
   def arm(socket, _params), do: socket
+
+  @doc "The kill reason picked in the select (`kill_reason` event): kept across renders."
+  @spec pick_reason(Socket.t(), map()) :: Socket.t()
+  def pick_reason(socket, %{"reason" => reason}) when reason in @kill_reasons,
+    do: assign(socket, :kill_reason, reason)
+
+  def pick_reason(socket, _params), do: socket
 
   @doc "Drops the action waiting for a confirm."
   @spec cancel(Socket.t()) :: Socket.t()

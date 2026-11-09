@@ -77,3 +77,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - System tab review fixes: no :sys to Tasks blocked in a call, plain pids without System (ADR 11)
 - Process actions: kill (with reason), suspend 10 s with auto resume, watch, message peek (ADR 10)
 - Redaction walks tuples, so queued messages and results are redacted too (ADR 10)
+- Actions review fixes: kill reason select, DOWN routed to the watching tab only (ADR 10)

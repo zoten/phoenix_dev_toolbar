@@ -105,6 +105,10 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
   # Kill (ADR 10): armed by a first click, run by a confirm.
   def handle_event("arm", params, socket), do: {:noreply, ProcessInspector.arm(socket, params)}
+
+  def handle_event("kill_reason", params, socket),
+    do: {:noreply, ProcessInspector.pick_reason(socket, params)}
+
   def handle_event("confirm", _params, socket), do: {:noreply, ProcessInspector.confirm(socket)}
   def handle_event("cancel", _params, socket), do: {:noreply, ProcessInspector.cancel(socket)}
 
@@ -280,6 +284,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
           gate={ProcessInspector.gate(%{selected: @selected, pdt_actions: @pdt_actions})}
           confirm={@confirm}
           note={@note}
+          kill_reason={@kill_reason}
           suspend?={false}
         />
       </div>

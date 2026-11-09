@@ -31,8 +31,10 @@ reachable dev port must not freeze or kill the node.
   Reads and GC are allowed on them; kill and suspend are refused.
 - **Actions** (`ProcessActions`; the System tab offers all of them, the Process tab
   Kill for its LiveView, which then reconnects and remounts). Kill and suspend wait
-  for a confirm click, run at most once a second per panel and are logged with
-  `Logger.warning/1`:
+  for a confirm click, run at most once a second per tab and are logged with
+  `Logger.warning/1`. The toolbar hands every tab an internal `pdt_actions` assign
+  (the client's address, the panel's pid, its transport and the endpoint) for
+  these checks:
   - Kill, with a reason picked from a fixed list: `kill` (`:kill`, untrappable),
     `shutdown`, or `crash` (an exit with a `RuntimeError`, as a crash looks to logs
     and supervisors). A suspended process can still be killed.
@@ -41,8 +43,10 @@ reachable dev port must not freeze or kill the node.
     goes away, or on Resume; a process it suspended is released by OTP if the
     Suspender itself dies. GC now and the state read refuse a suspended process
     (both would wait for it).
-  - Watch: the panel monitors up to 10 processes and lists each one's exit reason
-    and time.
+  - Watch: the System tab monitors up to 10 processes and lists each one's exit
+    reason and time. Its monitors are routed: the panel process receives the `DOWN`
+    and hands it to the tab that set the monitor only, never to plugin tabs. A
+    watch whose `DOWN` was dropped while the tab was disabled is marked on Re-enable.
   - Message peek: the first 10 messages, each redacted and truncated, only while
     `message_queue_len` is under 100; `:messages` is never read above it.
 - **Who may act**: reads, GC and Watch are open to any panel. Kill, suspend and message peek

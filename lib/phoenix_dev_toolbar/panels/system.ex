@@ -40,7 +40,8 @@ defmodule PhoenixDevToolbar.Panels.System do
   end
 
   @impl Panel
-  def handle_reset(_events, socket), do: poll_now(socket)
+  def handle_reset(_events, socket),
+    do: socket |> update(:watched, &Enum.map(&1, fn watch -> recheck(watch) end)) |> poll_now()
 
   @impl Panel
   def handle_events(_events, socket), do: socket
@@ -111,6 +112,10 @@ defmodule PhoenixDevToolbar.Panels.System do
 
   # Kill and suspend (ADR 10): armed by a first click, run by a confirm.
   def handle_event("arm", params, socket), do: {:noreply, ProcessInspector.arm(socket, params)}
+
+  def handle_event("kill_reason", params, socket),
+    do: {:noreply, ProcessInspector.pick_reason(socket, params)}
+
   def handle_event("confirm", _params, socket), do: {:noreply, ProcessInspector.confirm(socket)}
   def handle_event("cancel", _params, socket), do: {:noreply, ProcessInspector.cancel(socket)}
   def handle_event("resume", _params, socket), do: {:noreply, ProcessInspector.resume(socket)}
@@ -190,9 +195,12 @@ defmodule PhoenixDevToolbar.Panels.System do
       true ->
         socket
 
+      # Routed to this tab only (Panel.monitor/3). Exited before the route was
+      # set: its DOWN is lost, so it is marked here.
       false ->
-        watch = %{pid: pid, label: label(pid), ref: Process.monitor(pid), down: nil}
-        assign(socket, :watched, [watch | watched])
+        ref = Panel.monitor(SystemPanel, socket.assigns.id, pid)
+        watch = %{pid: pid, label: label(pid), ref: ref, down: nil}
+        assign(socket, :watched, [recheck(watch) | watched])
     end
   end
 
@@ -201,7 +209,7 @@ defmodule PhoenixDevToolbar.Panels.System do
   defp unwatch(socket, {index, ""}) when index >= 0 do
     case Enum.at(socket.assigns.watched, index) do
       %{ref: ref} ->
-        Process.demonitor(ref, [:flush])
+        Panel.demonitor(ref)
         update(socket, :watched, &List.delete_at(&1, index))
 
       nil ->
@@ -221,6 +229,17 @@ defmodule PhoenixDevToolbar.Panels.System do
   end
 
   defp down(watch, _ref, _reason), do: watch
+
+  # A DOWN that arrived while this tab was disabled was dropped: a watch still
+  # "alive" whose process is gone is marked on the next reset.
+  defp recheck(%{down: nil, pid: pid, ref: ref} = watch) do
+    case Process.alive?(pid) do
+      true -> watch
+      false -> down(watch, ref, :exited_unseen)
+    end
+  end
+
+  defp recheck(watch), do: watch
 
   ## Polling
 
@@ -369,7 +388,9 @@ defmodule PhoenixDevToolbar.Panels.System do
       <p :if={is_pid(@selected) and not (@shown? and @visible?)} class="pdt-hint pdt-process__paused">
         Paused while the panel is hidden.
       </p>
-      <p :if={@sample == :dead} id="pdt-system-dead" class="pdt-empty">This process has exited.</p>
+      <p :if={@sample == :dead} id="pdt-system-dead" class="pdt-empty">
+        This process has exited.<span :if={@note} id="pdt-system-action-note">{elem(@note, 1)}</span>
+      </p>
       <div :if={is_map(@sample)} id="pdt-system-act" class="pdt-snapshot-bar pdt-actions-bar">
         <ProcessView.actions
           prefix="pdt-system"
@@ -377,6 +398,7 @@ defmodule PhoenixDevToolbar.Panels.System do
           gate={ProcessInspector.gate(%{selected: @selected, pdt_actions: @pdt_actions})}
           confirm={@confirm}
           note={@note}
+          kill_reason={@kill_reason}
           suspended?={@sample.status == :suspended}
         />
         <button
@@ -385,8 +407,8 @@ defmodule PhoenixDevToolbar.Panels.System do
           class="pdt-button pdt-button--small"
           phx-click="watch"
           phx-target={@myself}
-          disabled={Enum.any?(@watched, &(&1.pid == @selected))}
-          title="Keep an eye on it: its exit reason shows below when it goes down"
+          disabled={Enum.any?(@watched, &(&1.pid == @selected)) or length(@watched) >= 10}
+          title={watch_title(@watched, @selected)}
         >
           Watch
         </button>
@@ -476,8 +498,10 @@ defmodule PhoenixDevToolbar.Panels.System do
               exited at {watch.down.at}: <code>{watch.down.reason}</code>
             </span>
             <button
+              id={"pdt-system-forget-#{index}"}
               type="button"
               class="pdt-button pdt-button--small"
+              aria-label={"Forget #{inspect(watch.pid)}"}
               phx-click="unwatch"
               phx-value-index={index}
               phx-target={@myself}
@@ -489,6 +513,14 @@ defmodule PhoenixDevToolbar.Panels.System do
       </section>
     </div>
     """
+  end
+
+  defp watch_title(watched, pid) do
+    cond do
+      Enum.any?(watched, &(&1.pid == pid)) -> "Watched already"
+      length(watched) >= @max_watched -> "#{@max_watched} watched: forget one first"
+      true -> "Keep an eye on it: its exit reason shows below when it goes down"
+    end
   end
 
   attr :peek, :any, required: true

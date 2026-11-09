@@ -49,6 +49,7 @@ defmodule PhoenixDevToolbar.PanelLive do
       |> assign(root: root, flush: nil, subscribed: [])
       # What tabs need to act on host processes (ProcessActions, ADR 10): the
       # client's address (ClientPolicy) and this panel's own processes (Protected).
+      |> assign(:monitors, %{})
       |> assign(:pdt_actions, %{
         client: client_ip(socket),
         panel: self(),
@@ -137,13 +138,23 @@ defmodule PhoenixDevToolbar.PanelLive do
     end
   end
 
-  # A monitor a tab set (it runs in this process): every tab's handle_info/2 gets
-  # it and ignores the ones it does not know.
-  def handle_info({:DOWN, _ref, :process, _pid, _reason} = down, socket) do
-    for %{id: id, panel: panel} <- socket.assigns.tabs,
-        do: Panel.send_now(self(), panel, panel_id(id), down)
+  # Monitors a tab set with Panel.monitor/3 (it runs in this process): the DOWN
+  # goes to that tab only, never to tabs that did not ask (plugins).
+  def handle_info({:pdt_monitor, ref, module, id}, socket),
+    do: {:noreply, update(socket, :monitors, &Map.put(&1, ref, {module, id}))}
 
-    {:noreply, socket}
+  def handle_info({:pdt_demonitor, ref}, socket),
+    do: {:noreply, update(socket, :monitors, &Map.delete(&1, ref))}
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason} = down, socket) do
+    case Map.pop(socket.assigns.monitors, ref) do
+      {{module, id}, monitors} ->
+        Panel.send_now(self(), module, id, down)
+        {:noreply, assign(socket, :monitors, monitors)}
+
+      {nil, _monitors} ->
+        {:noreply, socket}
+    end
   end
 
   # A tab's component raised (PhoenixDevToolbar.Panel boundary).

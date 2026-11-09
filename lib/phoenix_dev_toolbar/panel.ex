@@ -123,6 +123,26 @@ defmodule PhoenixDevToolbar.Panel do
   defdelegate duration(us), to: PhoenixDevToolbar.Components
 
   @doc false
+  # Monitors `pid` for the panel `module` with DOM id `id`: its DOWN message is
+  # delivered to that panel's handle_info/2 only (the panel process receives it,
+  # PhoenixDevToolbar.PanelLive routes it). Internal: built-in tabs only.
+  @spec monitor(module(), String.t(), pid()) :: reference()
+  def monitor(module, id, pid) do
+    ref = Process.monitor(pid)
+    send(self(), {:pdt_monitor, ref, module, id})
+    ref
+  end
+
+  @doc false
+  # Drops a monitor set with monitor/3, and its route.
+  @spec demonitor(reference()) :: :ok
+  def demonitor(ref) do
+    Process.demonitor(ref, [:flush])
+    send(self(), {:pdt_demonitor, ref})
+    :ok
+  end
+
+  @doc false
   # Used by the toolbar to deliver a message to a panel right away.
   @spec send_now(pid(), module(), String.t(), term()) :: :ok
   def send_now(pid, module, id, message),
