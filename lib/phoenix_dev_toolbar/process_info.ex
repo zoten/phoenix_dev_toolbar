@@ -259,11 +259,12 @@ defmodule PhoenixDevToolbar.ProcessInfo do
   status is left out. Runs code in the target: call it on demand from a task,
   never polled.
 
-  Only a process waiting in a `gen` behaviour's loop (gen_server, gen_statem,
-  gen_event, supervisors, LiveViews), or hibernated, is asked. Anything else is
-  refused before a message is sent: a Task or a plain process never answers,
-  and the system message would stay in its mailbox for good. A server busy in a
-  callback is refused too (`:busy`): try again.
+  Only a process waiting for its next message in a `gen` behaviour's loop
+  (gen_server, gen_statem, gen_event, supervisors, LiveViews), or hibernated, is
+  asked. Anything else is refused before a message is sent: a Task or a plain
+  process (even one blocked in a call) never answers, and the system message
+  would stay in its mailbox for good. A server busy in a callback is refused too
+  (`:busy`): try again.
   """
   @spec status(pid(), timeout()) ::
           {:ok, status()} | {:error, :not_otp | :busy | :timeout | :dead | :failed}
@@ -276,20 +277,30 @@ defmodule PhoenixDevToolbar.ProcessInfo do
 
   def status(pid, _timeout) when is_pid(pid), do: {:error, :not_otp}
 
-  @sys_loops [:gen_server, :gen_statem, :gen_event, :gen, :sys]
+  # The functions a `gen` behaviour waits for its next message in (OTP 25 to 27),
+  # and where any process hibernates. Exact points, not whole modules: a Task
+  # blocked in `GenServer.call` sits in `:gen.do_call/4` and never answers.
+  @waiting_points [
+    {:gen_server, :loop},
+    {:gen_server, :loop_hibernate},
+    {:gen_statem, :loop},
+    {:gen_statem, :loop_receive},
+    {:gen_event, :fetch_msg},
+    {:erlang, :hibernate}
+  ]
 
-  # Whether a system message sent now gets an answer: the process waits in a
-  # `gen` loop (or in `:sys`, already answering one), or hibernates (a server
-  # hibernates in :erlang.hibernate/3; only proc_lib processes are considered).
+  # Whether a system message sent now gets an answer: the process waits at a
+  # `gen` receive point, or hibernates (only proc_lib processes are considered).
   defp answers_sys(pid) do
     case {otp?(pid), Process.info(pid, :current_function)} do
       {_otp?, nil} -> :dead
       {false, _function} -> :not_otp
-      {true, {:current_function, {module, _f, _a}}} when module in @sys_loops -> :yes
-      {true, {:current_function, {:erlang, :hibernate, 3}}} -> :yes
-      {true, _elsewhere} -> :busy
+      {true, {:current_function, {module, fun, _a}}} -> waiting({module, fun})
     end
   end
+
+  defp waiting(point) when point in @waiting_points, do: :yes
+  defp waiting(_elsewhere), do: :busy
 
   defp get_status(pid, timeout) do
     {:ok, pid |> :sys.get_status(timeout) |> present()}

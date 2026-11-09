@@ -49,6 +49,13 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
     assert has_element?(panel, "#tabbed[data-shown=true][data-navigated=tabbed]")
   end
 
+  test "Panel.navigate/3 outside the panel (a host LiveView) does nothing" do
+    socket = %Phoenix.LiveView.Socket{view: DemoWeb.PageLive}
+
+    assert PhoenixDevToolbar.Panel.navigate(socket, :tabbed, %{"via" => "host"}) == socket
+    refute_received {:pdt_navigate, _tab, _params}
+  end
+
   test "a plugin gets its own tab and badge, live, with its config" do
     {host, sid} = visit("/demo")
     {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")

@@ -10,9 +10,11 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
   use PhoenixDevToolbar.Panel
 
+  alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Page
   alias PhoenixDevToolbar.Panel
   alias PhoenixDevToolbar.Panels.Process, as: ProcessPanel
+  alias PhoenixDevToolbar.Plugins
   alias PhoenixDevToolbar.ProcessInfo
   alias PhoenixDevToolbar.ProcessInspector
   alias PhoenixDevToolbar.ProcessView
@@ -23,8 +25,20 @@ defmodule PhoenixDevToolbar.Panels.Process do
   @max_targets 10
 
   @impl Phoenix.LiveComponent
-  def mount(socket),
-    do: {:ok, socket |> assign(prev: nil, targets: []) |> ProcessInspector.init()}
+  def mount(socket) do
+    {:ok,
+     socket
+     |> assign(prev: nil, targets: [], inspect: inspect_event())
+     |> ProcessInspector.init()}
+  end
+
+  # Process links lead to the System tab: without it, pids are plain text.
+  defp inspect_event do
+    case Enum.any?(Collector.plugins(), fn {plugin, _config} -> plugin == Plugins.System end) do
+      true -> "inspect"
+      false -> nil
+    end
+  end
 
   # A reset also follows Re-enable (after an error broke the tab): polling
   # restarts if someone looks.
@@ -229,7 +243,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
         </form>
         <span :if={length(@targets) == 1} id="pdt-process-target-label">
           <strong>{hd(@targets).label}</strong>
-          <ProcessView.pid_link id={inspect(hd(@targets).pid)} link="inspect" target={@myself} />
+          <ProcessView.pid_link id={inspect(hd(@targets).pid)} link={@inspect} target={@myself} />
         </span>
         <span :if={@about} class="pdt-hint">
           started in <code>{@about.initial_call}</code>
@@ -267,7 +281,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
         :if={is_map(@relations)}
         prefix="pdt-process"
         relations={@relations}
-        link="inspect"
+        link={@inspect}
         target={@myself}
       />
     </div>

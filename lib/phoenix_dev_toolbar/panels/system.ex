@@ -9,7 +9,8 @@ defmodule PhoenixDevToolbar.Panels.System do
   #
   # Breadcrumbs: every process inspected, at most @max_crumbs, oldest dropped,
   # kept newest first. A crumb is clicked by its index in the rendered (oldest
-  # first) list, never by pid.
+  # first) list, never by pid. The inspected process is always the newest crumb:
+  # going back to one drops those after it.
 
   use PhoenixDevToolbar.Panel
 
@@ -71,14 +72,14 @@ defmodule PhoenixDevToolbar.Panels.System do
 
   @impl Phoenix.LiveComponent
   def handle_event("search", %{"ref" => ref}, socket) when is_binary(ref),
-    do: {:noreply, socket |> assign(:query, ref) |> inspect_ref(ref)}
+    do: {:noreply, socket |> assign(:query, query(ref)) |> inspect_ref(ref)}
 
   def handle_event("inspect", %{"pid" => ref}, socket) when is_binary(ref),
     do: {:noreply, inspect_ref(socket, ref)}
 
   # Typing keeps the query across renders (and form recovery).
   def handle_event("query", %{"ref" => ref}, socket) when is_binary(ref),
-    do: {:noreply, assign(socket, :query, ref)}
+    do: {:noreply, assign(socket, :query, query(ref))}
 
   def handle_event("crumb", %{"index" => index}, socket) when is_binary(index) do
     oldest_first = Enum.reverse(socket.assigns.crumbs)
@@ -108,6 +109,9 @@ defmodule PhoenixDevToolbar.Panels.System do
 
   # The target changed meanwhile (its task was cancelled), or the task exited.
   def handle_async(:status, _result, socket), do: {:noreply, assign(socket, :status, nil)}
+
+  # The input's maxlength is client side only: what is kept is capped here.
+  defp query(ref), do: String.slice(ref, 0, 128)
 
   ## Targets
 
@@ -141,7 +145,7 @@ defmodule PhoenixDevToolbar.Panels.System do
     |> cancel_status()
     |> ProcessInspector.cancel_timers()
     |> ProcessInspector.select(pid)
-    |> assign(error: nil, ancestors: [], stacktrace: [], status: nil)
+    |> assign(error: nil, ancestors: [], stacktrace: [], status: nil, status_at: nil)
     |> poll_now()
   end
 
@@ -173,6 +177,12 @@ defmodule PhoenixDevToolbar.Panels.System do
 
   defp tick(socket, :relations),
     do: socket |> ProcessInspector.read_relations() |> read_where()
+
+  # An exited process stays shown, but nothing is read for it any more (the
+  # Process tab keeps its relations loop to find a rejoined LiveView; here there
+  # is nothing to find).
+  defp schedule(%{assigns: %{sample: :dead}} = socket, _kind),
+    do: ProcessInspector.cancel_timers(socket)
 
   defp schedule(socket, kind), do: ProcessInspector.schedule(socket, kind, SystemPanel)
 
@@ -253,7 +263,7 @@ defmodule PhoenixDevToolbar.Panels.System do
           id={"pdt-system-crumb-#{index}"}
           type="button"
           class="pdt-crumb"
-          aria-current={if(crumb.pid == @selected, do: "true")}
+          aria-current={if(index == length(@crumbs) - 1, do: "true")}
           phx-click="crumb"
           phx-value-index={index}
           phx-target={@myself}

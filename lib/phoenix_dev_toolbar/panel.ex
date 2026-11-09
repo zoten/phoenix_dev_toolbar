@@ -100,17 +100,20 @@ defmodule PhoenixDevToolbar.Panel do
 
   Use it to link to another tab, for example to inspect a process in the System
   tab. Keep `params` small (a few strings): they go through the panel process
-  as they are. A plugin that is not attached or has no tab is ignored.
+  as they are. A plugin that is not attached or has no tab is ignored, and so is
+  a call from anything but a toolbar panel (a host LiveView's socket).
 
       def handle_event("inspect", %{"pid" => pid}, socket),
         do: {:noreply, Panel.navigate(socket, :system, %{"pid" => pid})}
   """
   @spec navigate(Socket.t(), atom(), map()) :: Socket.t()
-  def navigate(%Socket{} = socket, plugin_id, params)
+  def navigate(%Socket{view: PhoenixDevToolbar.PanelLive} = socket, plugin_id, params)
       when is_atom(plugin_id) and is_map(params) do
     send(self(), {:pdt_navigate, Atom.to_string(plugin_id), params})
     socket
   end
+
+  def navigate(%Socket{} = socket, _plugin_id, _params), do: socket
 
   @doc """
   Formats a duration in microseconds (`Event.duration`) the way the toolbar

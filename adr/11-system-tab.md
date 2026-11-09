@@ -32,10 +32,10 @@ polling (`ProcessInspector`), its rendering (`ProcessView`) and their options
   stacktrace (as deep as `backtrace_depth`, 20 frames at most).
 - **State**: for processes started through `proc_lib`, a "Read state" button runs
   `:sys.get_status/2` in `start_async/3`: 1 s timeout, once a second at most. Only a
-  process waiting in a `gen` loop (gen_server, gen_statem, gen_event, supervisors,
-  LiveViews) or hibernated is asked; a Task, a plain process or a server busy in a
-  callback is refused before anything is sent, so no system message is ever left
-  in a mailbox that never reads it. Its `format_status` applies; the state is taken
+  process waiting for its next message at a `gen` receive point (gen_server,
+  gen_statem, gen_event, supervisors, LiveViews) or hibernated is asked; a Task
+  (even one blocked in a call), a plain process or a server busy in a callback is
+  refused before anything is sent. Its `format_status` applies; the state is taken
   from the status's `State` entry, redacted with the `redact` keys and truncated like
   assigns. A `format_status/2` that lists its own entries instead (a LiveView: its
   view, parent, transport, topic, component count) shows them one per line, each

@@ -44,7 +44,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
     refute has_element?(panel, "#pdt-system-none")
   end
 
-  test "input that names no process says why, and creates nothing" do
+  test "input that names no process says why" do
     panel = open()
 
     search(panel, "pdt_no_such_name_#{System.unique_integer([:positive])}")
@@ -96,6 +96,32 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
 
     assert has_element?(panel, "#pdt-system-target", inspect(pid))
     refute has_element?(panel, "#pdt-system-status")
+  end
+
+  test "an exited process stays shown, still the current crumb" do
+    pid = idle_process()
+    panel = open()
+    search(panel, inspect(pid))
+    stop(pid)
+
+    # Showing the panel again reads at once and finds it gone.
+    render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => false})
+    render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
+
+    assert has_element?(panel, "#pdt-system-dead")
+    assert has_element?(panel, "#pdt-system-crumb-0[aria-current=true]")
+  end
+
+  test "without the System tab, Process tab pids are plain text" do
+    PhoenixDevToolbar.Collector.attach([PhoenixDevToolbar.Plugins.Process])
+    on_exit(fn -> attach_plugins() end)
+    {_host, sid} = visit("/demo")
+    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
+
+    assert has_element?(panel, "#pdt-process-target-label code")
+    refute has_element?(panel, "#pdt-process-target-label button")
+    refute has_element?(panel, "#pdt-process-links button")
   end
 
   test "a process link in the Process tab opens it here" do

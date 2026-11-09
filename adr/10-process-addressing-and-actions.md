@@ -55,6 +55,7 @@ reachable dev port must not freeze or kill the node.
 
 - A client behind a local reverse proxy, or Docker's userland port proxy, reads as
   loopback: loopback then means "whoever reaches the proxy".
-- The endpoint's children (listener, acceptors) and the host Repo pool are not
-  protected: their supervisors restart them.
+- The endpoint's children (listener, acceptors, connection supervisors) and the
+  host Repo pool are not protected: their supervisors restart them, but killing a
+  connection supervisor drops the panel's own websocket until it reconnects.
 - A process suspended while it holds a lock others wait on stalls them until the TTL.

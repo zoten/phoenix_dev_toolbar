@@ -228,6 +228,27 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
       assert Process.info(task.pid, :message_queue_len) == {:message_queue_len, 0}
     end
 
+    test "never sends a system message to a Task blocked in a call" do
+      test = self()
+      busy = start_supervised!({Agent, fn -> :ok end}, id: :busy)
+
+      Agent.cast(busy, fn state ->
+        send(test, :busy)
+        receive(do: (:release -> state))
+      end)
+
+      assert_receive :busy
+      supervisor = start_supervised!(Task.Supervisor)
+      task = Task.Supervisor.async(supervisor, fn -> Agent.get(busy, & &1, :infinity) end)
+      assert waiting_in_call?(task.pid, 100_000)
+
+      assert ProcessInfo.status(task.pid, 1000) == {:error, :busy}
+      assert Process.info(task.pid, :message_queue_len) == {:message_queue_len, 0}
+
+      send(busy, :release)
+      assert Task.await(task) == :ok
+    end
+
     test "a hibernated server answers" do
       agent =
         start_supervised!(%{
@@ -258,6 +279,16 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
       _ = Agent.get(agent, & &1)
       stop_supervised!(Agent)
       assert ProcessInfo.status(agent, 50) == {:error, :dead}
+    end
+  end
+
+  # A call blocks right after it is sent: no message tells when.
+  defp waiting_in_call?(_pid, 0), do: false
+
+  defp waiting_in_call?(pid, tries) do
+    case Process.info(pid, :current_function) do
+      {:current_function, {:gen, :do_call, 4}} -> true
+      _other -> :erlang.yield() && waiting_in_call?(pid, tries - 1)
     end
   end
 
