@@ -6,7 +6,8 @@
 // the toolbar's CSS cannot reach the host. It is read-only towards the host
 // page and never touches window.liveSocket's state. Its one write to a host
 // element: docked left or right, an inline padding on <html> makes room for
-// the panel, restored when the dock changes.
+// the panel, restored when the dock changes or the page opts out of reserving
+// space (data-pdt-reserve="false", or the dock menu's toggle).
 //
 // Client event log (ADR 07): passive listeners on LiveView's own window events
 // forward a sanitized copy to the panel through the same origin checked
@@ -21,6 +22,7 @@ import {
   minSize,
   parseLayout,
   reservedSize,
+  reserving,
   serializeLayout,
   sideDock,
   sizeFromPointer,
@@ -189,6 +191,7 @@ const mount = () => {
 
   let state = readState()
   const layout = readLayout()
+  const reserveDefault = script.dataset.pdtReserve
   let dock = layout.dock
   const sidePadding = createSidePadding()
   const viewport = () => (sideDock(dock) ? window.innerWidth : window.innerHeight)
@@ -199,7 +202,8 @@ const mount = () => {
   const post = (type, payload = {}) =>
     frame.contentWindow &&
     frame.contentWindow.postMessage({type: MESSAGE_PREFIX + type, ...payload}, window.location.origin)
-  const postState = () => post("state", {open: state === "open", dock})
+  const postState = () => post("state", {open: state === "open", dock, reserve: reserving(layout, reserveDefault)})
+  const saveLayout = () => writeLayout({dock, sizes: layout.sizes, reserve: layout.reserve})
 
   // Docked at the top, the host div leads <body> so its height pushes the page
   // down; otherwise it closes <body>, so the page scrolls its end above the bar.
@@ -209,7 +213,7 @@ const mount = () => {
   }
 
   const applySize = () => {
-    const reserved = reservedSize(state, size)
+    const reserved = reservedSize(state, size, reserving(layout, reserveDefault))
     host.style.setProperty("--pdt-extent", `${state === "open" ? size : reservedSize("collapsed", size)}px`)
     host.style.height = sideDock(dock) ? "0" : `${reserved}px`
     sidePadding(dock, sideDock(dock) ? reserved : 0)
@@ -223,7 +227,7 @@ const mount = () => {
     applySize()
     if (!persist) return
     layout.sizes[dock] = size
-    writeLayout({dock, sizes: layout.sizes})
+    saveLayout()
   }
 
   const setDock = (next) => {
@@ -239,7 +243,6 @@ const mount = () => {
 
   const setState = (next) => {
     state = next
-    frame.classList.toggle("open", state === "open")
     frame.classList.toggle("hidden", state === "hidden")
     handle.classList.toggle("visible", state === "open")
     pill.classList.toggle("visible", state === "hidden")
@@ -357,7 +360,13 @@ const mount = () => {
     if (type === "pdt:hide") setState("hidden")
     if (type === "pdt:dock" && DOCKS.includes(event.data.dock)) {
       setDock(event.data.dock)
-      writeLayout({dock, sizes: layout.sizes})
+      saveLayout()
+      postState()
+    }
+    if (type === "pdt:reserve" && typeof event.data.reserve === "boolean") {
+      layout.reserve = event.data.reserve
+      applySize()
+      saveLayout()
       postState()
     }
   })

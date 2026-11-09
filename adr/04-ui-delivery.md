@@ -50,7 +50,8 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   "dev toolbar" pill in the bottom right corner, so the bar never permanently covers the
   host page; clicking it collapses again). The iframe asks for `pdt:toggle` (toggle
   button), `pdt:open` (a tab was picked), `pdt:hide` (hide button) and `pdt:dock` (dock
-  picker, a known dock only); the loader answers with `pdt:state` (`open` and `dock`).
+  picker, a known dock only) and `pdt:reserve` (a boolean); the loader answers with
+  `pdt:state` (`open`, `dock` and `reserve`).
   Both sides check `event.origin` and `event.source`. The loader also forwards LiveView's
   own `phx:*` window events as `pdt:client` messages (passive listeners, sanitized, rate
   limited: ADR 07). Phase 4 adds host socket RTT through
@@ -69,17 +70,24 @@ interfere with the host's LiveSocket, DOM patching or CSP.
     toolbar, `!important`. This is the toolbar's **only write to a host element**: the
     host's own inline value is put back whenever the dock changes or the toolbar hides.
   - Limits: reserving space only helps when the document is the scroller (an app shell
-    that scrolls an inner `overflow: auto` container stays covered), host
-    `position: fixed` chrome stays under the panel, and on side docks the host's media
-    queries still see the full window width. Collapse, resize or hide are the fallback.
+    that scrolls an inner `overflow: auto` container stays covered, and a full height
+    shell gains a 34px document scroll), host `position: fixed` chrome stays under the
+    panel, a `<body>` laid out as a flex row gives the bar no room, and on side docks the
+    host's media queries still see the full window width. Collapse, resize or hide are
+    the fallback.
+  - Opt out: reserving is on by default. `config :phoenix_dev_toolbar, reserve_space:
+    false` turns it off (the plug writes `data-pdt-reserve="false"` on the loader tag),
+    and the dock menu's "Reserve page space" toggle (`#pdt-reserve`, `pdt:reserve`)
+    overrides the config per browser, stored in `pdt:layout` as `reserve`. Not
+    reserving, the bar overlaps the page and `<html>` is never written.
 
   The open size is draggable from a handle on the panel's inner edge
   (`role="separator"`; arrows step 16px, Shift 64px, Home or double click reset), clamped
   between a minimum (120px top/bottom, 280px left/right) and the viewport minus a 48px
   strip of page, re-clamped on window resize. Defaults: `min(45vh, 520px)` top/bottom,
   `min(40vw, 480px)` left/right. The iframe ignores pointer events while dragging. The
-  layout is persisted as `pdt:layout` (`{"dock": ..., "sizes": {dock: px}}`, one size per
-  dock; the older `{"dock", "size"}` shape is read back). Sizing and parsing live in
+  layout is persisted as `pdt:layout` (`{"dock": ..., "sizes": {dock: px}, "reserve"?:
+  bool}`, one size per dock; the older `{"dock", "size"}` shape is read back). Sizing and parsing live in
   `layout.mjs`. In the panel, `panel.js` sets `pdt-dock-<name>` (and `pdt-side`) on its
   root: collapsed on a side, the header turns into a full height strip
   (`writing-mode: vertical-rl`, header sizes are logical properties), and an open panel

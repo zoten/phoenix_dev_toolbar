@@ -21,6 +21,13 @@ defmodule PhoenixDevToolbar.Config do
   @spec defaults() :: [module()]
   def defaults, do: @defaults
 
+  @doc """
+  Whether the toolbar reserves its page space by default (ADR 04): `reserve_space:`,
+  `true` unless set to `false`. The dock menu's toggle overrides it per browser.
+  """
+  @spec reserve_space?() :: boolean()
+  def reserve_space?, do: Application.get_env(:phoenix_dev_toolbar, :reserve_space, true) != false
+
   @doc "The configured plugins, expanded and validated, in order."
   @spec plugins() :: [entry()]
   def plugins, do: :phoenix_dev_toolbar |> Application.get_env(:plugins, [:defaults]) |> expand()

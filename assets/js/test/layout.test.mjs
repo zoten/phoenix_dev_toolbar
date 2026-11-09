@@ -11,6 +11,7 @@ import {
   minSize,
   parseLayout,
   reservedSize,
+  reserving,
   serializeLayout,
   sideDock,
   sizeFromPointer,
@@ -59,22 +60,45 @@ test("reserved space follows the state", () => {
   assert.equal(reservedSize("hidden", 300), 0)
 })
 
+test("an opted out page gets no space in any state", () => {
+  for (const state of ["open", "collapsed", "hidden"]) assert.equal(reservedSize(state, 300, false), 0)
+})
+
+test("the user's choice overrides the server default, which defaults to reserving", () => {
+  assert.equal(reserving({reserve: null}, undefined), true)
+  assert.equal(reserving({reserve: null}, "false"), false)
+  assert.equal(reserving({reserve: true}, "false"), true)
+  assert.equal(reserving({reserve: false}, undefined), false)
+})
+
+test("the choice round trips; without one, the server default is followed", () => {
+  const layout = {dock: "top", sizes: {}, reserve: false}
+  assert.deepEqual(parseLayout(serializeLayout(layout)), layout)
+  assert.equal(serializeLayout({dock: "top", sizes: {}, reserve: null}), '{"dock":"top","sizes":{}}')
+  assert.equal(parseLayout('{"dock":"top","sizes":{},"reserve":"no"}').reserve, null)
+})
+
 test("layout round trips, one size per dock", () => {
-  const layout = {dock: "right", sizes: {bottom: 280, right: 420}}
+  const layout = {dock: "right", sizes: {bottom: 280, right: 420}, reserve: null}
   assert.deepEqual(parseLayout(serializeLayout(layout)), layout)
 })
 
 test("the single-size layout is read back as that dock's size", () => {
-  assert.deepEqual(parseLayout('{"dock":"bottom","size":280}'), {dock: "bottom", sizes: {bottom: 280}})
+  assert.deepEqual(parseLayout('{"dock":"bottom","size":280}'), {
+    dock: "bottom",
+    sizes: {bottom: 280},
+    reserve: null,
+  })
 })
 
 test("missing, garbled or unknown layouts fall back to the default", () => {
-  const fallback = {dock: "bottom", sizes: {}}
+  const fallback = {dock: "bottom", sizes: {}, reserve: null}
   assert.deepEqual(parseLayout(null), fallback)
   assert.deepEqual(parseLayout("{nope"), fallback)
   assert.deepEqual(parseLayout('{"dock":"bottom","size":"big"}'), fallback)
   assert.deepEqual(parseLayout('{"dock":"diagonal","sizes":{"bottom":200,"diagonal":9}}'), {
     dock: "bottom",
     sizes: {bottom: 200},
+    reserve: null,
   })
 })

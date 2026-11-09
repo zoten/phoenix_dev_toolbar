@@ -36,8 +36,10 @@ export const sizeFromPointer = (dock, x, y, width, height) =>
   ({bottom: height - y, top: y, left: x, right: width - x})[dock]
 
 // The space the toolbar takes in the page, so the page can show its edge
-// beside the bar. Hidden leaves only the corner pill: no space.
-export const reservedSize = (state, size) => {
+// beside the bar. Hidden leaves only the corner pill, and an opted out page
+// (`reserve` false) lets the bar overlap it: no space.
+export const reservedSize = (state, size, reserve = true) => {
+  if (!reserve) return 0
   if (state === "open") return size
   if (state === "collapsed") return COLLAPSED_SIZE
   return 0
@@ -48,20 +50,31 @@ const validSize = (size) => Number.isFinite(size) && size > 0
 const pickSizes = (sizes) =>
   Object.fromEntries(DOCKS.filter((dock) => validSize(sizes[dock])).map((dock) => [dock, sizes[dock]]))
 
-const defaultLayout = () => ({dock: DEFAULT_DOCK, sizes: {}})
+const defaultLayout = () => ({dock: DEFAULT_DOCK, sizes: {}, reserve: null})
 
-// Reads `{dock, sizes}`, and the older `{dock: "bottom", size}` shape. Anything
-// unknown falls back to the default.
+// The user's page space choice: a boolean overrides the server's default, null
+// follows it.
+const pickReserve = (reserve) => (typeof reserve === "boolean" ? reserve : null)
+
+// Reads `{dock, sizes, reserve}`, and the older `{dock: "bottom", size}` shape.
+// Anything unknown falls back to the default.
 export const parseLayout = (raw) => {
   try {
     const parsed = JSON.parse(raw)
     if (!parsed || typeof parsed !== "object") return defaultLayout()
     const dock = DOCKS.includes(parsed.dock) ? parsed.dock : DEFAULT_DOCK
-    if (parsed.sizes && typeof parsed.sizes === "object") return {dock, sizes: pickSizes(parsed.sizes)}
-    return {dock, sizes: validSize(parsed.size) ? {[dock]: parsed.size} : {}}
+    const reserve = pickReserve(parsed.reserve)
+    if (parsed.sizes && typeof parsed.sizes === "object") return {dock, sizes: pickSizes(parsed.sizes), reserve}
+    return {dock, sizes: validSize(parsed.size) ? {[dock]: parsed.size} : {}, reserve}
   } catch (_error) {
     return defaultLayout()
   }
 }
 
-export const serializeLayout = ({dock, sizes}) => JSON.stringify({dock, sizes})
+export const serializeLayout = ({dock, sizes, reserve}) =>
+  JSON.stringify(typeof reserve === "boolean" ? {dock, sizes, reserve} : {dock, sizes})
+
+// Whether the page makes room: the user's choice, else the server's default
+// (the loader tag's data-pdt-reserve, only ever written as "false").
+export const reserving = (layout, attribute) =>
+  typeof layout.reserve === "boolean" ? layout.reserve : attribute !== "false"

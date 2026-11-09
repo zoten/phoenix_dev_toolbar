@@ -100,6 +100,7 @@ defmodule PhoenixDevToolbar.EctoExport do
     with {:ok, format} <- format(params["format"]),
          {:ok, root} <- sid(params["root"]),
          {:ok, sids} <- sids(params["sids"]),
+         true <- root in sids || {:error, 400},
          {:ok, path} <- known(sids),
          {:ok, config} <- ecto_config() do
       page = %{root: root, sids: sids, path: path}

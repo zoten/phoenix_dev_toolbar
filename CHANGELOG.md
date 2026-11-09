@@ -67,3 +67,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Toolbar reserves its page space so the page scrolls above it; draggable panel height (ADR 04)
 - Toolbar docks: bottom, top, left, right; dock picker, sideways collapsed strip (ADR 04)
 - Dock picker menu no longer clipped on side docks (ADR 04)
+- Page space opt out: `reserve_space` config and a dock menu toggle (ADR 04)
+- Ecto Copy never hangs: busy and crash answers, disabled during EXPLAIN (ADR 08)
+- Ecto Download checks `root` is one of the page's sids (ADR 08)

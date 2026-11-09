@@ -38,7 +38,6 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
        shown: :queue.new(),
        explaining: nil,
        exporting: nil,
-       export_error: nil,
        queries?: false,
        export_choice: %{format: "short", explain?: false}
      )}
@@ -62,7 +61,6 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
         shown: :queue.new(),
         explaining: nil,
         exporting: nil,
-        export_error: nil,
         queries?: false
       )
 
@@ -167,24 +165,15 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
     end
   end
 
-  # Fixed strings only: never an atom from the client.
+  # Fixed strings only: never an atom from the client. A Copy refused while
+  # busy (Copy is disabled then, but a click can race the render) still
+  # answers the hook, which started a clipboard write in the click.
   def handle_event("export", params, socket) do
-    with nil <- socket.assigns.explaining,
-         nil <- socket.assigns.exporting,
-         {:ok, format} <- export_format(params["format"]),
+    with {:ok, format} <- export_format(params["format"]),
          "copy" <- params["action"] do
-      page = Map.take(socket.assigns.page, [:root, :sids, :path])
-      explain? = params["explain"] == "true"
-      config = socket.assigns.config
-
-      {:noreply,
-       socket
-       |> assign(exporting: format, export_error: nil)
-       |> start_async(:export, fn ->
-         {page_key(page), EctoExport.page(page, format, explain?, config)}
-       end)}
+      export(socket, format, params["explain"] == "true")
     else
-      _busy_or_invalid -> {:noreply, socket}
+      _invalid -> {:noreply, socket}
     end
   end
 
@@ -246,13 +235,34 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
      |> push_event("pdt:export", %{payload: payload, page: page})}
   end
 
+  # A page change cancels the export: the hook already dropped its copy.
+  def handle_async(:export, {:exit, {:shutdown, :cancel}}, socket),
+    do: {:noreply, assign(socket, :exporting, nil)}
+
   def handle_async(:export, {:exit, reason}, socket) do
     {:noreply,
-     assign(socket,
-       exporting: nil,
-       export_error: "Export failed: " <> Truncate.inspect_value(reason)
-     )}
+     socket
+     |> assign(:exporting, nil)
+     |> export_failed("the export crashed: " <> Truncate.inspect_value(reason))}
   end
+
+  defp export(%{assigns: %{explaining: nil, exporting: nil}} = socket, format, explain?) do
+    page = Map.take(socket.assigns.page, [:root, :sids, :path])
+    config = socket.assigns.config
+
+    {:noreply,
+     socket
+     |> assign(:exporting, format)
+     |> start_async(:export, fn ->
+       {page_key(page), EctoExport.page(page, format, explain?, config)}
+     end)}
+  end
+
+  defp export(socket, _format, _explain?),
+    do: {:noreply, export_failed(socket, "the tab is busy, try again in a moment")}
+
+  defp export_failed(socket, reason),
+    do: push_event(socket, "pdt:export", %{error: reason, page: page_key(socket.assigns.page)})
 
   defp cancel_explain(%{assigns: %{explaining: nil}} = socket), do: socket
   defp cancel_explain(socket), do: cancel_async(socket, :explain)
@@ -272,7 +282,7 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
     "export/ecto.json?" <>
       URI.encode_query(%{
         "format" => format,
-        "explain" => to_string(explain?),
+        "explain" => to_string(explain? and format == "full"),
         "root" => page.root,
         "sids" => Enum.join(page.sids, ",")
       })
@@ -310,8 +320,8 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
       />
       <.export_form
         :if={@queries?}
-        exporting={@exporting}
-        error={@export_error}
+        exporting={@exporting != nil}
+        busy={@exporting != nil or @explaining != nil}
         choice={@export_choice}
         href={download_href(@page, @export_choice)}
         page={page_key(@page)}
@@ -331,11 +341,11 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
     """
   end
 
-  attr :exporting, :any, required: true
+  attr :exporting, :boolean, required: true
+  attr :busy, :boolean, required: true, doc: "an export or an EXPLAIN is running"
   attr :href, :string, required: true, doc: "the Download link, relative to the panel"
   attr :choice, :map, required: true, doc: "%{format: \"short\" | \"full\", explain?: boolean}"
   attr :page, :string, required: true, doc: "the page's sids, comma separated"
-  attr :error, :string, default: nil
   attr :target, :any, required: true
 
   defp export_form(assigns) do
@@ -387,17 +397,13 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
         name="action"
         value="copy"
         class="pdt-button pdt-button--small"
-        disabled={@exporting != nil}
-        aria-busy={to_string(@exporting != nil)}
+        disabled={@busy}
+        aria-busy={to_string(@busy)}
       >
         Copy
       </button>
       <span id="pdt-export-status" class="pdt-hint" aria-live="polite">
-        {cond do
-          @exporting != nil -> "exporting…"
-          @error -> @error
-          true -> ""
-        end}
+        {if(@exporting, do: "exporting…", else: "")}
       </span>
       <span id="pdt-export-result" class="pdt-hint" phx-update="ignore" aria-live="polite"></span>
     </form>

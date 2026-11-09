@@ -122,6 +122,18 @@ defmodule PhoenixDevToolbar.PanelLayout do
               <span class={["pdt-dock__icon", "pdt-dock__icon--" <> dock]} aria-hidden="true"></span>
               {String.capitalize(dock)}
             </button>
+            <%!-- Pressed state from the loader (pdt:state); the choice is stored
+                 per browser and overrides the reserve_space config. --%>
+            <button
+              id="pdt-reserve"
+              type="button"
+              class="pdt-dock-option pdt-dock-reserve"
+              data-pdt-reserve
+              aria-pressed="true"
+              title="Make room so the page scrolls clear of the toolbar"
+            >
+              <span class="pdt-reserve__check" aria-hidden="true"></span> Reserve page space
+            </button>
           </div>
         </div>
         <button

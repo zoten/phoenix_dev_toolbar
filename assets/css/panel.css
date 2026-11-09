@@ -248,6 +248,13 @@ body.pdt {
 .pdt-dock-option:hover { background: rgba(255, 255, 255, .08); }
 .pdt-dock-option[aria-pressed="true"] { background: rgba(255, 255, 255, .14); }
 
+/* The page space toggle: a check, not a selected dock. */
+.pdt-dock-reserve { margin-block-start: 2px; border-block-start: 1px solid rgba(255, 255, 255, .12); border-radius: 0 0 4px 4px; }
+.pdt-dock-reserve[aria-pressed="true"] { background: transparent; }
+.pdt-dock-reserve:hover { background: rgba(255, 255, 255, .08); }
+.pdt-reserve__check { width: 14px; text-align: center; }
+.pdt-dock-reserve[aria-pressed="true"] .pdt-reserve__check::before { content: "\2713"; }
+
 /* Narrow open panel (a side dock, or a small window): the tabs get a row of
    their own and scroll sideways. */
 @media (max-width: 560px) {

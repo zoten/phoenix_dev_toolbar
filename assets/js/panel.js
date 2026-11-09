@@ -8,6 +8,7 @@
 // always matches the host's server version.
 
 import {parse, record, stale, tripped} from "./reloads.mjs"
+import {createExportCopy} from "./export_copy.mjs"
 import {countWrapped} from "./summary.mjs"
 
 const {Socket} = window.Phoenix
@@ -56,6 +57,13 @@ const setDock = (dock) => {
   })
 }
 
+// Whether the page makes room for the toolbar (ADR 04): the loader owns it.
+const setReserve = (reserve) => {
+  if (typeof reserve !== "boolean") return
+  const toggle = document.getElementById("pdt-reserve")
+  if (toggle) toggle.setAttribute("aria-pressed", String(reserve))
+}
+
 const dockMenu = () => document.getElementById("pdt-dock-menu")
 const dockButton = () => document.getElementById("pdt-dock")
 
@@ -81,7 +89,7 @@ const toggleDockMenu = () => {
   menu.hidden = false
   placeDockMenu(menu)
   dockButton().setAttribute("aria-expanded", "true")
-  const current = menu.querySelector("[aria-pressed='true']") || menu.querySelector("[data-pdt-dock]")
+  const current = menu.querySelector("[data-pdt-dock][aria-pressed='true']") || menu.querySelector("[data-pdt-dock]")
   current.focus()
 }
 
@@ -105,6 +113,7 @@ window.addEventListener("message", (event) => {
   const data = event.data
   if (data && data.type === "pdt:state") {
     setDock(data.dock)
+    setReserve(data.reserve)
     setOpen(Boolean(data.open))
   }
   if (data && data.type === "pdt:client") pushClient({event: data.event, dropped: data.dropped})
@@ -166,18 +175,9 @@ const PdtSummaryMore = {
 
 // On #pdt-ecto-export (ADR 08): Download is a plain same-origin link the plug
 // answers (a blob: link here is blocked by a host's frame-src in Firefox).
-// Copy: the tab pushes its JSON export; the result line (#pdt-export-result,
-// phx-update="ignore") is ours. The export arrives after a round trip (and EXPLAINs), too late for
-//   the click's user activation. Where ClipboardItem exists (secure contexts:
-//   https or localhost), the write starts in the click itself with a promised
-//   blob, resolved when the export arrives. Elsewhere (plain http on a LAN IP)
-//   there is no Clipboard API: execCommand("copy") on arrival, and when the
-//   activation has expired the JSON is held and the next Copy click copies it.
-// An export names the page it was built from (the form's data-pdt-page): one
-// that no longer matches, because the LiveView joined or the tab navigated
-// meanwhile, is dropped, never copied.
-const EXPORT_WAIT_MS = 60000
-const HELD_MS = 60000
+// Copy: the tab pushes its JSON export (or an error); export_copy.mjs decides
+// what reaches the clipboard and what the result line (#pdt-export-result,
+// phx-update="ignore") says. The form carries the page it shows (data-pdt-page).
 
 // The pre Clipboard API copy: works without a secure context, within the
 // click's user activation only. Focus goes back where it was.
@@ -203,107 +203,41 @@ const execCopy = (text) => {
 
 const PdtExport = {
   mounted() {
-    this.result = this.el.querySelector("#pdt-export-result")
-    this.pending = null
-    this.held = null
+    const result = this.el.querySelector("#pdt-export-result")
+    this.copier = createExportCopy({
+      clipboard: navigator.clipboard,
+      ClipboardItem: typeof ClipboardItem === "undefined" ? undefined : ClipboardItem,
+      Blob,
+      execCopy,
+      setTimeout: (fun, ms) => window.setTimeout(fun, ms),
+      clearTimeout: (timer) => window.clearTimeout(timer),
+      say: (text) => {
+        if (result) result.textContent = text
+      },
+      warn: (error) => console.warn("[phoenix_dev_toolbar] copy failed:", error),
+    })
     this.onClick = (event) => {
       if (!event.target.closest("#pdt-export-copy")) return
-      if (this.held) {
-        // The held export, copied in this click: no new export.
+      if (this.copier.click()) {
         event.preventDefault()
         event.stopPropagation()
-        const json = this.held.json
-        this.drop()
-        this.say(execCopy(json) ? "Copied" : "Copy failed: use Download")
-      } else {
-        this.startCopy()
       }
     }
-    // A new choice: the held export no longer matches the form.
-    this.onChange = () => this.drop()
+    this.onChange = () => this.copier.changed()
     this.el.addEventListener("click", this.onClick, true)
     this.el.addEventListener("change", this.onChange)
     this.page = this.el.dataset.pdtPage
-    this.handleEvent("pdt:export", ({payload, page}) => {
-      if (page === this.el.dataset.pdtPage) this.copy(JSON.stringify(payload, null, 2))
-      else this.pageChanged()
-    })
+    this.handleEvent("pdt:export", (data) => this.copier.arrive(data, this.el.dataset.pdtPage))
   },
   updated() {
     if (this.el.dataset.pdtPage === this.page) return
     this.page = this.el.dataset.pdtPage
-    if (this.held) this.pageChanged()
-  },
-  pageChanged() {
-    this.drop()
-    this.changed = true
-    if (!this.settle(null)) this.changed = false
-    this.say("The page changed: click Copy again")
+    this.copier.pageChanged()
   },
   destroyed() {
     this.el.removeEventListener("click", this.onClick, true)
     this.el.removeEventListener("change", this.onChange)
-    this.drop()
-    this.settle(null)
-  },
-  say(text) {
-    if (this.result) this.result.textContent = text
-  },
-  hold(json) {
-    this.drop()
-    const timer = setTimeout(() => this.drop(), HELD_MS)
-    this.held = {json, timer}
-    this.say("Export ready: click Copy again")
-  },
-  drop() {
-    if (this.held) clearTimeout(this.held.timer)
-    this.held = null
-  },
-  // In the click: claims the clipboard now, the text comes later.
-  startCopy() {
-    const clipboard = navigator.clipboard
-    if (!clipboard || !clipboard.write || typeof ClipboardItem === "undefined") return
-    this.settle(null)
-    let resolve, reject
-    const text = new Promise((ok, fail) => { resolve = ok; reject = fail })
-    const timer = setTimeout(() => this.settle(null), EXPORT_WAIT_MS)
-    this.pending = {resolve, reject, timer}
-    this.say("Copying…")
-    clipboard.write([new ClipboardItem({"text/plain": text})]).then(
-      () => this.say("Copied"),
-      (error) => this.copyFailed(error),
-    )
-  },
-  // Resolves the pending copy with `json`, or abandons it (null).
-  settle(json) {
-    const pending = this.pending
-    if (!pending) return false
-    this.pending = null
-    clearTimeout(pending.timer)
-    if (json === null) pending.reject(new Error("no export arrived"))
-    else pending.resolve(new Blob([json], {type: "text/plain"}))
-    return true
-  },
-  copy(json) {
-    if (this.settle(json)) return
-    const clipboard = navigator.clipboard
-    if (clipboard && clipboard.writeText) {
-      clipboard.writeText(json).then(() => this.say("Copied"), (error) => this.copyFailed(error))
-    } else if (execCopy(json)) {
-      this.say("Copied")
-    } else {
-      this.hold(json)
-    }
-  },
-  copyFailed(error) {
-    // The pending copy was abandoned by pageChanged(): its message stays.
-    if (this.changed) {
-      this.changed = false
-      return
-    }
-    const why = (error && (error.name || error.message)) || "refused"
-    console.warn("[phoenix_dev_toolbar] copy failed:", error)
-    this.say("Copy failed (" + why + "): use Download")
+    this.copier.destroy()
   },
 }
 
@@ -313,7 +247,10 @@ document.addEventListener("click", (event) => {
   const dockOption = event.target.closest("[data-pdt-dock]")
   if (!event.target.closest("#pdt-dock-picker")) closeDockMenu(false)
 
+  const reserveToggle = event.target.closest("[data-pdt-reserve]")
+
   if (event.target.closest("[data-pdt-dock-menu]")) toggleDockMenu()
+  else if (reserveToggle) toParent("reserve", {reserve: reserveToggle.getAttribute("aria-pressed") !== "true"})
   else if (dockOption) {
     closeDockMenu(true)
     toParent("dock", {dock: dockOption.dataset.pdtDock})

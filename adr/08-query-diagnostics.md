@@ -77,12 +77,15 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
   relative to the panel's URL, answered by `PhoenixDevToolbar.Plug` as an attachment
   (`EctoExport.request/1`): same origin, so a host CSP's `frame-src 'self'` allows it,
   where Firefox blocks a `blob:` link clicked in the iframe. The sids (at most 4, each a
-  session in the Store) are the access key, as for the panel. It is encoded with the
+  session in the Store, the root one of them) are the access key, as for the panel. It is encoded with the
   host's JSON library (`Phoenix.json_library/0`, pretty printed when it is Jason) and runs
   in the request process, untracked, so its EXPLAINs are never recorded.
 - **Copy** builds the same map in `start_async/3` (cancelled by a page change; a copy and
-  a single EXPLAIN never run together) and sends it with `push_event/3` to the panel's
-  `PdtExport` hook, with the page it was built from (its sids). The form carries the
+  a single EXPLAIN never run together: Copy is disabled while either runs) and sends it
+  with `push_event/3` to the panel's `PdtExport` hook, with the page it was built from
+  (its sids). A Copy refused as busy, or an export that crashes, sends `pdt:export`
+  with an `error` instead, so the hook settles its clipboard write at once. The hook's
+  logic lives in `export_copy.mjs` (node tested). The form carries the
   page it shows (`data-pdt-page`): the hook drops an export, arriving or held, whose page
   is no longer the form's, for example a Copy clicked before the LiveView joined, and
   asks for a new Copy.
@@ -122,8 +125,9 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
   export is copied with `execCommand("copy")` on arrival, which browsers allow only
   within about 5 s of the click; past it the export is held for a minute and the tab
   asks for a second Copy click, which copies it without a new export.
-- The busy state (one EXPLAIN at a time) is not covered by a test: SQLite answers too
-  fast to observe it.
+- The busy states (one EXPLAIN at a time, a Copy refused while busy, a crashed export)
+  are not covered by an ExUnit test: SQLite answers too fast to observe them. The
+  hook's answer to an `error` is covered by `export_copy.test.mjs`.
 - The planner may evaluate functions marked IMMUTABLE with constant arguments; MySQL
   before 5.6.3 executes derived tables during EXPLAIN.
 - N+1 spans follow LiveView callbacks (ADR 02), so the detector can be wrong both ways:

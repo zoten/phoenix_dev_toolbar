@@ -29,6 +29,7 @@ defmodule PhoenixDevToolbar.Plug do
   require Logger
 
   alias PhoenixDevToolbar.Attribution
+  alias PhoenixDevToolbar.Config
   alias PhoenixDevToolbar.EctoExport
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
@@ -278,6 +279,7 @@ defmodule PhoenixDevToolbar.Plug do
       {"src", path <> "/assets/loader.js"},
       {"data-pdt-sid", sid},
       {"data-pdt-path", path},
+      {"data-pdt-reserve", reserve_attr(Config.reserve_space?())},
       {"nonce", nonce(conn, nonce_assign)}
     ]
 
@@ -288,6 +290,10 @@ defmodule PhoenixDevToolbar.Plug do
 
     ["<script defer", rendered, "></script>"]
   end
+
+  # Only the opt out is written: the loader reserves space by default.
+  defp reserve_attr(true), do: nil
+  defp reserve_attr(false), do: "false"
 
   defp nonce(conn, key) do
     case conn.assigns do

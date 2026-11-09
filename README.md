@@ -44,6 +44,9 @@ config :phoenix_dev_toolbar,
   # The Process tab reads the page's LiveView every second (60 points kept) and
   # its links and monitors every 5 seconds, only while the tab is open:
   # plugins: [:defaults, {PhoenixDevToolbar.Plugins.Process, sample_ms: 1000, samples: 60, relations_ms: 5000}],
+  # The toolbar makes room so the page scrolls clear of it; false lets it overlap
+  # (the dock menu's toggle overrides this per browser)
+  reserve_space: true,
   # Values of keys containing these words are shown as [REDACTED]
   redact: ["password", "token", "secret"],
   # Memory bounds (ADR 03), these are the defaults. A session is one request

@@ -19,6 +19,7 @@ defmodule PhoenixDevToolbar.PlugTest do
 
     on_exit(fn ->
       Application.delete_env(:phoenix_dev_toolbar, :enabled)
+      Application.delete_env(:phoenix_dev_toolbar, :reserve_space)
       Store.reset()
     end)
   end
@@ -48,6 +49,13 @@ defmodule PhoenixDevToolbar.PlugTest do
 
       assert conn.resp_body =~
                ~s(<p>hi</p><script defer src="/__pdt/assets/loader.js" data-pdt-sid="#{sid}" data-pdt-path="/__pdt"></script></body>)
+    end
+
+    test "tell the loader when reserving page space is turned off" do
+      Application.put_env(:phoenix_dev_toolbar, :reserve_space, false)
+
+      assert [[tag]] = page_conn() |> respond() |> loader_tags()
+      assert tag =~ ~s( data-pdt-reserve="false")
     end
 
     test "record the response with its duration" do
@@ -304,7 +312,8 @@ defmodule PhoenixDevToolbar.PlugTest do
       assert export(%{"format" => "xml", "root" => sid, "sids" => sid}).status == 400
       assert export(%{"format" => "short", "root" => sid}).status == 400
       assert export(%{"format" => "short", "root" => sid, "sids" => many}).status == 400
-      assert export(%{"format" => "short", "root" => sid, "sids" => "nope"}).status == 404
+      assert export(%{"format" => "short", "root" => "nope", "sids" => "nope"}).status == 404
+      assert export(%{"format" => "short", "root" => "nope", "sids" => sid}).status == 400
       assert export(%{"format" => "short", "root" => sid, "sids" => sid}, :post).status == 405
     end
   end
