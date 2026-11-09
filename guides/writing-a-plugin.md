@@ -214,6 +214,25 @@ end
   only one loaded.
 - DOM ids must be unique in the whole panel: prefix them with your plugin id.
 
+### Linking to another tab
+
+`PhoenixDevToolbar.Panel.navigate/3` switches the panel to another plugin's tab
+and hands it `{:navigate, params}` in its `handle_info/2`:
+
+```elixir
+  # In your tab: a click shows the process in the System tab.
+  @impl Phoenix.LiveComponent
+  def handle_event("inspect", %{"pid" => pid}, socket),
+    do: {:noreply, Panel.navigate(socket, :system, %{"pid" => pid})}
+
+  # In the target tab.
+  @impl Panel
+  def handle_info({:navigate, %{"pid" => pid}}, socket), do: assign(socket, :pid, pid)
+```
+
+Keep `params` small: a few strings. A plugin that is not attached, or has no
+tab, is ignored. Treat params like any client input: they may come from a click.
+
 An exception in the tab's code (its callbacks, `render/1` and its template,
 `mount/1`) disables the tab only, with the error and a Re-enable button. The
 template is checked by rendering it once more behind that boundary; a template

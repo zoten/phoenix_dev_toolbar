@@ -71,3 +71,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ecto Copy never hangs: busy and crash answers, disabled during EXPLAIN (ADR 08)
 - Ecto Download checks `root` is one of the page's sids (ADR 08)
 - Process addressing, protected set, `actions:` loopback policy (ADR 10)
+- `Panel.navigate/3`: switch to another tab with params (ADR 10)

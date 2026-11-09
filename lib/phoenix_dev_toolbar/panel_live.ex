@@ -119,6 +119,18 @@ defmodule PhoenixDevToolbar.PanelLive do
     end
   end
 
+  # Panel.navigate/3 from a tab (same process): show the target tab, hand it the params.
+  def handle_info({:pdt_navigate, tab, params}, socket) do
+    case Enum.find(socket.assigns.tabs, &(&1.id == tab)) do
+      %{panel: panel} ->
+        Panel.send_now(self(), panel, panel_id(tab), {:navigate, params})
+        {:noreply, assign(socket, :tab, tab)}
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
+
   # A tab's component raised (PhoenixDevToolbar.Panel boundary).
   def handle_info({:pdt_panel_error, "pdt-panel-" <> tab, banner}, socket) when is_binary(banner),
     do: {:noreply, update(socket, :panel_errors, &Map.put(&1, tab, banner))}

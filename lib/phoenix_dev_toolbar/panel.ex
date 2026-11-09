@@ -76,7 +76,10 @@ defmodule PhoenixDevToolbar.Panel do
   @doc "`@shown?`, `@visible?` or `@page` changed. Defaults to doing nothing."
   @callback handle_props(Socket.t()) :: Socket.t()
 
-  @doc "A message scheduled with `send_after/4`. Defaults to ignoring it."
+  @doc """
+  A message scheduled with `send_after/4`, or `{:navigate, params}` from
+  `navigate/3`. Defaults to ignoring it.
+  """
   @callback handle_info(message :: term(), Socket.t()) :: Socket.t()
 
   @optional_callbacks handle_props: 1, handle_info: 2
@@ -89,6 +92,25 @@ defmodule PhoenixDevToolbar.Panel do
   @spec send_after(module(), String.t(), term(), non_neg_integer()) :: reference()
   def send_after(module, id, message, ms),
     do: Phoenix.LiveView.send_update_after(self(), module, %{id: id, pdt: {:info, message}}, ms)
+
+  @doc """
+  Switches the panel to the tab of the plugin `plugin_id` and delivers
+  `{:navigate, params}` to that tab's `c:handle_info/2`. Returns `socket`
+  unchanged, for pipelines. Call it from the panel's own callbacks.
+
+  Use it to link to another tab, for example to inspect a process in the System
+  tab. Keep `params` small (a few strings): they go through the panel process
+  as they are. A plugin that is not attached or has no tab is ignored.
+
+      def handle_event("inspect", %{"pid" => pid}, socket),
+        do: {:noreply, Panel.navigate(socket, :system, %{"pid" => pid})}
+  """
+  @spec navigate(Socket.t(), atom(), map()) :: Socket.t()
+  def navigate(%Socket{} = socket, plugin_id, params)
+      when is_atom(plugin_id) and is_map(params) do
+    send(self(), {:pdt_navigate, Atom.to_string(plugin_id), params})
+    socket
+  end
 
   @doc """
   Formats a duration in microseconds (`Event.duration`) the way the toolbar

@@ -37,6 +37,18 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
     _ = render(panel)
   end
 
+  test "Panel.navigate/3 shows the target tab and hands it the params" do
+    {_host, sid} = visit("/demo")
+    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    assert has_element?(panel, "#tabbed[data-shown=false]")
+
+    panel |> element("#tabbed-go-missing") |> render_click()
+    assert has_element?(panel, "#tabbed[data-shown=false][data-navigated='']")
+
+    panel |> element("#tabbed-go-self") |> render_click()
+    assert has_element?(panel, "#tabbed[data-shown=true][data-navigated=tabbed]")
+  end
+
   test "a plugin gets its own tab and badge, live, with its config" do
     {host, sid} = visit("/demo")
     {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
