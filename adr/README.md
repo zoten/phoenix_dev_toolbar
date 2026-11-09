@@ -5,7 +5,7 @@ How to write and maintain ADRs: see the ADR rules in [AGENTS.md](../AGENTS.md) a
 [TEMPLATE.md](./TEMPLATE.md). Status and area come from each ADR's header: keep
 this table in sync when you add an ADR or change its status.
 
-Next free number: **10**.
+Next free number: **13**.
 
 ## Product
 
@@ -18,6 +18,7 @@ Next free number: **10**.
 | ADR | Title | Status |
 |---|---|---|
 | 01 | [Zero Production Footprint and Installation](./01-zero-prod-footprint-and-installation.md) | Implemented (2026-11-05) |
+| 10 | [Process Addressing and Actions Policy](./10-process-addressing-and-actions.md) | Proposed |
 
 ## Collection
 
@@ -39,12 +40,14 @@ Next free number: **10**.
 | 07 | [LiveView Panel: Profiler, Assigns, Event Log, Component Tree](./07-live-view-panel.md) | Implemented (2026-11-05) |
 | 08 | [Query Diagnostics: N+1 Detector and EXPLAIN](./08-query-diagnostics.md) | Implemented (2026-11-06) |
 | 09 | [Process Panel](./09-process-panel.md) | Implemented (2026-11-06) |
+| 11 | [System Tab](./11-system-tab.md) | Proposed |
 
 ## Plugins
 
 | ADR | Title | Status |
 |---|---|---|
 | 05 | [Plugin Behaviour](./05-plugin-behaviour.md) | Implemented (2026-11-05) |
+| 12 | [Cluster and Eval Plugins](./12-cluster-and-eval-plugins.md) | Proposed |
 
 ## Testing
 
