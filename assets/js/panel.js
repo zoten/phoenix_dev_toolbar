@@ -67,10 +67,19 @@ function closeDockMenu(refocus) {
   if (refocus) dockButton().focus()
 }
 
+// The menu hangs from the picker's end edge. A narrow panel (side docks) can
+// wrap the picker to the start of a row, where that would cross the iframe's
+// left edge: hang it from the start edge instead.
+const placeDockMenu = (menu) => {
+  menu.classList.remove("pdt-dock-menu--start")
+  if (menu.getBoundingClientRect().left < 0) menu.classList.add("pdt-dock-menu--start")
+}
+
 const toggleDockMenu = () => {
   const menu = dockMenu()
   if (!menu.hidden) return closeDockMenu(false)
   menu.hidden = false
+  placeDockMenu(menu)
   dockButton().setAttribute("aria-expanded", "true")
   const current = menu.querySelector("[aria-pressed='true']") || menu.querySelector("[data-pdt-dock]")
   current.focus()

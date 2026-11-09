@@ -228,6 +228,7 @@ body.pdt {
 }
 
 .pdt-dock-menu[hidden] { display: none; }
+.pdt-dock-menu--start { inset-inline-start: 0; inset-inline-end: auto; }
 
 .pdt-dock-option {
   display: flex;

@@ -66,3 +66,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ecto export fix: a Copy built before the LiveView joined is dropped; request path fallback (ADR 08)
 - Toolbar reserves its page space so the page scrolls above it; draggable panel height (ADR 04)
 - Toolbar docks: bottom, top, left, right; dock picker, sideways collapsed strip (ADR 04)
+- Dock picker menu no longer clipped on side docks (ADR 04)
