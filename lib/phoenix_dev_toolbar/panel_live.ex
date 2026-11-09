@@ -47,6 +47,8 @@ defmodule PhoenixDevToolbar.PanelLive do
       |> assign(shell: shell, tabs: tabs, tab: default_tab(tabs), visible?: false)
       |> assign(panel_errors: %{}, quarantined: PageData.quarantined(shell.plugins))
       |> assign(root: root, flush: nil, subscribed: [])
+      # Who may run destructive actions (ClientPolicy, ADR 10).
+      |> assign(client_ip: client_ip(socket))
       # Subscribe before reading: a LiveView announced between the read and the
       # subscription would otherwise never reach the panel.
       |> subscribe(List.wrap(root))
@@ -229,6 +231,13 @@ defmodule PhoenixDevToolbar.PanelLive do
     case connected?(socket) do
       true -> :ok
       false -> Store.allow_panel(socket.id)
+    end
+  end
+
+  defp client_ip(socket) do
+    case get_connect_info(socket, :peer_data) do
+      %{address: address} -> address
+      _none -> nil
     end
   end
 

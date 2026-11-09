@@ -162,6 +162,17 @@ defmodule PhoenixDevToolbar.ProcessInfo do
     end
   end
 
+  @doc """
+  Whether `pid` is one of the toolbar's own processes: its registered name or
+  entry point is under `PhoenixDevToolbar.` (the tag ADR 09 shows, the protected
+  set of ADR 10). Another node's pid never is.
+  """
+  @spec toolbar?(pid()) :: boolean()
+  def toolbar?(pid) when is_pid(pid) and node(pid) == node(), do: toolbar_name?(name(pid))
+  def toolbar?(pid) when is_pid(pid), do: false
+
+  defp toolbar_name?(name), do: String.starts_with?(name, "PhoenixDevToolbar.")
+
   defp take(list) when is_list(list) do
     {Enum.take(list, @max_relations), max(length(list) - @max_relations, 0)}
   end
@@ -178,7 +189,7 @@ defmodule PhoenixDevToolbar.ProcessInfo do
       kind: :process,
       name: name,
       child?: child?(pid, owner),
-      toolbar?: String.starts_with?(name, "PhoenixDevToolbar.")
+      toolbar?: toolbar_name?(name)
     }
   end
 

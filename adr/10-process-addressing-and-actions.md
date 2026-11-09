@@ -26,7 +26,8 @@ reachable dev port must not freeze or kill the node.
   `PhoenixDevToolbar.` name rule ADR 09 tags them with), the panel's pid and its
   socket transport, core registered names (`init`, `code_server`,
   `application_controller`, `logger`, ...), any process of the `kernel`, `stdlib`,
-  `elixir`, `logger` or `compiler` applications, and the host endpoint's supervisor.
+  `elixir`, `logger` or `compiler` applications, application masters, and the host
+  endpoint's supervisor.
   Reads and GC are allowed on them; kill and suspend are refused.
 - **Actions**, each behind a confirm step, rate limited and logged with `Logger`:
   - Kill: the page's LiveView with a chosen reason (`:kill`, `:shutdown`,
@@ -52,5 +53,8 @@ reachable dev port must not freeze or kill the node.
 
 ## Open limits
 
-- A client behind a local reverse proxy reads as loopback.
+- A client behind a local reverse proxy, or Docker's userland port proxy, reads as
+  loopback: loopback then means "whoever reaches the proxy".
+- The endpoint's children (listener, acceptors) and the host Repo pool are not
+  protected: their supervisors restart them.
 - A process suspended while it holds a lock others wait on stalls them until the TTL.

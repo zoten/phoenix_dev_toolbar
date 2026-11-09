@@ -5,6 +5,7 @@ defmodule PhoenixDevToolbar.Application do
 
   require Logger
 
+  alias PhoenixDevToolbar.ClientPolicy
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Config
 
@@ -56,5 +57,9 @@ defmodule PhoenixDevToolbar.Application do
   defp children(true), do: [PhoenixDevToolbar.Store, PhoenixDevToolbar.Notify]
 
   defp maybe_attach(false), do: :ok
-  defp maybe_attach(true), do: Collector.attach(plugins())
+
+  defp maybe_attach(true) do
+    ClientPolicy.warn_config()
+    Collector.attach(plugins())
+  end
 end
