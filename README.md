@@ -47,6 +47,10 @@ config :phoenix_dev_toolbar,
   # The System tab inspects any process (a pid, a registered name, a link from the
   # Process tab), with the same options:
   # plugins: [:defaults, {PhoenixDevToolbar.Plugins.System, sample_ms: 1000}],
+  # Kill, suspend and message peek (System and Process tabs) run only for a browser
+  # on this machine; :any for Docker or the LAN (anyone reaching the server can use
+  # them), false to turn them off
+  actions: :loopback,
   # The toolbar makes room so the page scrolls clear of it; false lets it overlap
   # (the dock menu's toggle overrides this per browser)
   reserve_space: true,

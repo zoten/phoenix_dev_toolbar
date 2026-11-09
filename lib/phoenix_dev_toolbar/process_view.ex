@@ -177,6 +177,105 @@ defmodule PhoenixDevToolbar.ProcessView do
     """
   end
 
+  attr :prefix, :string, required: true
+  attr :target, :any, required: true, doc: "the events' phx-target"
+  attr :gate, :any, required: true, doc: "ProcessActions.allowed/2 for the target"
+  attr :confirm, :any, default: nil, doc: "the action waiting for a confirm click"
+  attr :note, :any, default: nil, doc: "{:ok | :error, text}: what the last action did"
+  attr :suspended?, :boolean, default: false
+  attr :suspend?, :boolean, default: true, doc: "offer Suspend and Resume"
+
+  @doc """
+  Kill (with a reason) and Suspend for a process, each behind a confirm click,
+  or why they are off (ADR 10). Events: `arm` (`action`, `reason`), `confirm`,
+  `cancel`, `resume`.
+  """
+  def actions(assigns) do
+    ~H"""
+    <div id={"#{@prefix}-actions"} class="pdt-actions">
+      <%= case @gate do %>
+        <% {:error, why} -> %>
+          <p id={"#{@prefix}-actions-off"} class="pdt-hint">{why}</p>
+        <% :ok -> %>
+          <%= if @confirm do %>
+            <span id={"#{@prefix}-confirm-text"} class="pdt-actions__confirm">
+              {confirm_text(@confirm)}
+            </span>
+            <button
+              id={"#{@prefix}-confirm"}
+              type="button"
+              class="pdt-button pdt-button--small pdt-button--danger"
+              phx-click="confirm"
+              phx-target={@target}
+            >
+              Confirm
+            </button>
+            <button
+              id={"#{@prefix}-cancel"}
+              type="button"
+              class="pdt-button pdt-button--small"
+              phx-click="cancel"
+              phx-target={@target}
+            >
+              Cancel
+            </button>
+          <% else %>
+            <form
+              id={"#{@prefix}-kill-form"}
+              class="pdt-actions__kill"
+              phx-change="noop"
+              phx-submit="arm"
+              phx-target={@target}
+            >
+              <input type="hidden" name="action" value="kill" />
+              <select id={"#{@prefix}-kill-reason"} name="reason" aria-label="Exit reason">
+                <option value="kill">kill (untrappable)</option>
+                <option value="shutdown">shutdown</option>
+                <option value="crash">crash (RuntimeError)</option>
+              </select>
+              <button id={"#{@prefix}-kill"} type="submit" class="pdt-button pdt-button--small">
+                Kill
+              </button>
+            </form>
+            <button
+              :if={@suspend? and not @suspended?}
+              id={"#{@prefix}-suspend"}
+              type="button"
+              class="pdt-button pdt-button--small"
+              phx-click="arm"
+              phx-value-action="suspend"
+              phx-target={@target}
+              title="Freeze it for 10 seconds: it resumes by itself"
+            >
+              Suspend 10 s
+            </button>
+          <% end %>
+      <% end %>
+      <button
+        :if={@suspend? and @suspended?}
+        id={"#{@prefix}-resume"}
+        type="button"
+        class="pdt-button pdt-button--small"
+        phx-click="resume"
+        phx-target={@target}
+      >
+        Resume
+      </button>
+      <span
+        :if={@note}
+        id={"#{@prefix}-action-note"}
+        class={["pdt-hint", elem(@note, 0) == :error && "pdt-actions__error"]}
+        role="status"
+      >
+        {elem(@note, 1)}
+      </span>
+    </div>
+    """
+  end
+
+  defp confirm_text({:kill, reason}), do: "Kill it (#{reason})?"
+  defp confirm_text(:suspend), do: "Suspend it for 10 s?"
+
   attr :id, :string, required: true, doc: "the pid as inspected, or another id"
   attr :link, :any, default: nil, doc: "the event to send with phx-value-pid, or nil/false"
   attr :target, :any, default: nil

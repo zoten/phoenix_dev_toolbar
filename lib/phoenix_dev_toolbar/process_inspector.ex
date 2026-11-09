@@ -16,6 +16,7 @@ defmodule PhoenixDevToolbar.ProcessInspector do
 
   alias Phoenix.LiveView.Socket
   alias PhoenixDevToolbar.Panel
+  alias PhoenixDevToolbar.ProcessActions
   alias PhoenixDevToolbar.ProcessInfo
   alias PhoenixDevToolbar.ProcessOptions
 
@@ -31,6 +32,7 @@ defmodule PhoenixDevToolbar.ProcessInspector do
     |> assign(selected: nil, timers: %{})
     |> assign(gc: nil, gc_at: nil, gc_note: nil, gc_timer: nil)
     |> assign(about: nil, sample: nil, relations: nil, series: empty_series())
+    |> assign(confirm: nil, note: nil, action_at: nil)
   end
 
   @doc "A new target (nil: none): its data starts over, a running GC is cancelled."
@@ -45,7 +47,9 @@ defmodule PhoenixDevToolbar.ProcessInspector do
       gc_note: nil,
       sample: nil,
       relations: nil,
-      series: empty_series()
+      series: empty_series(),
+      confirm: nil,
+      note: nil
     )
   end
 
@@ -217,4 +221,87 @@ defmodule PhoenixDevToolbar.ProcessInspector do
 
   defp gc_allowed?(%{assigns: %{gc_at: at}}),
     do: System.monotonic_time(:millisecond) - at >= @gc_every_ms
+
+  ## Actions (ADR 10)
+
+  @kill_reasons ["kill", "shutdown", "crash"]
+  # At most one action a second.
+  @action_every_ms 1000
+
+  @doc """
+  The context ProcessActions needs: the client and the panel's own processes,
+  from the `pdt_actions` assign the toolbar gives every tab.
+  """
+  @spec context(Socket.t()) :: ProcessActions.context()
+  def context(socket), do: Map.merge(%{panel: self()}, socket.assigns[:pdt_actions] || %{})
+
+  @doc "Whether the selected process may be killed or suspended from here, and why not."
+  @spec gate(Socket.t() | map()) :: :ok | {:error, String.t()}
+  def gate(%{selected: pid} = assigns) when is_pid(pid),
+    do: ProcessActions.allowed(pid, Map.merge(%{panel: self()}, assigns[:pdt_actions] || %{}))
+
+  def gate(_assigns), do: {:error, "No process selected."}
+
+  @doc "The first click: the action waits for a confirm (`arm` event params)."
+  @spec arm(Socket.t(), map()) :: Socket.t()
+  def arm(socket, %{"action" => "kill", "reason" => reason}) when reason in @kill_reasons,
+    do: assign(socket, confirm: {:kill, reason}, note: nil)
+
+  def arm(socket, %{"action" => "suspend"}), do: assign(socket, confirm: :suspend, note: nil)
+  def arm(socket, _params), do: socket
+
+  @doc "Drops the action waiting for a confirm."
+  @spec cancel(Socket.t()) :: Socket.t()
+  def cancel(socket), do: assign(socket, :confirm, nil)
+
+  @doc "The confirm click: runs the armed action, at most one a second."
+  @spec confirm(Socket.t()) :: Socket.t()
+  def confirm(%{assigns: %{selected: pid, confirm: action}} = socket)
+      when is_pid(pid) and action != nil do
+    case action_allowed?(socket) do
+      true ->
+        socket
+        |> assign(confirm: nil, action_at: System.monotonic_time(:millisecond))
+        |> assign(:note, run(action, pid, context(socket)))
+        |> read_sample()
+
+      false ->
+        assign(socket, :note, {:error, "One action a second: try again."})
+    end
+  end
+
+  def confirm(socket), do: socket
+
+  @doc "Resumes the selected process, if the toolbar suspended it."
+  @spec resume(Socket.t()) :: Socket.t()
+  def resume(%{assigns: %{selected: pid}} = socket) when is_pid(pid) do
+    note =
+      case ProcessActions.resume(pid) do
+        :ok -> {:ok, "Resumed."}
+        {:error, why} -> {:error, why}
+      end
+
+    socket |> assign(:note, note) |> read_sample()
+  end
+
+  def resume(socket), do: socket
+
+  defp run({:kill, reason}, pid, context) do
+    case ProcessActions.kill(pid, reason, context) do
+      :ok -> {:ok, "Exit signal sent (#{reason})."}
+      error -> error
+    end
+  end
+
+  defp run(:suspend, pid, context) do
+    case ProcessActions.suspend(pid, context) do
+      :ok -> {:ok, "Suspended for 10 s: it resumes by itself."}
+      error -> error
+    end
+  end
+
+  defp action_allowed?(%{assigns: %{action_at: nil}}), do: true
+
+  defp action_allowed?(%{assigns: %{action_at: at}}),
+    do: System.monotonic_time(:millisecond) - at >= @action_every_ms
 end

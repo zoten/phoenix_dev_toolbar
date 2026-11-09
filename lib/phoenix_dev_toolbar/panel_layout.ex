@@ -24,6 +24,7 @@ defmodule PhoenixDevToolbar.PanelLayout do
   attr :panel_errors, :map, required: true, doc: "tab id => banner, from the tab's component"
   attr :missing?, :boolean, required: true
   attr :visible?, :boolean, required: true
+  attr :pdt_actions, :map, default: %{}, doc: "internal: ProcessActions context"
 
   def panel(assigns) do
     ~H"""
@@ -201,6 +202,7 @@ defmodule PhoenixDevToolbar.PanelLayout do
           page={@page}
           shown?={@tab == tab.id}
           visible?={@visible?}
+          pdt_actions={@pdt_actions}
         />
       </section>
     </div>

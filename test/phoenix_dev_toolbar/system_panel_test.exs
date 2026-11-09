@@ -18,9 +18,9 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
     on_exit(fn -> Store.reset() end)
   end
 
-  defp open do
+  defp open(conn \\ build_conn()) do
     {_host, sid} = visit("/demo")
-    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    {:ok, panel, _html} = live(conn, "/__pdt/panel?sid=#{sid}")
     panel |> element("#pdt-tab-system") |> render_click()
     render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
     panel
@@ -139,5 +139,101 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
     panel |> element("#pdt-system-status") |> render_click()
     _ = render_async(panel)
     assert has_element?(panel, "#pdt-system-state-value", "LiveView: DemoWeb.PageLive")
+  end
+
+  describe "actions" do
+    test "Kill waits for a confirm, then kills" do
+      pid = idle_process()
+      ref = Process.monitor(pid)
+      panel = open()
+      search(panel, inspect(pid))
+
+      panel |> form("#pdt-system-kill-form", %{"reason" => "shutdown"}) |> render_submit()
+      assert has_element?(panel, "#pdt-system-confirm-text", "shutdown")
+      refute_received {:DOWN, ^ref, :process, ^pid, _reason}
+
+      panel |> element("#pdt-system-cancel") |> render_click()
+      refute has_element?(panel, "#pdt-system-confirm")
+
+      panel |> form("#pdt-system-kill-form", %{"reason" => "kill"}) |> render_submit()
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        panel |> element("#pdt-system-confirm") |> render_click()
+      end)
+
+      assert_receive {:DOWN, ^ref, :process, ^pid, :killed}
+    end
+
+    test "a protected process offers no action, and says why" do
+      panel = open()
+      search(panel, "code_server")
+
+      assert has_element?(panel, "#pdt-system-actions-off", "Protected")
+      refute has_element?(panel, "#pdt-system-kill")
+    end
+
+    test "a browser off this machine gets no actions, and is told how to allow them" do
+      conn =
+        Plug.Test.put_peer_data(build_conn(), %{
+          address: {192, 168, 1, 20},
+          port: 4000,
+          ssl_cert: nil
+        })
+
+      pid = idle_process()
+      panel = open(conn)
+      search(panel, inspect(pid))
+
+      assert has_element?(panel, "#pdt-system-actions-off", "actions: :any")
+      refute has_element?(panel, "#pdt-system-kill")
+
+      panel |> element("#pdt-system-peek") |> render_click()
+      assert has_element?(panel, "#pdt-system-messages-error", "actions: :any")
+    end
+
+    test "Suspend freezes it until Resume" do
+      pid = idle_process()
+      panel = open()
+      search(panel, inspect(pid))
+
+      panel |> element("#pdt-system-suspend") |> render_click()
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        panel |> element("#pdt-system-confirm") |> render_click()
+      end)
+
+      assert Process.info(pid, :status) == {:status, :suspended}
+      assert has_element?(panel, "#pdt-system-resume")
+
+      panel |> element("#pdt-system-resume") |> render_click()
+      refute Process.info(pid, :status) == {:status, :suspended}
+      refute has_element?(panel, "#pdt-system-resume")
+    end
+
+    test "Watch shows the exit reason once it goes down" do
+      pid = idle_process()
+      panel = open()
+      search(panel, inspect(pid))
+
+      panel |> element("#pdt-system-watch") |> render_click()
+      assert has_element?(panel, "#pdt-system-watched-0", "alive")
+
+      stop(pid)
+
+      assert has_element?(panel, "#pdt-system-watched-0", "exited at")
+      assert has_element?(panel, "#pdt-system-watched-0 code", ":normal")
+    end
+
+    test "Peek shows the queued messages, redacted" do
+      pid = idle_process()
+      send(pid, {:login, %{password: "hunter2"}})
+      panel = open()
+      search(panel, inspect(pid))
+
+      panel |> element("#pdt-system-peek") |> render_click()
+
+      assert has_element?(panel, "#pdt-system-messages-list li", "[REDACTED]")
+      refute has_element?(panel, "#pdt-system-messages-list li", "hunter2")
+    end
   end
 end

@@ -1,6 +1,6 @@
 # ADR 10: Process Addressing and Actions Policy
 
-**Status:** Accepted  
+**Status:** Implemented (2026-11-09)  
 **Area:** architecture  
 **Related:** [ADR 09](./09-process-panel.md) (the Process tab, GC now), [ADR 11](./11-system-tab.md) (where any pid is inspected), [ADR 03](./03-event-storage.md) (bounds, no atoms from input)
 
@@ -29,19 +29,27 @@ reachable dev port must not freeze or kill the node.
   `elixir`, `logger` or `compiler` applications, application masters, and the host
   endpoint's supervisor.
   Reads and GC are allowed on them; kill and suspend are refused.
-- **Actions**, each behind a confirm step, rate limited and logged with `Logger`:
-  - Kill: the page's LiveView with a chosen reason (`:kill`, `:shutdown`,
-    `{:shutdown, :debug}`, a raise), or any non protected pid.
-  - Suspend: always with a TTL (default 10s, at most 60s). Resume is owned by a
-    supervised toolbar process that monitors the panel, so a closed panel never leaves
-    a suspended process.
-  - Watch: the panel monitors up to 10 pids and shows exit reason and time.
-  - Message peek: the first messages only while `message_queue_len` is under a
-    threshold (100); `:messages` is never read above it.
-- **Who may act**: reads and GC are open to any panel. Kill, suspend and message peek
+- **Actions** (`ProcessActions`; the System tab offers all of them, the Process tab
+  Kill for its LiveView, which then reconnects and remounts). Kill and suspend wait
+  for a confirm click, run at most once a second per panel and are logged with
+  `Logger.warning/1`:
+  - Kill, with a reason picked from a fixed list: `kill` (`:kill`, untrappable),
+    `shutdown`, or `crash` (an exit with a `RuntimeError`, as a crash looks to logs
+    and supervisors). A suspended process can still be killed.
+  - Suspend for 10 s (`Suspender`, a toolbar child only when enabled, accepts 1 to
+    60 s and at most 10 processes). It resumes on the TTL, when the panel that asked
+    goes away, or on Resume; a process it suspended is released by OTP if the
+    Suspender itself dies. GC now and the state read refuse a suspended process
+    (both would wait for it).
+  - Watch: the panel monitors up to 10 processes and lists each one's exit reason
+    and time.
+  - Message peek: the first 10 messages, each redacted and truncated, only while
+    `message_queue_len` is under 100; `:messages` is never read above it.
+- **Who may act**: reads, GC and Watch are open to any panel. Kill, suspend and message peek
   follow the top level `actions:` config: `:loopback` (default, the panel socket's
   peer must be a loopback address), `:any` (warned at boot), `false` (no actions).
-  Docker and LAN setups need `actions: :any`; the panel says so when it refuses.
+  Docker and LAN setups need `actions: :any`; the panel says so in place of the
+  actions when it refuses, as it says why a protected process offers none.
 - **Not offered**: link/unlink (only creates cascading crashes), sending arbitrary
   messages (needs term parsing: that is eval, ADR 12), forced hibernate.
 
@@ -58,4 +66,9 @@ reachable dev port must not freeze or kill the node.
 - The endpoint's children (listener, acceptors, connection supervisors) and the
   host Repo pool are not protected: their supervisors restart them, but killing a
   connection supervisor drops the panel's own websocket until it reconnects.
-- A process suspended while it holds a lock others wait on stalls them until the TTL.
+- A process suspended while it holds a lock, a checked out Repo connection or a
+  `:global` transaction stalls whoever waits on it until the TTL.
+- Message peek reads the queue length, then the queue: a process flooded between
+  the two reads is copied whole into the panel once.
+- Redaction walks tuples of up to 50 elements: a secret in a bigger tuple (a large
+  record) is shown, truncated.

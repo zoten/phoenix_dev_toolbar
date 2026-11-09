@@ -104,7 +104,9 @@ defmodule PhoenixDevToolbar.ProcessActions do
   defp suspend_error(:already), do: "It is suspended already."
   defp suspend_error(:dead), do: "It has exited."
   defp suspend_error(:ttl), do: "Invalid duration."
-  defp suspend_error(:unavailable), do: "The toolbar's suspender is restarting: try again."
+
+  defp suspend_error(:unavailable),
+    do: "The suspender did not answer in time (a target busy in a NIF?): check its status."
 
   @doc "Resumes `pid` if the toolbar suspended it. Always allowed: it only undoes."
   @spec resume(pid()) :: :ok | {:error, String.t()}
@@ -137,7 +139,8 @@ defmodule PhoenixDevToolbar.ProcessActions do
     end
   end
 
-  # The queue may have grown since its length was read: still at most what came in.
+  # The queue may have grown between the two reads: a process flooded at that
+  # very moment is copied whole (ADR 10 open limit). OTP has no partial read.
   defp read_messages(pid) do
     case Process.info(pid, :messages) do
       {:messages, messages} ->

@@ -16,12 +16,15 @@ defmodule PhoenixDevToolbar.Panels.System do
 
   alias PhoenixDevToolbar.Panel
   alias PhoenixDevToolbar.Panels.System, as: SystemPanel
+  alias PhoenixDevToolbar.ProcessActions
   alias PhoenixDevToolbar.ProcessInfo
   alias PhoenixDevToolbar.ProcessInspector
   alias PhoenixDevToolbar.ProcessRef
   alias PhoenixDevToolbar.ProcessView
+  alias PhoenixDevToolbar.Truncate
 
   @max_crumbs 20
+  @max_watched 10
   @status_timeout_ms 1000
   # At most one state read per second.
   @status_every_ms 1000
@@ -32,6 +35,7 @@ defmodule PhoenixDevToolbar.Panels.System do
      socket
      |> assign(prev: nil, crumbs: [], error: nil, query: "")
      |> assign(ancestors: [], stacktrace: [], status: nil, status_at: nil)
+     |> assign(watched: [], peek: nil)
      |> ProcessInspector.init()}
   end
 
@@ -65,6 +69,11 @@ defmodule PhoenixDevToolbar.Panels.System do
   end
 
   def handle_info(:gc_ready, socket), do: ProcessInspector.gc_ready(socket)
+
+  # A watched process exited (the monitor is the panel's: PanelLive forwards it).
+  def handle_info({:DOWN, ref, :process, _pid, reason}, socket),
+    do: update(socket, :watched, &Enum.map(&1, fn watch -> down(watch, ref, reason) end))
+
   def handle_info(_message, socket), do: socket
 
   defp continue(socket, kind, true), do: socket |> tick(kind) |> schedule(kind)
@@ -99,6 +108,23 @@ defmodule PhoenixDevToolbar.Panels.System do
     do: {:noreply, ProcessInspector.gc(socket, SystemPanel)}
 
   def handle_event("status", _params, socket), do: {:noreply, read_status(socket)}
+
+  # Kill and suspend (ADR 10): armed by a first click, run by a confirm.
+  def handle_event("arm", params, socket), do: {:noreply, ProcessInspector.arm(socket, params)}
+  def handle_event("confirm", _params, socket), do: {:noreply, ProcessInspector.confirm(socket)}
+  def handle_event("cancel", _params, socket), do: {:noreply, ProcessInspector.cancel(socket)}
+  def handle_event("resume", _params, socket), do: {:noreply, ProcessInspector.resume(socket)}
+
+  def handle_event("watch", _params, socket), do: {:noreply, watch(socket)}
+
+  def handle_event("unwatch", %{"index" => index}, socket) when is_binary(index),
+    do: {:noreply, unwatch(socket, Integer.parse(index))}
+
+  def handle_event("peek", _params, %{assigns: %{selected: pid}} = socket) when is_pid(pid),
+    do:
+      {:noreply,
+       assign(socket, :peek, ProcessActions.peek(pid, ProcessInspector.context(socket)))}
+
   def handle_event(_event, _params, socket), do: {:noreply, socket}
 
   @impl Phoenix.LiveComponent
@@ -145,7 +171,7 @@ defmodule PhoenixDevToolbar.Panels.System do
     |> cancel_status()
     |> ProcessInspector.cancel_timers()
     |> ProcessInspector.select(pid)
-    |> assign(error: nil, ancestors: [], stacktrace: [], status: nil, status_at: nil)
+    |> assign(error: nil, ancestors: [], stacktrace: [], status: nil, status_at: nil, peek: nil)
     |> poll_now()
   end
 
@@ -153,6 +179,48 @@ defmodule PhoenixDevToolbar.Panels.System do
   defp error(:not_found), do: "No process is registered under that name."
   defp error(:remote), do: "That process runs on another node: only local ones can be inspected."
   defp error(:dead), do: "That process has exited."
+
+  ## Watch
+
+  # The panel monitors at most @max_watched processes, newest first; each one
+  # keeps its exit reason and time once down. Watching only monitors: open to
+  # every client (ADR 10).
+  defp watch(%{assigns: %{selected: pid, watched: watched}} = socket) when is_pid(pid) do
+    case Enum.any?(watched, &(&1.pid == pid)) or length(watched) >= @max_watched do
+      true ->
+        socket
+
+      false ->
+        watch = %{pid: pid, label: label(pid), ref: Process.monitor(pid), down: nil}
+        assign(socket, :watched, [watch | watched])
+    end
+  end
+
+  defp watch(socket), do: socket
+
+  defp unwatch(socket, {index, ""}) when index >= 0 do
+    case Enum.at(socket.assigns.watched, index) do
+      %{ref: ref} ->
+        Process.demonitor(ref, [:flush])
+        update(socket, :watched, &List.delete_at(&1, index))
+
+      nil ->
+        socket
+    end
+  end
+
+  defp unwatch(socket, _index), do: socket
+
+  defp down(%{ref: ref, down: nil} = watch, ref, reason) do
+    at = Time.utc_now() |> Time.truncate(:second) |> Time.to_string()
+
+    %{
+      watch
+      | down: %{at: at, reason: Truncate.inspect_value(reason, limit: 10, printable_limit: 200)}
+    }
+  end
+
+  defp down(watch, _ref, _reason), do: watch
 
   ## Polling
 
@@ -302,6 +370,41 @@ defmodule PhoenixDevToolbar.Panels.System do
         Paused while the panel is hidden.
       </p>
       <p :if={@sample == :dead} id="pdt-system-dead" class="pdt-empty">This process has exited.</p>
+      <div :if={is_map(@sample)} id="pdt-system-act" class="pdt-snapshot-bar pdt-actions-bar">
+        <ProcessView.actions
+          prefix="pdt-system"
+          target={@myself}
+          gate={ProcessInspector.gate(%{selected: @selected, pdt_actions: @pdt_actions})}
+          confirm={@confirm}
+          note={@note}
+          suspended?={@sample.status == :suspended}
+        />
+        <button
+          id="pdt-system-watch"
+          type="button"
+          class="pdt-button pdt-button--small"
+          phx-click="watch"
+          phx-target={@myself}
+          disabled={Enum.any?(@watched, &(&1.pid == @selected))}
+          title="Keep an eye on it: its exit reason shows below when it goes down"
+        >
+          Watch
+        </button>
+        <button
+          id="pdt-system-peek"
+          type="button"
+          class="pdt-button pdt-button--small"
+          phx-click="peek"
+          phx-target={@myself}
+          title="Show the first messages in its queue (fewer than 100 queued)"
+        >
+          Peek messages
+        </button>
+      </div>
+      <section :if={@peek} id="pdt-system-messages" class="pdt-system__state">
+        <h3 class="pdt-process__title">Messages</h3>
+        <.peek peek={@peek} />
+      </section>
       <ProcessView.vitals :if={is_map(@sample)} prefix="pdt-system" sample={@sample} series={@series} />
       <section :if={is_map(@sample)} id="pdt-system-where" class="pdt-process__relations">
         <div id="pdt-system-ancestors">
@@ -354,7 +457,63 @@ defmodule PhoenixDevToolbar.Panels.System do
         </h3>
         <.status status={@status} />
       </section>
+      <section :if={@watched != []} id="pdt-system-watched" class="pdt-system__state">
+        <h3 class="pdt-process__title">Watched ({length(@watched)})</h3>
+        <ul class="pdt-list">
+          <li
+            :for={{watch, index} <- Enum.with_index(@watched)}
+            id={"pdt-system-watched-#{index}"}
+            class="pdt-row pdt-process__relation"
+          >
+            <ProcessView.pid_link
+              id={inspect(watch.pid)}
+              link={is_nil(watch.down) && "inspect"}
+              target={@myself}
+            />
+            <span>{watch.label}</span>
+            <span :if={is_nil(watch.down)} class="pdt-tag pdt-tag--live">alive</span>
+            <span :if={watch.down} class="pdt-system__down">
+              exited at {watch.down.at}: <code>{watch.down.reason}</code>
+            </span>
+            <button
+              type="button"
+              class="pdt-button pdt-button--small"
+              phx-click="unwatch"
+              phx-value-index={index}
+              phx-target={@myself}
+            >
+              Forget
+            </button>
+          </li>
+        </ul>
+      </section>
     </div>
+    """
+  end
+
+  attr :peek, :any, required: true
+
+  defp peek(%{peek: {:ok, [], _total}} = assigns),
+    do: ~H"""
+    <p id="pdt-system-messages-empty" class="pdt-hint">The queue is empty.</p>
+    """
+
+  defp peek(%{peek: {:ok, _shown, _total}} = assigns) do
+    ~H"""
+    <p class="pdt-hint">
+      The first {length(elem(@peek, 1))} of {elem(@peek, 2)}, oldest first, redacted:
+    </p>
+    <ol id="pdt-system-messages-list" class="pdt-list">
+      <li :for={message <- elem(@peek, 1)}><pre>{message}</pre></li>
+    </ol>
+    """
+  end
+
+  defp peek(%{peek: {:error, why}} = assigns) do
+    assigns = assign(assigns, :why, why)
+
+    ~H"""
+    <p id="pdt-system-messages-error" class="pdt-hint">{@why}</p>
     """
   end
 

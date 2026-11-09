@@ -47,8 +47,14 @@ defmodule PhoenixDevToolbar.PanelLive do
       |> assign(shell: shell, tabs: tabs, tab: default_tab(tabs), visible?: false)
       |> assign(panel_errors: %{}, quarantined: PageData.quarantined(shell.plugins))
       |> assign(root: root, flush: nil, subscribed: [])
-      # Who may run destructive actions (ClientPolicy, ADR 10).
-      |> assign(client_ip: client_ip(socket))
+      # What tabs need to act on host processes (ProcessActions, ADR 10): the
+      # client's address (ClientPolicy) and this panel's own processes (Protected).
+      |> assign(:pdt_actions, %{
+        client: client_ip(socket),
+        panel: self(),
+        transport: socket.transport_pid,
+        endpoint: socket.endpoint
+      })
       # Subscribe before reading: a LiveView announced between the read and the
       # subscription would otherwise never reach the panel.
       |> subscribe(List.wrap(root))
@@ -129,6 +135,15 @@ defmodule PhoenixDevToolbar.PanelLive do
       nil ->
         {:noreply, socket}
     end
+  end
+
+  # A monitor a tab set (it runs in this process): every tab's handle_info/2 gets
+  # it and ignores the ones it does not know.
+  def handle_info({:DOWN, _ref, :process, _pid, _reason} = down, socket) do
+    for %{id: id, panel: panel} <- socket.assigns.tabs,
+        do: Panel.send_now(self(), panel, panel_id(id), down)
+
+    {:noreply, socket}
   end
 
   # A tab's component raised (PhoenixDevToolbar.Panel boundary).
@@ -331,6 +346,7 @@ defmodule PhoenixDevToolbar.PanelLive do
       panel_errors={@panel_errors}
       missing?={@missing?}
       visible?={@visible?}
+      pdt_actions={@pdt_actions}
     />
     """
   end

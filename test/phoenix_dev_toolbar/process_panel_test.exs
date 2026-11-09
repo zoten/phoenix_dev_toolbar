@@ -128,6 +128,31 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     assert has_element?(panel, "#pdt-process-none")
   end
 
+  test "Kill ends the page's LiveView after a confirm" do
+    {host, sid} = visit("/demo")
+    panel = open(sid)
+    visible(panel)
+
+    # The test is linked to the host LiveView (live/2).
+    Process.flag(:trap_exit, true)
+    ref = Process.monitor(host.pid)
+
+    panel |> form("#pdt-process-kill-form", %{"reason" => "shutdown"}) |> render_submit()
+    assert has_element?(panel, "#pdt-process-confirm-text", "shutdown")
+    refute_received {:DOWN, ^ref, :process, _pid, _reason}
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        panel |> element("#pdt-process-confirm") |> render_click()
+      end)
+
+    assert_receive {:DOWN, ^ref, :process, _pid, :shutdown}
+    assert log =~ "killed"
+
+    reshow(panel)
+    refute has_element?(panel, "#pdt-process-vitals")
+  end
+
   # Real timers: the relations tick runs every second here (its minimum).
   defp eventually(fun, tries \\ 40) do
     case fun.() do

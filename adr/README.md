@@ -18,7 +18,7 @@ Next free number: **13**.
 | ADR | Title | Status |
 |---|---|---|
 | 01 | [Zero Production Footprint and Installation](./01-zero-prod-footprint-and-installation.md) | Implemented (2026-11-05) |
-| 10 | [Process Addressing and Actions Policy](./10-process-addressing-and-actions.md) | Accepted |
+| 10 | [Process Addressing and Actions Policy](./10-process-addressing-and-actions.md) | Implemented (2026-11-09) |
 
 ## Collection
 

@@ -71,6 +71,16 @@ defmodule PhoenixDevToolbar.ProcessActionsTest do
     refute Process.info(pid, :status) == {:status, :suspended}
   end
 
+  test "a suspended process can still be killed", %{context: context} do
+    pid = idle_process()
+    ref = Process.monitor(pid)
+    capture_log(fn -> :ok = ProcessActions.suspend(pid, context) end)
+
+    capture_log(fn -> assert ProcessActions.kill(pid, "kill", context) == :ok end)
+
+    assert_receive {:DOWN, ^ref, :process, ^pid, :killed}
+  end
+
   test "peek shows the first messages, redacted, under a queue limit", %{context: context} do
     pid = idle_process()
     send(pid, {:login, %{user: "ada", password: "hunter2"}})

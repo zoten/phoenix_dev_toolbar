@@ -127,8 +127,8 @@ defmodule PhoenixDevToolbar.Truncate do
   Replaces the value of sensitive keys with `"#{@redacted}"`.
 
   A key is sensitive when its name (atom or string, case insensitive) contains
-  one of `keys`. Walks maps, structs, keyword lists, lists and tuples, bounded in
-  depth and length.
+  one of `keys`. Walks maps, structs, keyword lists, lists and tuples (up to
+  #{@list_items} elements), bounded in depth and length.
 
       iex> PhoenixDevToolbar.Truncate.redact(%{"user" => %{"password" => "hunter2", "name" => "Ada"}})
       %{"user" => %{"password" => "[REDACTED]", "name" => "Ada"}}
