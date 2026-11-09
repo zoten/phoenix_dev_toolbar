@@ -200,8 +200,13 @@ defmodule PhoenixDevToolbar.ProcessInfo do
 
   defp ancestor(pid) when is_pid(pid), do: %{id: inspect(pid), name: name(pid), pid: pid}
 
-  defp ancestor(name) when is_atom(name),
-    do: %{id: inspect(name), name: inspect(name), pid: Process.whereis(name)}
+  # A registered name: shown by name, linked by its pid while it is registered.
+  defp ancestor(name) when is_atom(name) do
+    case Process.whereis(name) do
+      pid when is_pid(pid) -> %{id: inspect(pid), name: inspect(name), pid: pid}
+      nil -> %{id: inspect(name), name: "not registered anymore", pid: nil}
+    end
+  end
 
   defp ancestor(other), do: %{id: inspect(other, limit: 5), name: "", pid: nil}
 
@@ -305,17 +310,46 @@ defmodule PhoenixDevToolbar.ProcessInfo do
   defp present(other), do: %{module: "unknown", sys_state: "unknown", state: state(other)}
 
   # gen_server, gen_statem, supervisors and their kin put the state under
-  # `{:data, [{~c"State", state}]}` in `misc`. Anything else is not shown: a
-  # custom shape could hold secrets deeper than redaction reaches.
+  # `{:data, [{~c"State", state}]}` in `misc`. A `format_status/2` may give its own
+  # `{:data, [{label, value}]}` entries instead (a LiveView lists its view, parent,
+  # transport and topic): those are shown one per line, each value redacted on its
+  # own. Any other shape is not shown: it could hold secrets deeper than
+  # redaction reaches.
+  @standard_labels ["Status", "Parent", "Logged events"]
+
   defp state(misc) do
-    case Enum.find_value(List.wrap(misc), &state_entry/1) do
-      {:state, state} -> state |> Truncate.redact() |> Truncate.inspect_value()
-      nil -> "(no State entry in this process's status: not shown)"
+    entries = data_entries(misc)
+
+    case List.keyfind(entries, "State", 0) do
+      {"State", state} -> state |> Truncate.redact() |> Truncate.inspect_value()
+      nil -> custom(Enum.reject(entries, fn {label, _value} -> label in @standard_labels end))
     end
   end
 
-  defp state_entry({:data, [{~c"State", state}]}), do: {:state, state}
-  defp state_entry(_other), do: nil
+  defp custom([]), do: "(no state in this process's status: not shown)"
+
+  defp custom(entries) do
+    entries
+    |> Truncate.redact()
+    |> Enum.map_join("\n", fn {label, value} -> "#{label}: #{Truncate.inspect_value(value)}" end)
+  end
+
+  defp data_entries(misc) do
+    for {:data, entries} when is_list(entries) <- List.wrap(misc),
+        {label, value} <- entries,
+        is_list(label) or is_binary(label),
+        do: {label_string(label), value}
+  end
+
+  defp label_string(label) when is_binary(label), do: label
+
+  defp label_string(label) do
+    case List.to_string(label) do
+      string when is_binary(string) -> string
+    end
+  rescue
+    ArgumentError -> "?"
+  end
 
   @doc """
   Whether `pid` is one of the toolbar's own processes: its registered name or

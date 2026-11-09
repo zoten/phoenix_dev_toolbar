@@ -74,6 +74,8 @@ defmodule PhoenixDevToolbar.ProcessView do
 
   attr :prefix, :string, required: true
   attr :relations, :map, required: true, doc: "a ProcessInfo.relations/1"
+  attr :link, :string, default: nil, doc: "the event a local process's id sends, with its pid"
+  attr :target, :any, default: nil, doc: "the event's phx-target"
 
   def relations(assigns) do
     ~H"""
@@ -83,18 +85,24 @@ defmodule PhoenixDevToolbar.ProcessView do
         title="Links"
         relations={@relations.links}
         more={@relations.more.links}
+        link={@link}
+        target={@target}
       />
       <.relation_list
         id={"#{@prefix}-monitors"}
         title="Monitors"
         relations={@relations.monitors}
         more={@relations.more.monitors}
+        link={@link}
+        target={@target}
       />
       <.relation_list
         id={"#{@prefix}-monitored-by"}
         title="Monitored by"
         relations={@relations.monitored_by}
         more={@relations.more.monitored_by}
+        link={@link}
+        target={@target}
       />
     </section>
     """
@@ -139,6 +147,8 @@ defmodule PhoenixDevToolbar.ProcessView do
   attr :title, :string, required: true
   attr :relations, :list, required: true
   attr :more, :integer, required: true
+  attr :link, :string, default: nil
+  attr :target, :any, default: nil
 
   defp relation_list(assigns) do
     ~H"""
@@ -147,7 +157,7 @@ defmodule PhoenixDevToolbar.ProcessView do
       <p :if={@relations == []} class="pdt-hint">None.</p>
       <ul :if={@relations != []} class="pdt-list">
         <li :for={relation <- @relations} class="pdt-row pdt-process__relation">
-          <code>{relation.id}</code>
+          <.pid_link id={relation.id} link={relation.link? && @link} target={@target} />
           <span>{relation.name}</span>
           <span :if={relation.kind == :port} class="pdt-tag">port</span>
           <span :if={relation.toolbar?} class="pdt-tag" title="Part of the dev toolbar itself">
@@ -166,6 +176,28 @@ defmodule PhoenixDevToolbar.ProcessView do
     </div>
     """
   end
+
+  attr :id, :string, required: true, doc: "the pid as inspected, or another id"
+  attr :link, :any, default: nil, doc: "the event to send with phx-value-pid, or nil/false"
+  attr :target, :any, default: nil
+
+  @doc "A process id: a button sending `link` with the pid when given, else plain code."
+  def pid_link(%{link: link} = assigns) when is_binary(link) do
+    ~H"""
+    <button
+      type="button"
+      class="pdt-pid-link"
+      phx-click={@link}
+      phx-value-pid={@id}
+      phx-target={@target}
+      title="Inspect this process"
+    >
+      <code>{@id}</code>
+    </button>
+    """
+  end
+
+  def pid_link(assigns), do: ~H"<code>{@id}</code>"
 
   defp words(words), do: bytes(words * :erlang.system_info(:wordsize))
 

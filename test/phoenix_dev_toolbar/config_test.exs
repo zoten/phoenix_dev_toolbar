@@ -17,7 +17,8 @@ defmodule PhoenixDevToolbar.ConfigTest do
     {Plugins.Ecto, []},
     {Plugins.Request, []},
     {Plugins.LiveView, []},
-    {Plugins.Process, []}
+    {Plugins.Process, []},
+    {Plugins.System, []}
   ]
 
   test ":defaults expands to the built-ins, in place" do
@@ -30,13 +31,19 @@ defmodule PhoenixDevToolbar.ConfigTest do
              {Plugins.Ecto, repos: [Demo.Repo]},
              {Plugins.Request, []},
              {Plugins.LiveView, []},
-             {Plugins.Process, []}
+             {Plugins.Process, []},
+             {Plugins.System, []}
            ]
   end
 
   test "{:exclude, module} removes a plugin wherever it is listed" do
     assert Config.expand([:defaults, {:exclude, Plugins.LiveView}]) ==
-             [{Plugins.Ecto, []}, {Plugins.Request, []}, {Plugins.Process, []}]
+             [
+               {Plugins.Ecto, []},
+               {Plugins.Request, []},
+               {Plugins.Process, []},
+               {Plugins.System, []}
+             ]
   end
 
   test "invalid entries are logged and skipped, never raised" do

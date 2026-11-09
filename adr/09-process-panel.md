@@ -2,7 +2,7 @@
 
 **Status:** Implemented (2026-11-06)  
 **Area:** ui  
-**Related:** [ADR 04](./04-ui-delivery.md) (the page and its owner), [ADR 05](./05-plugin-behaviour.md) (a built-in plugin), [ADR 07](./07-live-view-panel.md) (the same "only while someone looks" polling)
+**Related:** [ADR 11](./11-system-tab.md) (where links lead, shared inspector), [ADR 04](./04-ui-delivery.md) (the page and its owner), [ADR 05](./05-plugin-behaviour.md) (a built-in plugin), [ADR 07](./07-live-view-panel.md) (the same "only while someone looks" polling)
 
 ## Context
 
@@ -29,7 +29,8 @@ only, reading the page's process while the tab is shown and the panel visible.
   each (the rest counted), each related process named (registered name, its
   `$initial_call`, a supervisor's module, or what it runs now) and marked as a child
   when its `$callers` holds the LiveView; once per target, how it started and whether
-  it traps exits. It never reads `:messages`, `:binary` or the whole `:dictionary`
+  it traps exits. Every local process listed, and the target's own pid, is a link
+  that opens it in the System tab (ADR 11, `Panel.navigate/3`). It never reads `:messages`, `:binary` or the whole `:dictionary`
   (unbounded copies); two dictionary keys are read one at a time
   (`{:dictionary, key}`, OTP 26.2+, checked once; older OTPs skip them). Remote pids
   and ports are named by their node and never read.

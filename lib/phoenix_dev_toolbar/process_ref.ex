@@ -1,13 +1,13 @@
 defmodule PhoenixDevToolbar.ProcessRef do
   @moduledoc false
-  # Turns what someone typed into a local process (ADR 10): a pid (`<0.123.0>`
-  # or `0.123.0`) or a registered name (`:code_server`, `code_server`,
+  # Turns what someone typed into a local process (ADR 10): a pid
+  # (`#PID<0.123.0>`, `<0.123.0>` or `0.123.0`) or a registered name (`:code_server`, `code_server`,
   # `MyApp.Repo`, `Elixir.MyApp.Repo`). Names are compared as strings with
   # Process.registered/0: never an atom from the input, not even an existing one
   # (the input must not be able to probe the atom table).
 
   @max_bytes 128
-  @pid_format ~r/^<?(\d+)\.(\d+)\.(\d+)>?$/
+  @pid_format ~r/^(?:#PID)?<?(\d+)\.(\d+)\.(\d+)>?$/
 
   @type error :: :invalid | :not_found | :remote | :dead
 
@@ -39,7 +39,11 @@ defmodule PhoenixDevToolbar.ProcessRef do
     end
   end
 
+  # Empty, or shaped like a pid without being one: not a name either.
   defp registered(""), do: {:error, :invalid}
+  defp registered("<" <> _rest), do: {:error, :invalid}
+  defp registered("#" <> _rest), do: {:error, :invalid}
+  defp registered(<<digit, _rest::binary>>) when digit in ?0..?9, do: {:error, :invalid}
 
   defp registered(input) do
     with name when is_atom(name) <- Enum.find(Process.registered(), &named?(&1, input)),

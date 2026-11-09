@@ -517,6 +517,22 @@ body.pdt {
 .pdt-process__relation span { min-width: 0; overflow-wrap: anywhere; }
 .pdt-process__paused { padding: 0 12px; }
 #pdt-process-select { display: flex; gap: 6px; align-items: center; }
+.pdt-pid-link { padding: 0; border: 0; background: none; cursor: pointer; text-align: left; }
+.pdt-pid-link code { color: var(--pdt-accent); }
+.pdt-pid-link:hover code { text-decoration: underline; }
+.pdt-pid-link:focus-visible { outline: 2px solid var(--pdt-accent); outline-offset: 1px; }
+.pdt-system__search { display: flex; flex: 1; gap: 6px; align-items: center; min-width: 0; }
+.pdt-system__search input { flex: 1; min-width: 0; max-width: 360px; height: 20px; padding: 0 6px; border: 1px solid var(--pdt-border); border-radius: 4px; background: var(--pdt-bg); color: inherit; font: 11.5px var(--pdt-mono); }
+.pdt-system__search input:focus-visible { outline: 2px solid var(--pdt-accent); outline-offset: 0; }
+.pdt-crumbs { display: flex; flex-wrap: wrap; gap: 2px 4px; padding: 0 12px 6px; }
+.pdt-crumb { padding: 0 4px; border: 0; border-radius: 3px; background: none; color: var(--pdt-muted); font: 11px var(--pdt-mono); cursor: pointer; }
+.pdt-crumb + .pdt-crumb::before { content: "\203A"; margin-right: 4px; color: var(--pdt-muted); }
+.pdt-crumb[aria-current="true"] { color: inherit; font-weight: 600; }
+.pdt-crumb:hover { background: var(--pdt-bg-alt); }
+.pdt-system__frames code { font: 11px var(--pdt-mono); color: var(--pdt-code); overflow-wrap: anywhere; }
+.pdt-system__state { padding: 0 12px 8px; border-top: 1px solid var(--pdt-border); }
+.pdt-system__state pre { margin: 0; font: 11px/1.5 var(--pdt-mono); color: var(--pdt-code); white-space: pre-wrap; overflow-wrap: anywhere; }
+.pdt-system__state .pdt-button { margin-left: 8px; vertical-align: middle; }
 
 /* The reload breaker's notice (ADR 04): the panel stopped trying to connect. */
 .pdt-stalled { flex: none; display: flex; align-items: center; gap: 8px; color: var(--pdt-header-warn); font-size: 12px; }

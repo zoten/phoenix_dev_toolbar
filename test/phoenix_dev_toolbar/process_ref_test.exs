@@ -11,6 +11,7 @@ defmodule PhoenixDevToolbar.ProcessRefTest do
       "#PID" <> text = inspect(pid)
 
       assert ProcessRef.parse(text) == {:ok, pid}
+      assert ProcessRef.parse(inspect(pid)) == {:ok, pid}
       assert ProcessRef.parse(String.trim(text, "<") |> String.trim(">")) == {:ok, pid}
       assert ProcessRef.parse("  #{text}\n") == {:ok, pid}
     end
@@ -24,7 +25,9 @@ defmodule PhoenixDevToolbar.ProcessRefTest do
     end
 
     test "refuses malformed pids" do
-      assert ProcessRef.parse("<0.1>") == {:error, :not_found}
+      assert ProcessRef.parse("<0.1>") == {:error, :invalid}
+      assert ProcessRef.parse("0.1") == {:error, :invalid}
+      assert ProcessRef.parse("#PID<x>") == {:error, :invalid}
       assert ProcessRef.parse("<0.99999999999999999999.0>") == {:error, :invalid}
       assert ProcessRef.parse("<0.#{String.duplicate("9", 120)}.0>") == {:error, :invalid}
     end

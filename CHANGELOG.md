@@ -72,3 +72,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ecto Download checks `root` is one of the page's sids (ADR 08)
 - Process addressing, protected set, `actions:` loopback policy (ADR 10)
 - `Panel.navigate/3`: switch to another tab with params (ADR 10)
+- System tab: any process by pid or name, breadcrumbs, ancestors, stacktrace, state (ADR 11)
+- Process tab: every process is a link to the System tab (ADR 09)

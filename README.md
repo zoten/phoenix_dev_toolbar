@@ -44,6 +44,9 @@ config :phoenix_dev_toolbar,
   # The Process tab reads the page's LiveView every second (60 points kept) and
   # its links and monitors every 5 seconds, only while the tab is open:
   # plugins: [:defaults, {PhoenixDevToolbar.Plugins.Process, sample_ms: 1000, samples: 60, relations_ms: 5000}],
+  # The System tab inspects any process (a pid, a registered name, a link from the
+  # Process tab), with the same options:
+  # plugins: [:defaults, {PhoenixDevToolbar.Plugins.System, sample_ms: 1000}],
   # The toolbar makes room so the page scrolls clear of it; false lets it overlap
   # (the dock menu's toggle overrides this per browser)
   reserve_space: true,
@@ -59,7 +62,7 @@ config :phoenix_dev_toolbar,
   ]
 ```
 
-The options shown for the built-in Ecto and Process plugins are all they accept.
+The options shown for the built-in Ecto, Process and System plugins are all they accept.
 
 Invalid `limits` values are logged at boot and keep their default.
 

@@ -89,6 +89,10 @@ defmodule PhoenixDevToolbar.Panels.Process do
   def handle_event("gc", _params, socket),
     do: {:noreply, ProcessInspector.gc(socket, ProcessPanel)}
 
+  # A process link: the System tab inspects it (it parses the pid again).
+  def handle_event("inspect", %{"pid" => pid}, socket) when is_binary(pid),
+    do: {:noreply, Panel.navigate(socket, :system, %{"pid" => pid})}
+
   @impl Phoenix.LiveComponent
   def handle_async(:gc, result, socket), do: {:noreply, ProcessInspector.gc_done(socket, result)}
 
@@ -224,7 +228,8 @@ defmodule PhoenixDevToolbar.Panels.Process do
           </select>
         </form>
         <span :if={length(@targets) == 1} id="pdt-process-target-label">
-          <strong>{hd(@targets).label}</strong> <code>{inspect(hd(@targets).pid)}</code>
+          <strong>{hd(@targets).label}</strong>
+          <ProcessView.pid_link id={inspect(hd(@targets).pid)} link="inspect" target={@myself} />
         </span>
         <span :if={@about} class="pdt-hint">
           started in <code>{@about.initial_call}</code>
@@ -262,6 +267,8 @@ defmodule PhoenixDevToolbar.Panels.Process do
         :if={is_map(@relations)}
         prefix="pdt-process"
         relations={@relations}
+        link="inspect"
+        target={@myself}
       />
     </div>
     """
