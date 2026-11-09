@@ -48,7 +48,17 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   `pdt:open` key is migrated): `collapsed` (default: the iframe is a 34px bar, the panel
   header, fixed at the bottom), `open` (`min(45vh, 520px)`), `hidden` (no iframe, only a
   small "dev toolbar" pill in the bottom right corner, so the bar never permanently
-  covers the host page; clicking it collapses again). The iframe asks for `pdt:toggle`
+  covers the host page; clicking it collapses again). The host div stays in the page
+  flow with an inline height equal to the bar (34px collapsed, the panel size open, 0
+  hidden), so the page can scroll its last content above the fixed iframe without the
+  toolbar touching host CSS. This only helps when the document is the scroller: an app
+  shell that scrolls an inner `overflow: auto` container stays covered (collapse, resize
+  or hide instead). The open size is draggable from a handle on the panel's top edge
+  (`role="separator"`; arrows step 16px, Shift 64px, Home or double click reset), from
+  120px up to the viewport minus a 48px strip of page, re-clamped on window resize. The
+  iframe ignores pointer events while dragging. The size is persisted as `pdt:layout`
+  (`{"dock": "bottom", "size": px}`; `dock` is reserved for other docks). The sizing
+  logic lives in `layout.mjs`, axis neutral. The iframe asks for `pdt:toggle`
   (toggle button), `pdt:open` (a tab was picked) and `pdt:hide` (hide button); the
   loader answers with `pdt:state`. Both sides check `event.origin` and `event.source`. The
   loader also forwards LiveView's own `phx:*` window events as `pdt:client` messages

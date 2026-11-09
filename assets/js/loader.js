@@ -11,11 +11,23 @@
 // postMessage bridge, rate limited and buffered until the panel loads.
 
 import {BUFFER, EVENTS, PER_SECOND, createLimiter, createQueue, sanitize} from "./client_events.mjs"
+import {
+  COLLAPSED_SIZE,
+  MIN_SIZE,
+  PAGE_STRIP,
+  clampSize,
+  defaultSize,
+  parseLayout,
+  reservedSize,
+  serializeLayout,
+} from "./layout.mjs"
 
 const STORAGE_KEY = "pdt:state"
 const LEGACY_KEY = "pdt:open"
+const LAYOUT_KEY = "pdt:layout"
 const STATES = ["open", "collapsed", "hidden"]
-const COLLAPSED_PX = 34
+const KEY_STEP = 16
+const KEY_STEP_LARGE = 64
 const MESSAGE_PREFIX = "pdt:"
 
 const script =
@@ -40,17 +52,46 @@ const writeState = (state) => {
   }
 }
 
+const readLayout = () => {
+  try {
+    return parseLayout(window.localStorage.getItem(LAYOUT_KEY))
+  } catch (_error) {
+    return parseLayout(null)
+  }
+}
+
+const writeLayout = (layout) => {
+  try {
+    window.localStorage.setItem(LAYOUT_KEY, serializeLayout(layout))
+  } catch (_error) {
+    // Storage may be disabled: the size just will not persist.
+  }
+}
+
 const STYLE = `
   :host { all: initial; }
   .frame {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 2147483000;
-    width: 100%; height: ${COLLAPSED_PX}px; border: 0; margin: 0; padding: 0;
+    width: 100%; height: ${COLLAPSED_SIZE}px; border: 0; margin: 0; padding: 0;
     box-shadow: 0 -1px 0 rgba(0, 0, 0, .25), 0 -4px 16px rgba(0, 0, 0, .12);
     background: transparent; color-scheme: normal;
     transition: height 120ms ease-out;
   }
-  .frame.open { height: min(45vh, 520px); }
+  .frame.open { height: var(--pdt-size); }
   .frame.hidden { display: none; }
+  .frame.dragging { pointer-events: none; transition: none; }
+  .handle {
+    position: fixed; left: 0; right: 0; bottom: calc(var(--pdt-size) - 3px);
+    z-index: 2147483001; height: 6px; display: none;
+    cursor: ns-resize; touch-action: none; outline: none;
+  }
+  .handle::after {
+    content: ""; position: absolute; left: 50%; top: 1px; width: 36px; height: 4px;
+    margin-left: -18px; border-radius: 2px; background: #fd4f00; opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .handle:hover::after, .handle:focus-visible::after, .handle.dragging::after { opacity: 1; }
+  .handle.visible { display: block; }
   .pill {
     position: fixed; right: 12px; bottom: 12px; z-index: 2147483000;
     display: none; align-items: center; gap: 6px;
@@ -63,7 +104,7 @@ const STYLE = `
   .pill:hover { transform: translateY(-1px); }
   .pill:focus-visible { outline: 2px solid #fd4f00; outline-offset: 2px; }
   .pill.visible { display: inline-flex; }
-  @media (prefers-reduced-motion: reduce) { .frame, .pill { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .frame, .pill, .handle::after { transition: none; } }
 `
 
 const mount = () => {
@@ -73,6 +114,9 @@ const mount = () => {
   const host = document.createElement("div")
   host.id = "phoenix-dev-toolbar"
   host.setAttribute("data-phx-update", "ignore")
+  // Inline so host page rules cannot reach it. Its height is the space the bar
+  // reserves in the page flow, so the page scrolls its end above the bar.
+  host.style.cssText = "display:block;margin:0;padding:0;border:0;height:0"
   const root = host.attachShadow({mode: "open"})
 
   const style = document.createElement("style")
@@ -89,19 +133,51 @@ const mount = () => {
   pill.textContent = "dev toolbar"
   pill.title = "Show the dev toolbar"
 
-  root.append(style, frame, pill)
+  const handle = document.createElement("div")
+  handle.className = "handle"
+  handle.tabIndex = 0
+  handle.title = "Drag to resize, double click to reset"
+  handle.setAttribute("role", "separator")
+  handle.setAttribute("aria-orientation", "horizontal")
+  handle.setAttribute("aria-label", "Resize the dev toolbar")
+
+  root.append(style, frame, handle, pill)
   document.body.appendChild(host)
 
   let state = readState()
+  const layout = readLayout()
+  const viewport = () => window.innerHeight
+  // `wanted` is the user's size; `size` is it clamped to the current viewport,
+  // so shrinking the window and growing it back restores the user's size.
+  let wanted = layout.size
+  let size = clampSize(wanted, viewport())
   const post = (type, payload = {}) =>
     frame.contentWindow &&
     frame.contentWindow.postMessage({type: MESSAGE_PREFIX + type, ...payload}, window.location.origin)
+
+  const applySize = () => {
+    host.style.setProperty("--pdt-size", `${size}px`)
+    host.style.height = `${reservedSize(state, size)}px`
+    handle.setAttribute("aria-valuemin", String(MIN_SIZE))
+    handle.setAttribute("aria-valuemax", String(Math.max(MIN_SIZE, viewport() - PAGE_STRIP)))
+    handle.setAttribute("aria-valuenow", String(size))
+  }
+
+  const resize = (next, persist) => {
+    size = clampSize(next, viewport())
+    applySize()
+    if (!persist) return
+    wanted = size
+    writeLayout({dock: layout.dock, size})
+  }
 
   const setState = (next) => {
     state = next
     frame.classList.toggle("open", state === "open")
     frame.classList.toggle("hidden", state === "hidden")
+    handle.classList.toggle("visible", state === "open")
     pill.classList.toggle("visible", state === "hidden")
+    applySize()
     writeState(state)
     post("state", {open: state === "open"})
   }
@@ -136,6 +212,65 @@ const mount = () => {
       },
       {passive: true},
     ),
+  )
+
+  // Dragging: the iframe ignores pointer events meanwhile, or it would swallow
+  // the moves. Moves are batched to one resize per frame.
+  let drag = null
+  const endDrag = () => {
+    if (!drag) return
+    if (drag.frame) cancelAnimationFrame(drag.frame)
+    drag = null
+    frame.classList.remove("dragging")
+    handle.classList.remove("dragging")
+    resize(size, true)
+  }
+
+  handle.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    handle.setPointerCapture(event.pointerId)
+    drag = {frame: null, y: event.clientY}
+    frame.classList.add("dragging")
+    handle.classList.add("dragging")
+  })
+  handle.addEventListener("pointermove", (event) => {
+    if (!drag) return
+    drag.y = event.clientY
+    if (drag.frame) return
+    drag.frame = requestAnimationFrame(() => {
+      if (!drag) return
+      drag.frame = null
+      resize(viewport() - drag.y, false)
+    })
+  })
+  handle.addEventListener("pointerup", endDrag)
+  handle.addEventListener("pointercancel", endDrag)
+  handle.addEventListener("lostpointercapture", endDrag)
+  handle.addEventListener("dblclick", () => resize(defaultSize(viewport()), true))
+  handle.addEventListener("keydown", (event) => {
+    const step = event.shiftKey ? KEY_STEP_LARGE : KEY_STEP
+    const next = {
+      ArrowUp: size + step,
+      ArrowDown: size - step,
+      Home: defaultSize(viewport()),
+    }[event.key]
+    if (next === undefined) return
+    event.preventDefault()
+    resize(next, true)
+  })
+
+  let resizeFrame = null
+  window.addEventListener(
+    "resize",
+    () => {
+      if (resizeFrame) return
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = null
+        resize(wanted, false)
+      })
+    },
+    {passive: true},
   )
 
   pill.addEventListener("click", () => setState("collapsed"))
