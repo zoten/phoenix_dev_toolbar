@@ -1,0 +1,93 @@
+defmodule PhoenixDevToolbar.Plugins.Eval do
+  @moduledoc """
+  The Eval tab (ADR 12): read queries about the running node and, only when you
+  allow it, code you type, evaluated on the node. Not in `:defaults`: add it to
+  the toolbar's `plugins:`.
+
+      config :phoenix_dev_toolbar,
+        plugins: [:defaults, {PhoenixDevToolbar.Plugins.Eval, allow: :eval}]
+
+  Options, each with a safe default:
+
+    * `allow:` `:read_only` (default: a fixed list of read queries, no code) or
+      `:eval` (code typed in the panel runs on the node)
+    * `clients:` `:loopback` (default: only a browser on this machine) or `:any`
+      (any browser that reaches the dev server, Docker or LAN setups)
+    * `timeout_ms:` how long code may run before it is stopped, 5000 by default
+      (100 to 60000)
+
+  `allow: :eval` with `clients: :any` lets anyone who reaches the dev server run
+  code as the BEAM user: both overrides are warned about when the toolbar
+  starts. See SECURITY.md.
+  """
+
+  use PhoenixDevToolbar.Plugin, id: :eval, name: "Eval"
+
+  require Logger
+
+  @defaults %{allow: :read_only, clients: :loopback, timeout_ms: 5000}
+
+  @impl PhoenixDevToolbar.Plugin
+  def init(opts) do
+    case Keyword.keys(opts) -- Map.keys(@defaults) do
+      [] ->
+        opts |> Enum.into(@defaults) |> validate() |> warn()
+
+      unknown ->
+        {:error, "unknown options #{inspect(unknown)}, expected #{inspect(Map.keys(@defaults))}"}
+    end
+  end
+
+  defp validate(%{allow: allow}) when allow not in [:read_only, :eval],
+    do: {:error, "allow must be :read_only or :eval, got: #{inspect(allow, limit: 5)}"}
+
+  defp validate(%{clients: clients}) when clients not in [:loopback, :any],
+    do: {:error, "clients must be :loopback or :any, got: #{inspect(clients, limit: 5)}"}
+
+  defp validate(%{timeout_ms: ms}) when not (is_integer(ms) and ms >= 100 and ms <= 60_000),
+    do: {:error, "timeout_ms must be an integer from 100 to 60000, got: #{inspect(ms, limit: 5)}"}
+
+  defp validate(config), do: {:ok, config}
+
+  defp warn({:ok, config}) do
+    warn_overrides(config)
+    {:ok, config}
+  end
+
+  defp warn(error), do: error
+
+  defp warn_overrides(%{allow: :eval, clients: clients}) do
+    Logger.warning(
+      "[phoenix_dev_toolbar] the Eval tab runs code typed in the panel (allow: :eval)" <>
+        clients_note(clients)
+    )
+  end
+
+  defp warn_overrides(%{allow: :read_only, clients: :any}),
+    do: Logger.warning("[phoenix_dev_toolbar] the Eval tab answers any browser (clients: :any)")
+
+  defp warn_overrides(_defaults), do: :ok
+
+  defp clients_note(:any),
+    do: " for any browser (clients: :any): anyone who reaches this dev server can run code here."
+
+  defp clients_note(:loopback), do: ", for a browser on this machine only."
+
+  @doc false
+  @spec config(term()) :: %{
+          allow: :read_only | :eval,
+          clients: :loopback | :any,
+          timeout_ms: pos_integer()
+        }
+  def config(%{allow: _, clients: _, timeout_ms: _} = config), do: config
+  def config(_config), do: @defaults
+
+  @impl PhoenixDevToolbar.Plugin
+  def telemetry_events(_config), do: []
+
+  @impl PhoenixDevToolbar.Plugin
+  def collect(_event, _payload, _context), do: :skip
+
+  @impl PhoenixDevToolbar.Plugin
+  def panel, do: PhoenixDevToolbar.Panels.Eval
+end

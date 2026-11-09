@@ -547,6 +547,14 @@ body.pdt {
 .pdt-system__apps summary:focus-visible { outline: 2px solid var(--pdt-accent); outline-offset: 1px; }
 .pdt-system__desc { min-width: 0; overflow-wrap: anywhere; }
 .pdt-system__message { flex-basis: 100%; margin: 0; font: 11px/1.5 var(--pdt-mono); color: var(--pdt-code); white-space: pre-wrap; overflow-wrap: anywhere; }
+.pdt-eval__form { display: grid; gap: 4px; padding: 0 12px 8px; }
+.pdt-eval__form textarea { width: 100%; box-sizing: border-box; padding: 4px 6px; border: 1px solid var(--pdt-border); border-radius: 4px; background: var(--pdt-bg); color: inherit; font: 11.5px/1.5 var(--pdt-mono); resize: vertical; }
+.pdt-eval__form textarea:focus-visible { outline: 2px solid var(--pdt-accent); outline-offset: 0; }
+.pdt-eval__form .pdt-button { justify-self: start; }
+.pdt-eval__run { padding: 6px 12px; border-bottom: 1px solid var(--pdt-border); }
+.pdt-eval__run pre { margin: 4px 0 0; font: 11px/1.5 var(--pdt-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.pdt-eval__result { color: var(--pdt-code); }
+.pdt-eval__output { color: var(--pdt-muted); }
 .pdt-system__down code { font: 11px var(--pdt-mono); color: var(--pdt-code); }
 
 /* The reload breaker's notice (ADR 04): the panel stopped trying to connect. */
