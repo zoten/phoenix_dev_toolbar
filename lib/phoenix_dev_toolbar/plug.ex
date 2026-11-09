@@ -32,6 +32,7 @@ defmodule PhoenixDevToolbar.Plug do
   alias PhoenixDevToolbar.Config
   alias PhoenixDevToolbar.EctoExport
   alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.HostCheck
   alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.PanelSocket
   alias PhoenixDevToolbar.Session
@@ -99,14 +100,36 @@ defmodule PhoenixDevToolbar.Plug do
   defp route(conn, %{segments: segments} = opts) do
     case strip_prefix(conn.path_info, segments) do
       {:ok, ["assets", file]} -> serve_asset(conn, file)
-      {:ok, ["panel"]} -> serve_panel(conn, opts)
+      {:ok, ["panel"]} -> guarded(conn, &serve_panel(&1, opts))
       # The Ecto tab's Download (ADR 08): same origin, so a host's frame-src allows it.
-      {:ok, ["export", "ecto.json"]} -> serve_export(conn)
+      {:ok, ["export", "ecto.json"]} -> guarded(conn, &serve_export/1)
       # The panel's own LiveView socket (ADR 04): no host socket, no host token.
-      {:ok, ["live", "websocket"]} -> conn |> untracked() |> PanelSocket.upgrade()
+      {:ok, ["live", "websocket"]} -> guarded(conn, &(&1 |> untracked() |> PanelSocket.upgrade()))
       # Anything else under our path is not ours to answer: never tracked.
       {:ok, _rest} -> untracked(conn)
       :error -> maybe_track(conn, opts)
+    end
+  end
+
+  # DNS rebinding guard (ADR 04, HostCheck): the panel, its socket and the export
+  # answer only for a Host that cannot be rebound.
+  defp guarded(conn, serve) do
+    case HostCheck.allowed?(conn) do
+      true ->
+        serve.(conn)
+
+      false ->
+        HostCheck.log_refused(conn.host)
+
+        conn
+        |> untracked()
+        |> Conn.put_resp_content_type("text/plain")
+        |> Conn.send_resp(
+          403,
+          "phoenix_dev_toolbar: this host is not allowed to open the panel. If it is yours, " <>
+            "add it to `allowed_hosts:` in the toolbar config (a DNS rebinding guard)."
+        )
+        |> Conn.halt()
     end
   end
 

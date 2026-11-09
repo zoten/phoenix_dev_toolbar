@@ -109,6 +109,44 @@ defmodule PhoenixDevToolbar.EvalTest do
     end
   end
 
+  test "a browser behind a proxy or tunnel is not loopback, even from 127.0.0.1" do
+    attach(allow: :eval)
+    proxied = Plug.Conn.put_req_header(build_conn(), "x-forwarded-for", "203.0.113.9")
+    panel = open(proxied)
+
+    assert has_element?(panel, "#pdt-eval-off")
+    refute has_element?(panel, "#pdt-eval-form")
+  end
+
+  test "what code prints is capped while it runs" do
+    code = ~s|for _ <- 1..500, do: IO.write(String.duplicate("x", 1000)); :done|
+
+    assert {:ok, %{result: ":done", output: output}} = EvalRunner.eval(code, 5000)
+    assert byte_size(output) < 9_000
+  end
+
+  test "code is stopped on time even when its caller is gone" do
+    probe = :"pdt_eval_probe_#{System.unique_integer([:positive])}"
+    code = "Process.register(self(), #{inspect(probe)}); Process.sleep(:infinity)"
+    caller = spawn(fn -> EvalRunner.eval(code, 100) end)
+    evaluator = wait_for_name(probe, 100_000)
+    ref = Process.monitor(evaluator)
+
+    Process.exit(caller, :kill)
+
+    assert_receive {:DOWN, ^ref, :process, ^evaluator, :killed}, 1000
+  end
+
+  # The evaluator registers itself as soon as it runs: no message tells when.
+  defp wait_for_name(_name, 0), do: flunk("the evaluator never ran")
+
+  defp wait_for_name(name, tries) do
+    case Process.whereis(name) do
+      pid when is_pid(pid) -> pid
+      nil -> :erlang.yield() && wait_for_name(name, tries - 1)
+    end
+  end
+
   test "code is capped in size" do
     big = String.duplicate("1", EvalRunner.max_code_bytes() + 1)
     assert {:error, "At most" <> _rest} = EvalRunner.eval(big, 100)

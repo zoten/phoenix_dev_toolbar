@@ -274,12 +274,21 @@ defmodule PhoenixDevToolbar.PanelLive do
     end
   end
 
+  # A request that came through a proxy (a tunnel, a local reverse proxy) has a
+  # loopback peer, but its client is elsewhere: no client then (ADR 10, 12).
   defp client_ip(socket) do
-    case get_connect_info(socket, :peer_data) do
-      %{address: address} -> address
-      _none -> nil
+    case {get_connect_info(socket, :peer_data), proxied?(get_connect_info(socket, :x_headers))} do
+      {%{address: address}, false} -> address
+      _none_or_proxied -> nil
     end
   end
+
+  @proxy_headers ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip"]
+
+  defp proxied?(headers) when is_list(headers),
+    do: Enum.any?(headers, fn {name, _value} -> String.downcase(name) in @proxy_headers end)
+
+  defp proxied?(_none), do: false
 
   defp default_tab([%{id: id} | _tabs]), do: id
   defp default_tab([]), do: nil

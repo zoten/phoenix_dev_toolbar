@@ -47,7 +47,7 @@ Next free number: **13**.
 | ADR | Title | Status |
 |---|---|---|
 | 05 | [Plugin Behaviour](./05-plugin-behaviour.md) | Implemented (2026-11-05) |
-| 12 | [Cluster and Eval Plugins](./12-cluster-and-eval-plugins.md) | Proposed |
+| 12 | [Cluster and Eval Plugins](./12-cluster-and-eval-plugins.md) | Implemented (2026-11-09) |
 
 ## Testing
 

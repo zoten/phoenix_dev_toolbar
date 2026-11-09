@@ -47,10 +47,17 @@ config :phoenix_dev_toolbar,
   # The System tab inspects any process (a pid, a registered name, a link from the
   # Process tab), with the same options:
   # plugins: [:defaults, {PhoenixDevToolbar.Plugins.System, sample_ms: 1000}],
+  # Opt-in: connected nodes (Cluster) and read queries or code on the node (Eval,
+  # read only and for this machine's browser unless allow: :eval / clients: :any,
+  # see SECURITY.md):
+  # plugins: [:defaults, PhoenixDevToolbar.Plugins.Cluster, {PhoenixDevToolbar.Plugins.Eval, allow: :eval}],
   # Kill, suspend and message peek (System and Process tabs) run only for a browser
   # on this machine; :any for Docker or the LAN (anyone reaching the server can use
   # them), false to turn them off
   actions: :loopback,
+  # The panel answers IP addresses, localhost, and your endpoint's url host; list
+  # other names you use for the dev server (a DNS rebinding guard)
+  # allowed_hosts: ["myapp.test"],
   # The toolbar makes room so the page scrolls clear of it; false lets it overlap
   # (the dock menu's toggle overrides this per browser)
   reserve_space: true,
@@ -66,7 +73,8 @@ config :phoenix_dev_toolbar,
   ]
 ```
 
-The options shown for the built-in Ecto, Process and System plugins are all they accept.
+The options shown for the built-in Ecto, Process and System plugins are all they accept;
+Cluster and Eval document theirs in their module docs.
 
 Invalid `limits` values are logged at boot and keep their default.
 

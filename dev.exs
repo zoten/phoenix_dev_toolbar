@@ -25,14 +25,17 @@ Application.put_env(:phoenix_dev_toolbar, Demo.Repo, database: database, stacktr
 Application.put_env(:phoenix_dev_toolbar, :repos, [Demo.Repo])
 
 # Plugins (ADR 05): the example Oban plugin and a demo plugin that fails on
-# demand, next to the built-ins.
+# demand, next to the built-ins, and the opt-in Cluster and Eval tabs (ADR 12;
+# Eval runs code here, for this machine's browser only: it warns at boot).
 Code.require_file("examples/oban/oban_plugin.ex", __DIR__)
 Code.require_file("examples/oban/oban_panel.ex", __DIR__)
 
 Application.put_env(:phoenix_dev_toolbar, :plugins, [
   :defaults,
   {PdtExamples.Oban, queues: :all},
-  Demo.FlakyPlugin
+  Demo.FlakyPlugin,
+  PhoenixDevToolbar.Plugins.Cluster,
+  {PhoenixDevToolbar.Plugins.Eval, allow: :eval}
 ])
 
 defmodule Demo.Repo do

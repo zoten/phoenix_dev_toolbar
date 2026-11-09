@@ -43,7 +43,7 @@ defmodule PhoenixDevToolbar.PanelSocket do
   @defaults [serializer: @serializers, timeout: 60_000, compress: false]
   @host_options [:check_origin, :timeout, :max_frame_size]
 
-  @connect_info [:peer_data, :uri, :user_agent]
+  @connect_info [:peer_data, :uri, :user_agent, :x_headers]
 
   @doc "Upgrades `conn` to the panel's LiveView socket, or answers 403, 404 or 400."
   @spec upgrade(Plug.Conn.t()) :: Plug.Conn.t()

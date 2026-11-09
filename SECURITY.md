@@ -11,3 +11,25 @@ read or drive the panel, or crashes or slows down the host application.
 Please report vulnerabilities privately through
 [GitHub security advisories](https://github.com/zoten/phoenix_dev_toolbar/security/advisories/new),
 not in public issues.
+
+## Features that act on the node
+
+They run for whoever can open the panel, so each has a safe default:
+
+- **Process actions** (kill, suspend, message peek, state read, message trace:
+  [ADR 10](adr/10-process-addressing-and-actions.md)) run only for a browser on the
+  same machine (`actions: :loopback`). `actions: :any` opens them to any browser
+  that reaches the dev server (Docker, LAN); `actions: false` turns them off.
+- **The Eval plugin** ([ADR 12](adr/12-cluster-and-eval-plugins.md)) is not
+  installed by default. Once added it is read only and loopback only. With
+  `allow: :eval` it runs code typed in the panel as the BEAM user; with
+  `clients: :any` too, **anyone who reaches the dev server can run code on your
+  machine**. Both overrides are logged as warnings when the toolbar starts.
+- "Loopback" is the address the panel's websocket comes from, with no
+  `x-forwarded-*` header: a proxy or tunnel that adds none (Docker's userland port
+  proxy, a plain TCP tunnel) makes whoever reaches it look local.
+- **DNS rebinding**: the panel, its socket and its downloads answer only for a host
+  name that cannot be rebound (an IP address, `localhost`, the endpoint's own
+  `url` host, or one you list in `allowed_hosts:`), so a hostile web page cannot
+  reach them through your browser.
+

@@ -101,13 +101,19 @@ defmodule PhoenixDevToolbar.EvalRunner do
     {:ok, timed(fn -> run(code, timeout_ms) end)}
   end
 
-  # The result travels in the exit reason: whatever the code does to its own
-  # process (links, exits, a throw), the caller only sees a DOWN.
+  # The result comes back as a tagged message; whatever the code does to its own
+  # process (links, exits, a throw) only shows as a DOWN without it. A late
+  # result after a kill cannot arrive: the process is dead.
   defp run(code, timeout_ms) do
-    {pid, ref} = spawn_monitor(fn -> exit({:pdt_eval, evaluate(code)}) end)
+    caller = self()
+    tag = make_ref()
+    {pid, ref} = spawn_monitor(fn -> send(caller, {tag, evaluate(code)}) end)
+    # Killed on time even if the caller dies first (the panel went away).
+    {:ok, _timer} = :timer.kill_after(timeout_ms + 50, pid)
 
     receive do
-      {:DOWN, ^ref, :process, ^pid, {:pdt_eval, run}} ->
+      {^tag, run} ->
+        Process.demonitor(ref, [:flush])
         run
 
       {:DOWN, ^ref, :process, ^pid, reason} ->
@@ -116,12 +122,22 @@ defmodule PhoenixDevToolbar.EvalRunner do
       timeout_ms ->
         Process.exit(pid, :kill)
         Process.demonitor(ref, [:flush])
+        flush(tag)
         %{result: nil, error: "No result after #{timeout_ms} ms: stopped.", output: ""}
     end
   end
 
+  # A result sent just before the kill landed.
+  defp flush(tag) do
+    receive do
+      {^tag, _run} -> :ok
+    after
+      0 -> :ok
+    end
+  end
+
   defp evaluate(code) do
-    {:ok, io} = StringIO.open("")
+    io = spawn_link(fn -> capped_io([], 0) end)
     Process.group_leader(self(), io)
 
     outcome =
@@ -134,8 +150,7 @@ defmodule PhoenixDevToolbar.EvalRunner do
         kind, reason -> {:error, Exception.format(kind, reason, __STACKTRACE__)}
       end
 
-    {_input, output} = StringIO.contents(io)
-    output = Truncate.string(output, @output_bytes)
+    output = output(io)
 
     case outcome do
       {:ok, value} ->
@@ -143,6 +158,61 @@ defmodule PhoenixDevToolbar.EvalRunner do
 
       {:error, text} ->
         %{result: nil, error: Truncate.string(text, @output_bytes), output: output}
+    end
+  end
+
+  ## Output: a group leader that keeps the first @output_bytes and drops the rest,
+  ## so code printing in a loop holds no more than that while it runs.
+
+  defp capped_io(acc, size) do
+    receive do
+      {:io_request, from, reply_as, request} ->
+        {acc, size, reply} = io_request(request, acc, size)
+        send(from, {:io_reply, reply_as, reply})
+        capped_io(acc, size)
+
+      {:pdt_output, from, tag} ->
+        send(from, {tag, acc |> Enum.reverse() |> IO.iodata_to_binary(), size})
+    end
+  end
+
+  defp io_request({:put_chars, _encoding, chars}, acc, size), do: keep(chars, acc, size)
+
+  defp io_request({:put_chars, _encoding, module, fun, args}, acc, size),
+    do: keep(apply(module, fun, args), acc, size)
+
+  defp io_request({:put_chars, chars}, acc, size), do: keep(chars, acc, size)
+
+  defp io_request({:requests, requests}, acc, size) do
+    Enum.reduce(requests, {acc, size, :ok}, fn request, {acc, size, _reply} ->
+      io_request(request, acc, size)
+    end)
+  end
+
+  defp io_request(_other, acc, size), do: {acc, size, {:error, :enotsup}}
+
+  defp keep(_chars, acc, size) when size >= @output_bytes, do: {acc, size, :ok}
+
+  defp keep(chars, acc, size) do
+    text = IO.chardata_to_string(chars)
+    room = @output_bytes - size
+
+    case byte_size(text) <= room do
+      true -> {[text | acc], size + byte_size(text), :ok}
+      false -> {[Truncate.string(text, room) | acc], @output_bytes, :ok}
+    end
+  rescue
+    _invalid -> {acc, size, :ok}
+  end
+
+  defp output(io) do
+    tag = make_ref()
+    send(io, {:pdt_output, self(), tag})
+
+    receive do
+      {^tag, output, _size} -> output
+    after
+      1000 -> ""
     end
   end
 

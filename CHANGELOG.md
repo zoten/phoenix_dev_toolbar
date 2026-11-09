@@ -79,3 +79,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - System tab trees: a supervisor's children, the application list with top supervisors (ADR 11)
 - System tab top: the 50 processes with the most memory, reductions or queue (ADR 11)
 - System tab message trace: one process, 100 messages or 10 s, OTP 27 sessions (ADR 11)
+- Cluster plugin (opt-in): connected nodes with round trip, processes, memory (ADR 12)
+- Eval plugin (opt-in): read queries, code with allow: :eval, loopback by default (ADR 12)
+- Host guard: panel, socket and export refuse rebindable host names, `allowed_hosts` (ADR 04)

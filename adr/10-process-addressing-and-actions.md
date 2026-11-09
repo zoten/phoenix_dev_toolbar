@@ -67,8 +67,8 @@ reachable dev port must not freeze or kill the node.
 
 ## Open limits
 
-- A client behind a local reverse proxy, or Docker's userland port proxy, reads as
-  loopback: loopback then means "whoever reaches the proxy".
+- A proxy that adds no forwarding header (Docker's userland port proxy, a plain TCP
+  tunnel) reads as loopback: loopback then means "whoever reaches the proxy".
 - The endpoint's children (listener, acceptors, connection supervisors) and the
   host Repo pool are not protected: their supervisors restart them, but killing a
   connection supervisor drops the panel's own websocket until it reconnects.

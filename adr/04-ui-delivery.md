@@ -188,6 +188,13 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   developer's machine. There is no other access control. The panel page answers with
   `content-security-policy: frame-ancestors 'self'` (only the host page's own origin
   may frame it) and, like every served asset, `x-content-type-options: nosniff`.
+- **Host guard** (`HostCheck`, against DNS rebinding): a hostile page whose name
+  re-resolves to 127.0.0.1 would read the panel as same origin, and the endpoint's
+  dev `check_origin: false` would let its websocket in. So the panel, its socket
+  and the export answer only for a Host that cannot be rebound: an IP literal,
+  `localhost` and `*.localhost`, the endpoint's `url: [host: ...]`, or one listed in
+  `allowed_hosts:` (`"myapp.test"`, or `".test"` for every name under it). Any other
+  gets a 403 that says how to allow it, logged once per boot. Assets stay public.
 
 ## Consequences
 

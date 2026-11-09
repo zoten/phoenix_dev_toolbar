@@ -55,8 +55,11 @@ defmodule PhoenixDevToolbar.Panels.Eval do
          |> assign(:code, cap(code, EvalRunner.max_code_bytes()))
          |> start(preview(code), fn -> EvalRunner.eval(code, timeout_ms) end)}
 
-      _refused ->
+      {:ok, :read_only} ->
         {:noreply, assign(socket, :note, "Code does not run here: allow: :eval is not set.")}
+
+      {{:error, _why}, _allow} ->
+        {:noreply, socket}
     end
   end
 
@@ -121,8 +124,10 @@ defmodule PhoenixDevToolbar.Panels.Eval do
     ~H"""
     <div id="pdt-eval" class="pdt-process">
       <p :if={@gate != :ok} id="pdt-eval-off" class="pdt-empty">
-        The Eval tab only answers a browser on this machine. From Docker or the LAN, set
-        clients: :any in its options (anyone who reaches the dev server can then use it).
+        The Eval tab only answers a browser on this machine, reaching the server directly (not
+        through a proxy or a tunnel). From Docker or another machine, an SSH tunnel to
+        localhost keeps it that way; clients: :any in its options opens it to anyone who
+        reaches the dev server, and with allow: :eval lets them run code here.
       </p>
       <div :if={@gate == :ok} class="pdt-snapshot-bar">
         <form
