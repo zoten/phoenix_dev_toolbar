@@ -104,7 +104,13 @@ defmodule PhoenixDevToolbar.PanelLayout do
           >
             <span class="pdt-dock__icon" aria-hidden="true"></span>
           </button>
-          <div id="pdt-dock-menu" class="pdt-dock-menu" role="group" aria-label="Dock the toolbar" hidden>
+          <div
+            id="pdt-dock-menu"
+            class="pdt-dock-menu"
+            role="group"
+            aria-label="Dock the toolbar"
+            hidden
+          >
             <button
               :for={dock <- ~w(bottom top left right)}
               id={"pdt-dock-" <> dock}

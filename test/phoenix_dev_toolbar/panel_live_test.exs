@@ -172,7 +172,10 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     assert has_element?(view, ~s(#pdt-dock[aria-controls="pdt-dock-menu"][aria-expanded="false"]))
 
     for dock <- ~w(bottom top left right) do
-      assert has_element?(view, ~s(#pdt-dock-menu[hidden] #pdt-dock-#{dock}[data-pdt-dock="#{dock}"]))
+      assert has_element?(
+               view,
+               ~s(#pdt-dock-menu[hidden] #pdt-dock-#{dock}[data-pdt-dock="#{dock}"])
+             )
     end
   end
 

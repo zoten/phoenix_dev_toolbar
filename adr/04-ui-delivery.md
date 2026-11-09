@@ -40,32 +40,50 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   and fails when `priv/static` differs. `panel.css` is hand written, no CSS framework.
 - **Robustness**: `:path` must be absolute and below the root (raises in `init/1`); while
   the Store restarts every request is served untracked.
-- **Loader** (plain JS, about 4 KB minified, under 2 KB gzipped): runs only in the top window and once per
-  page. It appends a single `div#phoenix-dev-toolbar` (`data-phx-update="ignore"`) to
+- **Loader** (plain JS, about 9 KB minified, under 4 KB gzipped): runs only in the top window and once per
+  page. It adds a single `div#phoenix-dev-toolbar` (`data-phx-update="ignore"`) to
   `<body>` whose open shadow root holds its style and the panel `<iframe>`
-  (`<path>/panel?sid=...`) and a corner pill, so host CSS and toolbar CSS cannot meet.
-  Three states, persisted in the host origin's `localStorage` (`pdt:state`; the old
-  `pdt:open` key is migrated): `collapsed` (default: the iframe is a 34px bar, the panel
-  header, fixed at the bottom), `open` (`min(45vh, 520px)`), `hidden` (no iframe, only a
-  small "dev toolbar" pill in the bottom right corner, so the bar never permanently
-  covers the host page; clicking it collapses again). The host div stays in the page
-  flow with an inline height equal to the bar (34px collapsed, the panel size open, 0
-  hidden), so the page can scroll its last content above the fixed iframe without the
-  toolbar touching host CSS. This only helps when the document is the scroller: an app
-  shell that scrolls an inner `overflow: auto` container stays covered (collapse, resize
-  or hide instead). The open size is draggable from a handle on the panel's top edge
-  (`role="separator"`; arrows step 16px, Shift 64px, Home or double click reset), from
-  120px up to the viewport minus a 48px strip of page, re-clamped on window resize. The
-  iframe ignores pointer events while dragging. The size is persisted as `pdt:layout`
-  (`{"dock": "bottom", "size": px}`; `dock` is reserved for other docks). The sizing
-  logic lives in `layout.mjs`, axis neutral. The iframe asks for `pdt:toggle`
-  (toggle button), `pdt:open` (a tab was picked) and `pdt:hide` (hide button); the
-  loader answers with `pdt:state`. Both sides check `event.origin` and `event.source`. The
-  loader also forwards LiveView's own `phx:*` window events as `pdt:client` messages
-  (passive listeners, sanitized, rate limited: ADR 07). Phase 4 adds host socket RTT through
+  (`<path>/panel?sid=...`), a resize handle and a corner pill, so host CSS and toolbar CSS
+  cannot meet. Three states, persisted in the host origin's `localStorage` (`pdt:state`; the
+  old `pdt:open` key is migrated): `collapsed` (default: the iframe is a 34px bar, the panel
+  header), `open` (the panel at its size, see Docks), `hidden` (no iframe, only a small
+  "dev toolbar" pill in the bottom right corner, so the bar never permanently covers the
+  host page; clicking it collapses again). The iframe asks for `pdt:toggle` (toggle
+  button), `pdt:open` (a tab was picked), `pdt:hide` (hide button) and `pdt:dock` (dock
+  picker, a known dock only); the loader answers with `pdt:state` (`open` and `dock`).
+  Both sides check `event.origin` and `event.source`. The loader also forwards LiveView's
+  own `phx:*` window events as `pdt:client` messages (passive listeners, sanitized, rate
+  limited: ADR 07). Phase 4 adds host socket RTT through
   `window.liveSocket.getSocket().ping/1` when it exists, read only. Page
   correlation, including live navigation, happens server side (ADR 02), so the
   toolbar keeps working when the loader cannot reach `window.liveSocket`.
+- **Docks and page space**: the toolbar docks `bottom` (default), `top`, `left` or `right`,
+  picked from a client side menu in the open panel header (`#pdt-dock`). Each dock makes
+  room so the page never hides under the bar: 34px collapsed, the panel size open,
+  nothing hidden.
+  - `bottom` and `top`: the host div stays in the page flow with that inline height, as
+    the last child of `<body>` (the page scrolls its end above the bar) or the first (it
+    pushes the page down).
+  - `left` and `right`: a block cannot reserve width, so the loader sets an inline
+    `padding-left` or `padding-right` on `<html>`: the host's computed padding plus the
+    toolbar, `!important`. This is the toolbar's **only write to a host element**: the
+    host's own inline value is put back whenever the dock changes or the toolbar hides.
+  - Limits: reserving space only helps when the document is the scroller (an app shell
+    that scrolls an inner `overflow: auto` container stays covered), host
+    `position: fixed` chrome stays under the panel, and on side docks the host's media
+    queries still see the full window width. Collapse, resize or hide are the fallback.
+
+  The open size is draggable from a handle on the panel's inner edge
+  (`role="separator"`; arrows step 16px, Shift 64px, Home or double click reset), clamped
+  between a minimum (120px top/bottom, 280px left/right) and the viewport minus a 48px
+  strip of page, re-clamped on window resize. Defaults: `min(45vh, 520px)` top/bottom,
+  `min(40vw, 480px)` left/right. The iframe ignores pointer events while dragging. The
+  layout is persisted as `pdt:layout` (`{"dock": ..., "sizes": {dock: px}}`, one size per
+  dock; the older `{"dock", "size"}` shape is read back). Sizing and parsing live in
+  `layout.mjs`. In the panel, `panel.js` sets `pdt-dock-<name>` (and `pdt-side`) on its
+  root: collapsed on a side, the header turns into a full height strip
+  (`writing-mode: vertical-rl`, header sizes are logical properties), and an open panel
+  under 560px wide puts the tabs on their own row.
 - **Panel JS**: the root layout loads, deferred and in order, `phoenix.js`, `live_view.js`
   and `panel.js` (about 1 KB: no client bundled). `panel.js` takes `window.Phoenix` and
   `window.LiveView`, connects the panel through its own socket (`<path>/live`, see Panel
