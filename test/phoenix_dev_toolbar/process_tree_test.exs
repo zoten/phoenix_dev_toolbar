@@ -32,6 +32,19 @@ defmodule PhoenixDevToolbar.ProcessTreeTest do
     assert {:ok, %{specs: 201}, :too_many} = ProcessTree.children(sup, 1000)
   end
 
+  test "a simple_one_for_one supervisor above the cap gives its counts only" do
+    sup =
+      start_supervised!(%{
+        id: :sofo,
+        start: {:supervisor, :start_link, [PhoenixDevToolbar.SofoSupervisor, :ok]},
+        type: :supervisor
+      })
+
+    for _ <- 0..ProcessTree.max_children(), do: {:ok, _pid} = :supervisor.start_child(sup, [])
+
+    assert {:ok, %{specs: 1, active: 201}, :too_many} = ProcessTree.children(sup, 1000)
+  end
+
   test "a GenServer is not a supervisor, and is never asked" do
     agent = start_supervised!({Agent, fn -> 1 end})
 
@@ -44,9 +57,11 @@ defmodule PhoenixDevToolbar.ProcessTreeTest do
     sup = supervisor([])
     :ok = :sys.suspend(sup)
 
-    assert ProcessTree.children(sup, 50) == {:error, :timeout}
-
-    :ok = :sys.resume(sup)
+    try do
+      assert ProcessTree.children(sup, 50) == {:error, :timeout}
+    after
+      :sys.resume(sup)
+    end
   end
 
   test "applications: the host's first, each with its top supervisor" do

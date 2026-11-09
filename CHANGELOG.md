@@ -78,3 +78,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Process actions: kill (with reason), suspend 10 s with auto resume, watch, message peek (ADR 10)
 - Redaction walks tuples, so queued messages and results are redacted too (ADR 10)
 - Actions review fixes: kill reason select, DOWN routed to the watching tab only (ADR 10)
+- System tab trees: a supervisor's children, the application list with top supervisors (ADR 11)

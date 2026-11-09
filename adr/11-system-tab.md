@@ -40,11 +40,18 @@ polling (`ProcessInspector`), its rendering (`ProcessView`) and their options
   assigns. A `format_status/2` that lists its own entries instead (a LiveView: its
   view, parent, transport, topic, component count) shows them one per line, each
   value redacted; any other shape is not shown.
-- **Trees**: backwards, the ancestors chain. Forwards, the supervision subtree,
-  expanded lazily: `count_children` first, a paged list above 200 children, never
-  `which_children` on a large supervisor. Whole node: applications, then each
-  application master's top supervisor, host applications first, OTP ones collapsed.
-  Every supervisor call runs in `start_async/3` with a timeout.
+- **Trees** (`ProcessTree`): backwards, the ancestors chain. Forwards, a supervisor's
+  children (only processes whose `$initial_call` is a `:supervisor` or a
+  `DynamicSupervisor` are asked: a GenServer would crash on the request), read when
+  it is selected and on Refresh, never polled: `count_children` first, then
+  `which_children` only at 200 children or fewer (the most of specs and active: a
+  `simple_one_for_one` has one spec), else counts only. Each child's pid is a link,
+  so the tree is walked by navigation. Whole node: with nothing selected the tab
+  lists the started applications (at most 100), the host's and its deps' first, then
+  Elixir's, then OTP's (collapsed), each with its top supervisor as a link; the
+  Applications button brings the list back. Every call has a 1 s timeout or runs in
+  a task killed after it (`application_master` answers without one), always in
+  `start_async/3`.
 - **Top**: the 50 processes with the most memory, reductions since the last sample, or
   the longest queue, sampled on demand or periodically only while shown. The sweep
   runs in a task and stops past a process count cap, saying so.
@@ -61,8 +68,9 @@ polling (`ProcessInspector`), its rendering (`ProcessView`) and their options
 
 ## Open limits
 
-- Trees beyond the ancestor chain, the process top and the message trace are not
-  built yet (roadmap 5d to 5f).
+- The process top and the message trace are not built yet (roadmap 5e, 5f).
+- In a release, or wherever deps live under `:code.root_dir/0`, every application
+  is grouped as OTP.
 - A `proc_lib` process that hibernates without being a `gen` server is asked for its
   state and never answers: the read times out and the message stays.
 - On an OTP before 26.2 (no single dictionary key reads) ancestors fall back to

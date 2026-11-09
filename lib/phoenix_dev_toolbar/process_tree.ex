@@ -7,7 +7,11 @@ defmodule PhoenixDevToolbar.ProcessTree do
   # start_async/3 tasks, never from the panel process itself.
   #
   # Only real supervisors are asked for their children: a GenServer without a
-  # `:which_children` clause would crash on the request.
+  # `:which_children` clause would crash on the request. `$initial_call` tells
+  # them apart (`:supervisor`, PartitionSupervisor, Registry partitions, and
+  # DynamicSupervisor all answer both requests; `:supervisor_bridge` does not
+  # match). A supervisor still in init, hibernated or busy only delays the
+  # answer: the call times out and its late reply is dropped (an alias call).
 
   alias PhoenixDevToolbar.ProcessInfo
   alias PhoenixDevToolbar.Truncate
@@ -72,8 +76,9 @@ defmodule PhoenixDevToolbar.ProcessTree do
   defp read_children(pid, timeout) do
     counts = pid |> GenServer.call(:count_children, timeout) |> Map.new()
 
-    case counts do
-      %{specs: specs} when specs > @max_children ->
+    # A simple_one_for_one supervisor has one spec and any number of children.
+    case max(Map.get(counts, :specs, 0), Map.get(counts, :active, 0)) do
+      many when many > @max_children ->
         {:ok, counts, :too_many}
 
       _few ->
@@ -104,7 +109,7 @@ defmodule PhoenixDevToolbar.ProcessTree do
   application master answers `get_child` without a timeout: each one is asked in
   its own task, and the ones still waiting after `timeout` are killed.
   """
-  @spec applications(timeout()) :: {:ok, [app()]} | {:error, :timeout}
+  @spec applications(timeout()) :: {:ok, [app()]} | {:error, :timeout | :unavailable}
   def applications(timeout) do
     started = timeout |> Application.started_applications() |> Enum.take(@max_apps)
 
@@ -129,7 +134,8 @@ defmodule PhoenixDevToolbar.ProcessTree do
 
     {:ok, apps}
   catch
-    :exit, _reason -> {:error, :timeout}
+    :exit, {:timeout, _call} -> {:error, :timeout}
+    :exit, _reason -> {:error, :unavailable}
   end
 
   defp yielded({_task, {:ok, supervisor}}), do: supervisor

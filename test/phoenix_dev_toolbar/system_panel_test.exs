@@ -141,6 +141,50 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
     assert has_element?(panel, "#pdt-system-state-value", "LiveView: DemoWeb.PageLive")
   end
 
+  describe "trees" do
+    test "a supervisor lists its children; a child link walks down" do
+      sup =
+        start_supervised!(%{
+          id: :tree_sup,
+          start: {Supervisor, :start_link, [[{Agent, fn -> :ok end}], [strategy: :one_for_one]]},
+          type: :supervisor
+        })
+
+      [{Agent, agent, :worker, _modules}] = Supervisor.which_children(sup)
+      panel = open()
+      search(panel, inspect(sup))
+      _ = render_async(panel)
+
+      assert has_element?(panel, "#pdt-system-children-counts", "1 children")
+
+      panel
+      |> element(~s(#pdt-system-children-list button[phx-value-pid="#{inspect(agent)}"]))
+      |> render_click()
+
+      assert has_element?(panel, "#pdt-system-target", inspect(agent))
+      refute has_element?(panel, "#pdt-system-children")
+    end
+
+    test "the applications list leads to each top supervisor, and back" do
+      panel = open()
+      _ = render_async(panel)
+      toolbar_sup = inspect(Process.whereis(PhoenixDevToolbar.Supervisor))
+
+      panel
+      |> element(~s(#pdt-system-app-phoenix_dev_toolbar button[phx-value-pid="#{toolbar_sup}"]))
+      |> render_click()
+
+      _ = render_async(panel)
+      assert has_element?(panel, "#pdt-system-target", toolbar_sup)
+      assert has_element?(panel, "#pdt-system-children-list")
+
+      panel |> element("#pdt-system-apps-button") |> render_click()
+      _ = render_async(panel)
+      assert has_element?(panel, "#pdt-system-app-phoenix_dev_toolbar")
+      assert has_element?(panel, "#pdt-system-crumb-0")
+    end
+  end
+
   describe "actions" do
     test "Kill waits for a confirm, then kills" do
       pid = idle_process()

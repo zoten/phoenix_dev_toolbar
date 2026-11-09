@@ -20,6 +20,7 @@ defmodule PhoenixDevToolbar.Panels.System do
   alias PhoenixDevToolbar.ProcessInfo
   alias PhoenixDevToolbar.ProcessInspector
   alias PhoenixDevToolbar.ProcessRef
+  alias PhoenixDevToolbar.ProcessTree
   alias PhoenixDevToolbar.ProcessView
   alias PhoenixDevToolbar.Truncate
 
@@ -35,7 +36,7 @@ defmodule PhoenixDevToolbar.Panels.System do
      socket
      |> assign(prev: nil, crumbs: [], error: nil, query: "")
      |> assign(ancestors: [], stacktrace: [], status: nil, status_at: nil)
-     |> assign(watched: [], peek: nil)
+     |> assign(watched: [], peek: nil, children: nil, apps: nil)
      |> ProcessInspector.init()}
   end
 
@@ -54,7 +55,7 @@ defmodule PhoenixDevToolbar.Panels.System do
     socket = assign(socket, :prev, Map.take(assigns, [:shown?, :visible?]))
 
     case not (prev.shown? and prev.visible?) and polling?(socket) do
-      true -> poll_now(socket)
+      true -> socket |> poll_now() |> maybe_load_apps()
       false -> socket
     end
   end
@@ -122,6 +123,19 @@ defmodule PhoenixDevToolbar.Panels.System do
 
   def handle_event("watch", _params, socket), do: {:noreply, watch(socket)}
 
+  def handle_event("refresh_children", _params, socket), do: {:noreply, load_children(socket)}
+
+  # Back to the applications list: nothing inspected, crumbs kept.
+  def handle_event("apps", _params, socket) do
+    {:noreply,
+     socket
+     |> cancel_status()
+     |> ProcessInspector.cancel_timers()
+     |> ProcessInspector.select(nil)
+     |> assign(error: nil, children: nil, peek: nil, apps: nil)
+     |> maybe_load_apps()}
+  end
+
   def handle_event("unwatch", %{"index" => index}, socket) when is_binary(index),
     do: {:noreply, unwatch(socket, Integer.parse(index))}
 
@@ -140,6 +154,16 @@ defmodule PhoenixDevToolbar.Panels.System do
 
   # The target changed meanwhile (its task was cancelled), or the task exited.
   def handle_async(:status, _result, socket), do: {:noreply, assign(socket, :status, nil)}
+
+  def handle_async(:children, {:ok, {pid, result}}, %{assigns: %{selected: pid}} = socket),
+    do: {:noreply, assign(socket, :children, result)}
+
+  def handle_async(:children, _result, socket), do: {:noreply, assign(socket, :children, nil)}
+
+  def handle_async(:apps, {:ok, result}, socket), do: {:noreply, assign(socket, :apps, result)}
+
+  def handle_async(:apps, _exit, socket),
+    do: {:noreply, assign(socket, :apps, {:error, :timeout})}
 
   # The input's maxlength is client side only: what is kept is capped here.
   defp query(ref), do: String.slice(ref, 0, 128)
@@ -177,6 +201,7 @@ defmodule PhoenixDevToolbar.Panels.System do
     |> ProcessInspector.cancel_timers()
     |> ProcessInspector.select(pid)
     |> assign(error: nil, ancestors: [], stacktrace: [], status: nil, status_at: nil, peek: nil)
+    |> load_children()
     |> poll_now()
   end
 
@@ -184,6 +209,38 @@ defmodule PhoenixDevToolbar.Panels.System do
   defp error(:not_found), do: "No process is registered under that name."
   defp error(:remote), do: "That process runs on another node: only local ones can be inspected."
   defp error(:dead), do: "That process has exited."
+
+  ## Trees (ProcessTree: calls into host processes, always in a task)
+
+  @tree_timeout_ms 1000
+
+  defp load_children(%{assigns: %{selected: pid}} = socket) when is_pid(pid) do
+    case ProcessTree.supervisor?(pid) do
+      true ->
+        socket
+        |> assign(:children, :loading)
+        |> start_async(:children, fn -> {pid, ProcessTree.children(pid, @tree_timeout_ms)} end)
+
+      false ->
+        assign(socket, :children, nil)
+    end
+  end
+
+  defp load_children(socket), do: assign(socket, :children, nil)
+
+  defp maybe_load_apps(%{assigns: %{selected: nil, apps: nil}} = socket) do
+    case polling?(socket) do
+      true ->
+        socket
+        |> assign(:apps, :loading)
+        |> start_async(:apps, fn -> ProcessTree.applications(@tree_timeout_ms) end)
+
+      false ->
+        socket
+    end
+  end
+
+  defp maybe_load_apps(socket), do: socket
 
   ## Watch
 
@@ -337,6 +394,16 @@ defmodule PhoenixDevToolbar.Panels.System do
           />
           <button type="submit" class="pdt-button pdt-button--small">Inspect</button>
         </form>
+        <button
+          :if={is_pid(@selected)}
+          id="pdt-system-apps-button"
+          type="button"
+          class="pdt-button pdt-button--small"
+          phx-click="apps"
+          phx-target={@myself}
+        >
+          Applications
+        </button>
       </div>
       <p :if={@error} id="pdt-system-error" class="pdt-error" role="alert">{@error}</p>
       <nav
@@ -360,8 +427,13 @@ defmodule PhoenixDevToolbar.Panels.System do
         </button>
       </nav>
       <p :if={is_nil(@selected) and is_nil(@error)} id="pdt-system-none" class="pdt-empty">
-        Type a pid or a registered name, or follow a process link from the Process tab.
+        Type a pid or a registered name, follow a process link from the Process tab, or
+        start from an application below.
       </p>
+      <section :if={is_nil(@selected)} id="pdt-system-apps" class="pdt-system__state">
+        <h3 class="pdt-process__title">Applications</h3>
+        <.apps apps={@apps} target={@myself} />
+      </section>
       <div :if={is_pid(@selected)} id="pdt-system-target" class="pdt-snapshot-bar">
         <strong :if={@about && @about.name}>{@about.name}</strong>
         <code>{inspect(@selected)}</code>
@@ -458,6 +530,21 @@ defmodule PhoenixDevToolbar.Panels.System do
         link="inspect"
         target={@myself}
       />
+      <section :if={@children} id="pdt-system-children" class="pdt-system__state">
+        <h3 class="pdt-process__title">
+          Children
+          <button
+            id="pdt-system-children-refresh"
+            type="button"
+            class="pdt-button pdt-button--small"
+            phx-click="refresh_children"
+            phx-target={@myself}
+          >
+            Refresh
+          </button>
+        </h3>
+        <.children children={@children} target={@myself} />
+      </section>
       <section
         :if={(is_map(@sample) and @about) && @about.otp?}
         id="pdt-system-state"
@@ -512,6 +599,138 @@ defmodule PhoenixDevToolbar.Panels.System do
         </ul>
       </section>
     </div>
+    """
+  end
+
+  attr :children, :any, required: true
+  attr :target, :any, required: true
+
+  defp children(%{children: :loading} = assigns) do
+    ~H"""
+    <p class="pdt-hint">Reading…</p>
+    """
+  end
+
+  defp children(%{children: {:ok, counts, :too_many}} = assigns) do
+    assigns = assign(assigns, :counts, counts)
+
+    ~H"""
+    <p id="pdt-system-children-counts" class="pdt-hint">
+      {@counts.specs} children ({@counts.workers} workers, {@counts.supervisors} supervisors, {@counts.active} running): more than {ProcessTree.max_children()}, the list is not read.
+    </p>
+    """
+  end
+
+  defp children(%{children: {:ok, counts, list}} = assigns) do
+    assigns = assign(assigns, counts: counts, list: list)
+
+    ~H"""
+    <p id="pdt-system-children-counts" class="pdt-hint">
+      {@counts.specs} children: {@counts.workers} workers, {@counts.supervisors} supervisors, {@counts.active} running.
+    </p>
+    <ul :if={@list != []} id="pdt-system-children-list" class="pdt-list">
+      <li :for={child <- @list} class="pdt-row pdt-process__relation">
+        <ProcessView.pid_link
+          :if={is_pid(child.pid)}
+          id={inspect(child.pid)}
+          link="inspect"
+          target={@target}
+        />
+        <code :if={not is_pid(child.pid)}>{child.pid}</code>
+        <span>{child.id}</span>
+        <span class="pdt-tag">{child.type}</span>
+        <span class="pdt-hint">{child.modules}</span>
+      </li>
+    </ul>
+    """
+  end
+
+  defp children(%{children: {:error, reason}} = assigns) do
+    assigns = assign(assigns, :message, children_error(reason))
+
+    ~H"""
+    <p id="pdt-system-children-error" class="pdt-hint">{@message}</p>
+    """
+  end
+
+  defp children_error(:timeout), do: "No answer within 1s: the supervisor is busy."
+  defp children_error(:dead), do: "The supervisor exited."
+  defp children_error(:not_supervisor), do: "Not a supervisor."
+
+  attr :apps, :any, required: true
+  attr :target, :any, required: true
+
+  defp apps(%{apps: {:ok, apps}} = assigns) do
+    assigns = assign(assigns, :groups, Enum.group_by(apps, & &1.group))
+
+    ~H"""
+    <.app_group
+      :if={@groups[:host]}
+      id="pdt-system-apps-host"
+      title="Your app and its deps"
+      apps={@groups[:host]}
+      target={@target}
+      open
+    />
+    <.app_group
+      :if={@groups[:elixir]}
+      id="pdt-system-apps-elixir"
+      title="Elixir"
+      apps={@groups[:elixir]}
+      target={@target}
+    />
+    <.app_group
+      :if={@groups[:otp]}
+      id="pdt-system-apps-otp"
+      title="OTP"
+      apps={@groups[:otp]}
+      target={@target}
+    />
+    """
+  end
+
+  defp apps(%{apps: {:error, _reason}} = assigns) do
+    ~H"""
+    <p id="pdt-system-apps-error" class="pdt-hint">
+      The application controller did not answer in time.
+    </p>
+    """
+  end
+
+  defp apps(assigns) do
+    ~H"""
+    <p class="pdt-hint">Reading…</p>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :title, :string, required: true
+  attr :apps, :list, required: true
+  attr :target, :any, required: true
+  attr :open, :boolean, default: false
+
+  defp app_group(assigns) do
+    ~H"""
+    <details id={@id} class="pdt-system__apps" open={@open}>
+      <summary>{@title} ({length(@apps)})</summary>
+      <ul class="pdt-list">
+        <li
+          :for={app <- @apps}
+          id={"pdt-system-app-#{app.name}"}
+          class="pdt-row pdt-process__relation"
+        >
+          <strong>{app.name}</strong>
+          <span class="pdt-hint">{app.version}</span>
+          <ProcessView.pid_link
+            :if={app.supervisor}
+            id={inspect(app.supervisor)}
+            link="inspect"
+            target={@target}
+          />
+          <span class="pdt-hint pdt-system__desc">{app.description}</span>
+        </li>
+      </ul>
+    </details>
     """
   end
 
