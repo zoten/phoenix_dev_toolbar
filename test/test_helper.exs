@@ -16,4 +16,7 @@ Application.put_env(:phoenix_dev_toolbar, DemoWeb.SQLiteRepo, database: database
 DemoWeb.SQLiteRepo.query!("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
 DemoWeb.SQLiteRepo.query!("INSERT INTO users (name) VALUES ('Ada'), ('Grace')")
 
-ExUnit.start()
+# Message trace needs OTP 27 trace sessions (ADR 11): skipped on older OTPs.
+exclude = if Code.ensure_loaded?(:trace), do: [], else: [:trace_sessions]
+
+ExUnit.start(exclude: exclude)

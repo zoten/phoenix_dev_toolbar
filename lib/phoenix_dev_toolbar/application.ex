@@ -56,7 +56,12 @@ defmodule PhoenixDevToolbar.Application do
   defp children(false), do: []
 
   defp children(true),
-    do: [PhoenixDevToolbar.Store, PhoenixDevToolbar.Notify, PhoenixDevToolbar.Suspender]
+    do: [
+      PhoenixDevToolbar.Store,
+      PhoenixDevToolbar.Notify,
+      PhoenixDevToolbar.Suspender,
+      PhoenixDevToolbar.Tracer
+    ]
 
   defp maybe_attach(false), do: :ok
 
