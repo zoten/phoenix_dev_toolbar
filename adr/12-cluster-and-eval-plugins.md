@@ -41,7 +41,7 @@ the panel's `start_async/3` tasks, never in the panel process.
     rebound attacker domain out. The off message suggests an SSH tunnel to
     localhost rather than `clients: :any`.
   - `timeout_ms:` (5000, 100 to 60000): code runs in a process of its own, killed
-    by a timer when it outlives it (even if the panel that asked is gone). Its
+    by a watchdog process when it outlives it (even if the panel that asked is gone). Its
     group leader keeps the first 8 KB of what it prints and drops the rest while it
     runs. The result is inspected and truncated, an exception formatted; each run
     is logged with its size, never its code; the last 10 runs are kept. The editor

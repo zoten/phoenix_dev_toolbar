@@ -108,8 +108,10 @@ defmodule PhoenixDevToolbar.EvalRunner do
     caller = self()
     tag = make_ref()
     {pid, ref} = spawn_monitor(fn -> send(caller, {tag, evaluate(code)}) end)
-    # Killed on time even if the caller dies first (the panel went away).
-    {:ok, _timer} = :timer.kill_after(timeout_ms + 50, pid)
+    # Killed on time even if the caller dies first (the panel went away): a
+    # watchdog of its own, not :timer.kill_after/2, which on OTP 26 did not
+    # outlive its caller.
+    watchdog(pid, timeout_ms + 50)
 
     receive do
       {^tag, run} ->
@@ -125,6 +127,19 @@ defmodule PhoenixDevToolbar.EvalRunner do
         flush(tag)
         %{result: nil, error: "No result after #{timeout_ms} ms: stopped.", output: ""}
     end
+  end
+
+  # Unlinked: it lives until the evaluator ends or is killed, whoever asked.
+  defp watchdog(pid, after_ms) do
+    spawn(fn ->
+      ref = Process.monitor(pid)
+
+      receive do
+        {:DOWN, ^ref, :process, ^pid, _reason} -> :ok
+      after
+        after_ms -> Process.exit(pid, :kill)
+      end
+    end)
   end
 
   # A result sent just before the kill landed.
