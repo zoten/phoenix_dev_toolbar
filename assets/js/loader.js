@@ -4,7 +4,9 @@
 // to the host page: a shadow-DOM host holding the panel iframe (and, when the
 // toolbar is hidden, a corner pill), so host CSS cannot reach the toolbar and
 // the toolbar's CSS cannot reach the host. It is read-only towards the host
-// page and never touches window.liveSocket's state.
+// page and never touches window.liveSocket's state. Its one write to a host
+// element: docked left or right, an inline padding on <html> makes room for
+// the panel, restored when the dock changes.
 //
 // Client event log (ADR 07): passive listeners on LiveView's own window events
 // forward a sanitized copy to the panel through the same origin checked
@@ -12,14 +14,16 @@
 
 import {BUFFER, EVENTS, PER_SECOND, createLimiter, createQueue, sanitize} from "./client_events.mjs"
 import {
-  COLLAPSED_SIZE,
-  MIN_SIZE,
-  PAGE_STRIP,
+  DOCKS,
   clampSize,
   defaultSize,
+  maxSize,
+  minSize,
   parseLayout,
   reservedSize,
   serializeLayout,
+  sideDock,
+  sizeFromPointer,
 } from "./layout.mjs"
 
 const STORAGE_KEY = "pdt:state"
@@ -28,6 +32,9 @@ const LAYOUT_KEY = "pdt:layout"
 const STATES = ["open", "collapsed", "hidden"]
 const KEY_STEP = 16
 const KEY_STEP_LARGE = 64
+// The arrow that grows the panel, per dock: away from the docked edge.
+const GROW_KEYS = {bottom: "ArrowUp", top: "ArrowDown", left: "ArrowRight", right: "ArrowLeft"}
+const SHRINK_KEYS = {bottom: "ArrowDown", top: "ArrowUp", left: "ArrowLeft", right: "ArrowRight"}
 const MESSAGE_PREFIX = "pdt:"
 
 const script =
@@ -68,28 +75,43 @@ const writeLayout = (layout) => {
   }
 }
 
+// --pdt-extent is the frame's size across its dock: 34px collapsed, the panel
+// size open. Edge docks size the height, side docks the width.
 const STYLE = `
   :host { all: initial; }
   .frame {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 2147483000;
-    width: 100%; height: ${COLLAPSED_SIZE}px; border: 0; margin: 0; padding: 0;
-    box-shadow: 0 -1px 0 rgba(0, 0, 0, .25), 0 -4px 16px rgba(0, 0, 0, .12);
+    position: fixed; z-index: 2147483000; border: 0; margin: 0; padding: 0;
     background: transparent; color-scheme: normal;
+  }
+  .frame.dock-bottom, .frame.dock-top {
+    left: 0; right: 0; width: 100%; height: var(--pdt-extent);
     transition: height 120ms ease-out;
   }
-  .frame.open { height: var(--pdt-size); }
+  .frame.dock-bottom { bottom: 0; box-shadow: 0 -1px 0 rgba(0, 0, 0, .25), 0 -4px 16px rgba(0, 0, 0, .12); }
+  .frame.dock-top { top: 0; box-shadow: 0 1px 0 rgba(0, 0, 0, .25), 0 4px 16px rgba(0, 0, 0, .12); }
+  .frame.dock-left, .frame.dock-right {
+    top: 0; bottom: 0; height: 100%; width: var(--pdt-extent);
+    transition: width 120ms ease-out;
+  }
+  .frame.dock-left { left: 0; box-shadow: 1px 0 0 rgba(0, 0, 0, .25), 4px 0 16px rgba(0, 0, 0, .12); }
+  .frame.dock-right { right: 0; box-shadow: -1px 0 0 rgba(0, 0, 0, .25), -4px 0 16px rgba(0, 0, 0, .12); }
   .frame.hidden { display: none; }
   .frame.dragging { pointer-events: none; transition: none; }
   .handle {
-    position: fixed; left: 0; right: 0; bottom: calc(var(--pdt-size) - 3px);
-    z-index: 2147483001; height: 6px; display: none;
-    cursor: ns-resize; touch-action: none; outline: none;
+    position: fixed; z-index: 2147483001; display: none; touch-action: none; outline: none;
   }
+  .handle.dock-bottom, .handle.dock-top { left: 0; right: 0; height: 6px; cursor: ns-resize; }
+  .handle.dock-bottom { bottom: calc(var(--pdt-extent) - 3px); }
+  .handle.dock-top { top: calc(var(--pdt-extent) - 3px); }
+  .handle.dock-left, .handle.dock-right { top: 0; bottom: 0; width: 6px; cursor: ew-resize; }
+  .handle.dock-left { left: calc(var(--pdt-extent) - 3px); }
+  .handle.dock-right { right: calc(var(--pdt-extent) - 3px); }
   .handle::after {
-    content: ""; position: absolute; left: 50%; top: 1px; width: 36px; height: 4px;
-    margin-left: -18px; border-radius: 2px; background: #fd4f00; opacity: 0;
+    content: ""; position: absolute; left: 50%; top: 50%; width: 36px; height: 4px;
+    transform: translate(-50%, -50%); border-radius: 2px; background: #fd4f00; opacity: 0;
     transition: opacity 120ms ease;
   }
+  .handle.dock-left::after, .handle.dock-right::after { width: 4px; height: 36px; }
   .handle:hover::after, .handle:focus-visible::after, .handle.dragging::after { opacity: 1; }
   .handle.visible { display: block; }
   .pill {
@@ -106,6 +128,29 @@ const STYLE = `
   .pill.visible { display: inline-flex; }
   @media (prefers-reduced-motion: reduce) { .frame, .pill, .handle::after { transition: none; } }
 `
+
+// Docked left or right, the page makes room through an inline padding on
+// <html>: the host's own inline value is kept and put back when the toolbar
+// stops reserving that side. Our padding adds to the host's computed one.
+const createSidePadding = () => {
+  const html = document.documentElement
+  const original = Object.fromEntries(
+    ["padding-left", "padding-right"].map((prop) => [
+      prop,
+      {value: html.style.getPropertyValue(prop), priority: html.style.getPropertyPriority(prop)},
+    ]),
+  )
+  const restore = (prop) => html.style.setProperty(prop, original[prop].value, original[prop].priority)
+
+  return (side, px) => {
+    ;["padding-left", "padding-right"].forEach((prop) => {
+      restore(prop)
+      if (prop !== `padding-${side}` || px === 0) return
+      const base = window.getComputedStyle(html).getPropertyValue(prop) || "0px"
+      html.style.setProperty(prop, `calc(${base} + ${px}px)`, "important")
+    })
+  }
+}
 
 const mount = () => {
   const {pdtSid: sid, pdtPath: path} = script.dataset
@@ -138,37 +183,58 @@ const mount = () => {
   handle.tabIndex = 0
   handle.title = "Drag to resize, double click to reset"
   handle.setAttribute("role", "separator")
-  handle.setAttribute("aria-orientation", "horizontal")
   handle.setAttribute("aria-label", "Resize the dev toolbar")
 
   root.append(style, frame, handle, pill)
-  document.body.appendChild(host)
 
   let state = readState()
   const layout = readLayout()
-  const viewport = () => window.innerHeight
-  // `wanted` is the user's size; `size` is it clamped to the current viewport,
-  // so shrinking the window and growing it back restores the user's size.
-  let wanted = layout.size
-  let size = clampSize(wanted, viewport())
+  let dock = layout.dock
+  const sidePadding = createSidePadding()
+  const viewport = () => (sideDock(dock) ? window.innerWidth : window.innerHeight)
+  // `layout.sizes` holds the user's size per dock; `size` is the current dock's,
+  // clamped to the viewport, so shrinking the window and growing it back
+  // restores the user's size.
+  let size = clampSize(layout.sizes[dock], viewport(), dock)
   const post = (type, payload = {}) =>
     frame.contentWindow &&
     frame.contentWindow.postMessage({type: MESSAGE_PREFIX + type, ...payload}, window.location.origin)
+  const postState = () => post("state", {open: state === "open", dock})
+
+  // Docked at the top, the host div leads <body> so its height pushes the page
+  // down; otherwise it closes <body>, so the page scrolls its end above the bar.
+  const placeHost = () => {
+    if (dock === "top" && document.body.firstChild !== host) document.body.prepend(host)
+    if (dock !== "top" && document.body.lastChild !== host) document.body.append(host)
+  }
 
   const applySize = () => {
-    host.style.setProperty("--pdt-size", `${size}px`)
-    host.style.height = `${reservedSize(state, size)}px`
-    handle.setAttribute("aria-valuemin", String(MIN_SIZE))
-    handle.setAttribute("aria-valuemax", String(Math.max(MIN_SIZE, viewport() - PAGE_STRIP)))
+    const reserved = reservedSize(state, size)
+    host.style.setProperty("--pdt-extent", `${state === "open" ? size : reservedSize("collapsed", size)}px`)
+    host.style.height = sideDock(dock) ? "0" : `${reserved}px`
+    sidePadding(dock, sideDock(dock) ? reserved : 0)
+    handle.setAttribute("aria-valuemin", String(minSize(dock)))
+    handle.setAttribute("aria-valuemax", String(maxSize(viewport(), dock)))
     handle.setAttribute("aria-valuenow", String(size))
   }
 
   const resize = (next, persist) => {
-    size = clampSize(next, viewport())
+    size = clampSize(next, viewport(), dock)
     applySize()
     if (!persist) return
-    wanted = size
-    writeLayout({dock: layout.dock, size})
+    layout.sizes[dock] = size
+    writeLayout({dock, sizes: layout.sizes})
+  }
+
+  const setDock = (next) => {
+    dock = next
+    ;[frame, handle].forEach((el) => {
+      DOCKS.forEach((name) => el.classList.toggle(`dock-${name}`, name === dock))
+    })
+    handle.setAttribute("aria-orientation", sideDock(dock) ? "vertical" : "horizontal")
+    placeHost()
+    size = clampSize(layout.sizes[dock], viewport(), dock)
+    applySize()
   }
 
   const setState = (next) => {
@@ -179,7 +245,7 @@ const mount = () => {
     pill.classList.toggle("visible", state === "hidden")
     applySize()
     writeState(state)
-    post("state", {open: state === "open"})
+    postState()
   }
 
   const limiter = createLimiter(PER_SECOND)
@@ -230,30 +296,31 @@ const mount = () => {
     if (event.button !== 0) return
     event.preventDefault()
     handle.setPointerCapture(event.pointerId)
-    drag = {frame: null, y: event.clientY}
+    drag = {frame: null, x: event.clientX, y: event.clientY}
     frame.classList.add("dragging")
     handle.classList.add("dragging")
   })
   handle.addEventListener("pointermove", (event) => {
     if (!drag) return
+    drag.x = event.clientX
     drag.y = event.clientY
     if (drag.frame) return
     drag.frame = requestAnimationFrame(() => {
       if (!drag) return
       drag.frame = null
-      resize(viewport() - drag.y, false)
+      resize(sizeFromPointer(dock, drag.x, drag.y, window.innerWidth, window.innerHeight), false)
     })
   })
   handle.addEventListener("pointerup", endDrag)
   handle.addEventListener("pointercancel", endDrag)
   handle.addEventListener("lostpointercapture", endDrag)
-  handle.addEventListener("dblclick", () => resize(defaultSize(viewport()), true))
+  handle.addEventListener("dblclick", () => resize(defaultSize(viewport(), dock), true))
   handle.addEventListener("keydown", (event) => {
     const step = event.shiftKey ? KEY_STEP_LARGE : KEY_STEP
     const next = {
-      ArrowUp: size + step,
-      ArrowDown: size - step,
-      Home: defaultSize(viewport()),
+      [GROW_KEYS[dock]]: size + step,
+      [SHRINK_KEYS[dock]]: size - step,
+      Home: defaultSize(viewport(), dock),
     }[event.key]
     if (next === undefined) return
     event.preventDefault()
@@ -267,7 +334,7 @@ const mount = () => {
       if (resizeFrame) return
       resizeFrame = requestAnimationFrame(() => {
         resizeFrame = null
-        resize(wanted, false)
+        resize(layout.sizes[dock], false)
       })
     },
     {passive: true},
@@ -275,7 +342,7 @@ const mount = () => {
 
   pill.addEventListener("click", () => setState("collapsed"))
   frame.addEventListener("load", () => {
-    post("state", {open: state === "open"})
+    postState()
     queue.ready()
   })
 
@@ -288,8 +355,14 @@ const mount = () => {
     if (type === "pdt:open") setState("open")
     if (type === "pdt:close") setState("collapsed")
     if (type === "pdt:hide") setState("hidden")
+    if (type === "pdt:dock" && DOCKS.includes(event.data.dock)) {
+      setDock(event.data.dock)
+      writeLayout({dock, sizes: layout.sizes})
+      postState()
+    }
   })
 
+  setDock(dock)
   setState(state)
 }
 
