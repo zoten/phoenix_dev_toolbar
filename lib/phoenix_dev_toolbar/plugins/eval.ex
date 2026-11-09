@@ -11,8 +11,10 @@ defmodule PhoenixDevToolbar.Plugins.Eval do
 
     * `allow:` `:read_only` (default: a fixed list of read queries, no code) or
       `:eval` (code typed in the panel runs on the node)
-    * `clients:` `:loopback` (default: only a browser on this machine) or `:any`
-      (any browser that reaches the dev server, Docker or LAN setups)
+    * `clients:` who may run code: `:loopback` (default: only a browser on this
+      machine, reaching the server directly) or `:any` (any browser that reaches
+      the dev server, Docker or LAN setups). Read queries answer any browser, like
+      the System tab.
     * `timeout_ms:` how long code may run before it is stopped, 5000 by default
       (100 to 60000)
 
@@ -62,9 +64,6 @@ defmodule PhoenixDevToolbar.Plugins.Eval do
         clients_note(clients)
     )
   end
-
-  defp warn_overrides(%{allow: :read_only, clients: :any}),
-    do: Logger.warning("[phoenix_dev_toolbar] the Eval tab answers any browser (clients: :any)")
 
   defp warn_overrides(_defaults), do: :ok
 

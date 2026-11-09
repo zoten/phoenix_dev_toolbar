@@ -232,6 +232,14 @@ and hands it `{:navigate, params}` in its `handle_info/2`:
 
 Keep `params` small: a few strings. A plugin that is not attached, or has no
 tab, is ignored. Treat params like any client input: they may come from a click.
+To point at a process, link to the System tab rather than acting on it yourself:
+`Panel.navigate(socket, :system, %{"pid" => inspect(pid)})`.
+
+What a tab does not get: the built-in tabs' internal assigns (prefixed `pdt_`,
+such as the client's address the process actions check) and process monitor
+messages. A `DOWN` for a monitor your tab sets reaches the panel process, which
+only routes the built-in tabs' own: use `send_after/4` polling, or `start_async/3`
+and `handle_async/3`, to follow a process.
 
 An exception in the tab's code (its callbacks, `render/1` and its template,
 `mount/1`) disables the tab only, with the error and a Re-enable button. The

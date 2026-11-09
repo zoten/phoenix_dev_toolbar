@@ -13,7 +13,7 @@ defmodule PhoenixDevToolbar.Suspender do
 
   @name PhoenixDevToolbar.Suspender
   @max_suspended 10
-  @min_ttl_ms 1000
+  @min_ttl_ms 100
   @max_ttl_ms 60_000
   @call_timeout 1000
 

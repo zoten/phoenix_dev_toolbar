@@ -99,38 +99,71 @@ defmodule PhoenixDevToolbar.Plug do
 
   defp route(conn, %{segments: segments} = opts) do
     case strip_prefix(conn.path_info, segments) do
-      {:ok, ["assets", file]} -> serve_asset(conn, file)
-      {:ok, ["panel"]} -> guarded(conn, &serve_panel(&1, opts))
+      {:ok, ["assets", file]} ->
+        serve_asset(conn, file)
+
+      {:ok, ["panel"]} ->
+        guarded(conn, opts, &serve_panel(&1, opts))
+
       # The Ecto tab's Download (ADR 08): same origin, so a host's frame-src allows it.
-      {:ok, ["export", "ecto.json"]} -> guarded(conn, &serve_export/1)
+      {:ok, ["export", "ecto.json"]} ->
+        guarded(conn, nil, &serve_export/1)
+
       # The panel's own LiveView socket (ADR 04): no host socket, no host token.
-      {:ok, ["live", "websocket"]} -> guarded(conn, &(&1 |> untracked() |> PanelSocket.upgrade()))
+      {:ok, ["live", "websocket"]} ->
+        guarded(conn, nil, &(&1 |> untracked() |> PanelSocket.upgrade()))
+
       # Anything else under our path is not ours to answer: never tracked.
-      {:ok, _rest} -> untracked(conn)
-      :error -> maybe_track(conn, opts)
+      {:ok, _rest} ->
+        untracked(conn)
+
+      :error ->
+        maybe_track(conn, opts)
     end
   end
 
   # DNS rebinding guard (ADR 04, HostCheck): the panel, its socket and the export
   # answer only for a Host that cannot be rebound.
-  defp guarded(conn, serve) do
+  defp guarded(conn, opts, serve) do
     case HostCheck.allowed?(conn) do
       true ->
         serve.(conn)
 
       false ->
         HostCheck.log_refused(conn.host)
-
-        conn
-        |> untracked()
-        |> Conn.put_resp_content_type("text/plain")
-        |> Conn.send_resp(
-          403,
-          "phoenix_dev_toolbar: this host is not allowed to open the panel. If it is yours, " <>
-            "add it to `allowed_hosts:` in the toolbar config (a DNS rebinding guard)."
-        )
-        |> Conn.halt()
+        conn |> untracked() |> refuse(opts) |> Conn.halt()
     end
+  end
+
+  # The panel is the toolbar's iframe: the refusal shows there, as a bar in the
+  # panel's own style that says what to add. The socket and the export get text.
+  defp refuse(conn, %{path: path}) do
+    host = conn.host |> String.slice(0, 100) |> Plug.HTML.html_escape()
+
+    conn
+    |> Conn.put_resp_content_type("text/html")
+    |> Conn.put_resp_header("content-security-policy", "frame-ancestors 'self'")
+    |> Conn.put_resp_header("x-content-type-options", "nosniff")
+    |> Conn.send_resp(403, """
+    <!doctype html>
+    <html><head><meta charset="utf-8"><title>dev toolbar</title>
+    <link rel="stylesheet" href="#{Plug.HTML.html_escape(path)}/assets/panel.css"></head>
+    <body class="pdt"><div class="pdt-header" id="pdt-refused">
+    <span class="pdt-logo">dev toolbar</span>
+    <span class="pdt-hint">Off for the host #{host}: if it is yours, add it to
+    <code>allowed_hosts: ["#{host}"]</code> in the toolbar config (a DNS rebinding guard).</span>
+    </div></body></html>
+    """)
+  end
+
+  defp refuse(conn, _opts) do
+    conn
+    |> Conn.put_resp_content_type("text/plain")
+    |> Conn.send_resp(
+      403,
+      "phoenix_dev_toolbar: this host is not allowed to open the panel. If it is yours, " <>
+        "add it to `allowed_hosts:` in the toolbar config (a DNS rebinding guard)."
+    )
   end
 
   ## Panel

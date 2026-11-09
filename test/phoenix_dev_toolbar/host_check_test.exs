@@ -65,6 +65,15 @@ defmodule PhoenixDevToolbar.HostCheckTest do
       |> DemoWeb.Endpoint.call([])
 
     assert conn.status == 403
-    assert conn.resp_body =~ "allowed_hosts"
+    assert conn.resp_body =~ ~s(allowed_hosts: ["evil.example"])
+    assert conn.resp_body =~ ~s(id="pdt-refused")
+
+    # The host is the attacker's to choose: escaped.
+    conn =
+      Phoenix.ConnTest.build_conn(:get, "/__pdt/panel?sid=x")
+      |> Map.put(:host, "<b>x</b>.example")
+      |> DemoWeb.Endpoint.call([])
+
+    refute conn.resp_body =~ "<b>"
   end
 end

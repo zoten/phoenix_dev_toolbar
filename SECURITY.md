@@ -21,10 +21,11 @@ They run for whoever can open the panel, so each has a safe default:
   same machine (`actions: :loopback`). `actions: :any` opens them to any browser
   that reaches the dev server (Docker, LAN); `actions: false` turns them off.
 - **The Eval plugin** ([ADR 12](adr/12-cluster-and-eval-plugins.md)) is not
-  installed by default. Once added it is read only and loopback only. With
-  `allow: :eval` it runs code typed in the panel as the BEAM user; with
-  `clients: :any` too, **anyone who reaches the dev server can run code on your
-  machine**. Both overrides are logged as warnings when the toolbar starts.
+  installed by default. Once added it is read only: a fixed list of read queries,
+  open like the System tab. With `allow: :eval` it runs code typed in the panel as
+  the BEAM user, for a browser on this machine only; with `clients: :any` too,
+  **anyone who reaches the dev server can run code on your machine**. Code is
+  logged as a warning when the toolbar starts, with who may run it.
 - "Loopback" is the address the panel's websocket comes from, with no
   `x-forwarded-*` header: a proxy or tunnel that adds none (Docker's userland port
   proxy, a plain TCP tunnel) makes whoever reaches it look local.

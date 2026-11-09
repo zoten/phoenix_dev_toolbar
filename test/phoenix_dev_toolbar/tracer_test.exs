@@ -105,6 +105,19 @@ defmodule PhoenixDevToolbar.TracerTest do
     assert Tracer.start(pid, self()) == :ok
   end
 
+  test "a finished trace still goes with its panel" do
+    pid = idle_process()
+    owner = idle_process()
+    :ok = Tracer.start(pid, owner)
+    :ok = Tracer.stop(owner)
+    assert %{running?: false} = status(owner)
+
+    stop(owner)
+    sync()
+
+    assert status(owner) == nil
+  end
+
   test "an exited process cannot be traced" do
     pid = idle_process()
     stop(pid)

@@ -26,16 +26,18 @@ the panel's `start_async/3` tasks, never in the panel process.
   answer in time says so. Read while the tab is shown and the panel visible, every
   `refresh_ms` (5000, 1000 to 60000), and on Refresh.
 - `PhoenixDevToolbar.Plugins.Eval` (`:eval`, "Eval"), safe defaults, each
-  overridable and each override warned about when the plugin is attached:
+  overridable, and `allow: :eval` warned about when the plugin is attached (with
+  who may then run code):
   - `allow: :read_only` (default): a fixed list of read queries (memory, system
     and build info, run queues, started applications, the largest ETS tables,
     process, port, ETS and atom counts, registered names), picked by id from a
     select, never by code. `allow: :eval` adds an editor: code typed in the panel
     is evaluated on the node.
-  - `clients: :loopback` (default): the tab answers only when the panel's
-    websocket peer is a loopback address, not reached through a proxy (the same
-    client `actions:` uses, ADR 10), checked on every event as well as in the
-    page. `clients: :any` lifts it. The panel's host guard (ADR 04) keeps a
+  - `clients: :loopback` (default): code runs only when the panel's websocket
+    peer is a loopback address, not reached through a proxy (the same client
+    `actions:` uses, ADR 10), checked on every event as well as in the page.
+    `clients: :any` lifts it. The read queries answer any browser: they show what
+    the System tab's reads show (ADR 10: process info reads are open). The panel's host guard (ADR 04) keeps a
     rebound attacker domain out. The off message suggests an SSH tunnel to
     localhost rather than `clients: :any`.
   - `timeout_ms:` (5000, 100 to 60000): code runs in a process of its own, killed

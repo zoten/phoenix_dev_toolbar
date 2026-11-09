@@ -65,7 +65,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
         |> refresh_targets(false)
         |> poll_now()
 
-      not (prev.shown? and prev.visible?) and polling?(socket) ->
+      not (prev.shown? and prev.visible?) and ProcessInspector.polling?(socket) ->
         poll_now(socket)
 
       true ->
@@ -74,18 +74,11 @@ defmodule PhoenixDevToolbar.Panels.Process do
   end
 
   @impl Panel
-  def handle_info({kind, token}, socket) when kind in [:sample, :relations] do
-    case ProcessInspector.take_tick(socket, kind, token) do
-      {:ok, socket} -> continue(socket, kind, polling?(socket))
-      :stale -> socket
-    end
-  end
+  def handle_info({kind, token}, socket) when kind in [:sample, :relations],
+    do: ProcessInspector.handle_tick(socket, kind, token, &tick/2, &schedule/2)
 
   def handle_info(:gc_ready, socket), do: ProcessInspector.gc_ready(socket)
   def handle_info(_message, socket), do: socket
-
-  defp continue(socket, kind, true), do: socket |> tick(kind) |> schedule(kind)
-  defp continue(socket, _kind, false), do: socket
 
   # The index is into the list the user saw (rendered), never recomputed first.
   @impl Phoenix.LiveComponent
@@ -178,11 +171,8 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
   ## Polling
 
-  defp polling?(%{assigns: %{shown?: true, visible?: true}}), do: true
-  defp polling?(_socket), do: false
-
   defp poll_now(socket) do
-    case polling?(socket) do
+    case ProcessInspector.polling?(socket) do
       true ->
         socket
         |> refresh_targets(true)

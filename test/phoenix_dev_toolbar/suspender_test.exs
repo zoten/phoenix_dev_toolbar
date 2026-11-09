@@ -26,13 +26,13 @@ defmodule PhoenixDevToolbar.SuspenderTest do
   test "suspends for the TTL, then resumes" do
     pid = pinger()
 
-    assert Suspender.suspend(pid, 1000, self()) == :ok
+    assert Suspender.suspend(pid, 200, self()) == :ok
     assert suspended?(pid)
     assert Map.has_key?(Suspender.suspended(), pid)
 
     send(pid, {:ping, self()})
-    refute_receive {:pong, ^pid}, 200
-    assert_receive {:pong, ^pid}, 2000
+    refute_receive {:pong, ^pid}, 50
+    assert_receive {:pong, ^pid}, 1000
     refute Map.has_key?(Suspender.suspended(), pid)
   end
 
@@ -77,7 +77,7 @@ defmodule PhoenixDevToolbar.SuspenderTest do
     dead = idle_process()
     stop(dead)
     assert Suspender.suspend(dead, 60_000, self()) == {:error, :dead}
-    assert Suspender.suspend(pinger(), 999, self()) == {:error, :ttl}
+    assert Suspender.suspend(pinger(), 99, self()) == {:error, :ttl}
     assert Suspender.suspend(pinger(), 60_001, self()) == {:error, :ttl}
 
     for _ <- 1..9, do: :ok = Suspender.suspend(pinger(), 60_000, self())

@@ -14,8 +14,6 @@ defmodule PhoenixDevToolbar.Panels.System do
 
   use PhoenixDevToolbar.Panel
 
-  import PhoenixDevToolbar.Components, only: [bytes: 1]
-
   alias PhoenixDevToolbar.Panel
   alias PhoenixDevToolbar.Panels.System, as: SystemPanel
   alias PhoenixDevToolbar.ProcessActions
@@ -26,6 +24,7 @@ defmodule PhoenixDevToolbar.Panels.System do
   alias PhoenixDevToolbar.ProcessTop
   alias PhoenixDevToolbar.ProcessTree
   alias PhoenixDevToolbar.ProcessView
+  alias PhoenixDevToolbar.SystemView
   alias PhoenixDevToolbar.Tracer
   alias PhoenixDevToolbar.Truncate
 
@@ -60,7 +59,7 @@ defmodule PhoenixDevToolbar.Panels.System do
     prev = assigns.prev || %{shown?: false, visible?: false}
     socket = assign(socket, :prev, Map.take(assigns, [:shown?, :visible?]))
 
-    case not (prev.shown? and prev.visible?) and polling?(socket) do
+    case not (prev.shown? and prev.visible?) and ProcessInspector.polling?(socket) do
       true -> socket |> poll_now() |> maybe_load_apps()
       false -> socket
     end
@@ -69,12 +68,8 @@ defmodule PhoenixDevToolbar.Panels.System do
   @impl Panel
   def handle_info({:navigate, %{"pid" => ref}}, socket), do: inspect_ref(socket, ref)
 
-  def handle_info({kind, token}, socket) when kind in [:sample, :relations] do
-    case ProcessInspector.take_tick(socket, kind, token) do
-      {:ok, socket} -> continue(socket, kind, polling?(socket))
-      :stale -> socket
-    end
-  end
+  def handle_info({kind, token}, socket) when kind in [:sample, :relations],
+    do: ProcessInspector.handle_tick(socket, kind, token, &tick/2, &schedule/2)
 
   def handle_info(:gc_ready, socket), do: ProcessInspector.gc_ready(socket)
 
@@ -83,9 +78,6 @@ defmodule PhoenixDevToolbar.Panels.System do
     do: update(socket, :watched, &Enum.map(&1, fn watch -> down(watch, ref, reason) end))
 
   def handle_info(_message, socket), do: socket
-
-  defp continue(socket, kind, true), do: socket |> tick(kind) |> schedule(kind)
-  defp continue(socket, _kind, false), do: socket
 
   @impl Phoenix.LiveComponent
   def handle_event("search", %{"ref" => ref}, socket) when is_binary(ref),
@@ -243,7 +235,7 @@ defmodule PhoenixDevToolbar.Panels.System do
   defp load_children(socket), do: assign(socket, :children, nil)
 
   defp maybe_load_apps(%{assigns: %{selected: nil, apps: nil}} = socket) do
-    case polling?(socket) do
+    case ProcessInspector.polling?(socket) do
       true ->
         socket
         |> assign(:apps, :loading)
@@ -396,11 +388,8 @@ defmodule PhoenixDevToolbar.Panels.System do
 
   ## Polling
 
-  defp polling?(%{assigns: %{shown?: true, visible?: true}}), do: true
-  defp polling?(_socket), do: false
-
   defp poll_now(socket) do
-    case polling?(socket) do
+    case ProcessInspector.polling?(socket) do
       true ->
         socket
         |> ProcessInspector.read_all()
@@ -556,11 +545,11 @@ defmodule PhoenixDevToolbar.Panels.System do
             {if(@top == :loading, do: "reading…", else: "Read")}
           </button>
         </form>
-        <.top top={@top} target={@myself} />
+        <SystemView.top top={@top} target={@myself} />
       </section>
       <section :if={is_nil(@selected)} id="pdt-system-apps" class="pdt-system__state">
         <h3 class="pdt-process__title">Applications</h3>
-        <.apps apps={@apps} target={@myself} />
+        <SystemView.apps apps={@apps} target={@myself} />
       </section>
       <div :if={is_pid(@selected)} id="pdt-system-target" class="pdt-snapshot-bar">
         <strong :if={@about && @about.name}>{@about.name}</strong>
@@ -645,11 +634,11 @@ defmodule PhoenixDevToolbar.Panels.System do
             Stop
           </button>
         </h3>
-        <.trace trace={@trace} target={@myself} />
+        <SystemView.trace trace={@trace} target={@myself} />
       </section>
       <section :if={@peek} id="pdt-system-messages" class="pdt-system__state">
         <h3 class="pdt-process__title">Messages</h3>
-        <.peek peek={@peek} />
+        <SystemView.peek peek={@peek} />
       </section>
       <ProcessView.vitals :if={is_map(@sample)} prefix="pdt-system" sample={@sample} series={@series} />
       <section :if={is_map(@sample)} id="pdt-system-where" class="pdt-process__relations">
@@ -695,7 +684,7 @@ defmodule PhoenixDevToolbar.Panels.System do
             Refresh
           </button>
         </h3>
-        <.children children={@children} target={@myself} />
+        <SystemView.children children={@children} target={@myself} />
       </section>
       <section
         :if={
@@ -719,7 +708,7 @@ defmodule PhoenixDevToolbar.Panels.System do
             {if(@status == :running, do: "reading…", else: "Read state")}
           </button>
         </h3>
-        <.status status={@status} />
+        <SystemView.status status={@status} />
       </section>
       <section :if={@watched != []} id="pdt-system-watched" class="pdt-system__state">
         <h3 class="pdt-process__title">Watched ({length(@watched)})</h3>
@@ -757,241 +746,6 @@ defmodule PhoenixDevToolbar.Panels.System do
     """
   end
 
-  attr :children, :any, required: true
-  attr :target, :any, required: true
-
-  defp children(%{children: :loading} = assigns) do
-    ~H"""
-    <p class="pdt-hint">Reading…</p>
-    """
-  end
-
-  defp children(%{children: {:ok, counts, :too_many}} = assigns) do
-    assigns = assign(assigns, :counts, counts)
-
-    ~H"""
-    <p id="pdt-system-children-counts" class="pdt-hint">
-      {@counts.specs} children ({@counts.workers} workers, {@counts.supervisors} supervisors, {@counts.active} running): more than {ProcessTree.max_children()}, the list is not read.
-    </p>
-    """
-  end
-
-  defp children(%{children: {:ok, counts, list}} = assigns) do
-    assigns = assign(assigns, counts: counts, list: list)
-
-    ~H"""
-    <p id="pdt-system-children-counts" class="pdt-hint">
-      {@counts.specs} children: {@counts.workers} workers, {@counts.supervisors} supervisors, {@counts.active} running.
-    </p>
-    <ul :if={@list != []} id="pdt-system-children-list" class="pdt-list">
-      <li :for={child <- @list} class="pdt-row pdt-process__relation">
-        <ProcessView.pid_link
-          :if={is_pid(child.pid)}
-          id={inspect(child.pid)}
-          link="inspect"
-          target={@target}
-        />
-        <code :if={not is_pid(child.pid)}>{child.pid}</code>
-        <span>{child.id}</span>
-        <span class="pdt-tag">{child.type}</span>
-        <span class="pdt-hint">{child.modules}</span>
-      </li>
-    </ul>
-    """
-  end
-
-  defp children(%{children: {:error, reason}} = assigns) do
-    assigns = assign(assigns, :message, children_error(reason))
-
-    ~H"""
-    <p id="pdt-system-children-error" class="pdt-hint">{@message}</p>
-    """
-  end
-
-  defp children_error(:timeout), do: "No answer within 1s: the supervisor is busy."
-  defp children_error(:dead), do: "The supervisor exited."
-  defp children_error(:not_supervisor), do: "Not a supervisor."
-
-  attr :trace, :any, required: true
-  attr :target, :any, required: true
-
-  defp trace(%{trace: {:error, why}} = assigns) do
-    assigns = assign(assigns, :why, why)
-
-    ~H"""
-    <p id="pdt-system-trace-error" class="pdt-hint">{@why}</p>
-    """
-  end
-
-  defp trace(%{trace: %{}} = assigns) do
-    ~H"""
-    <p id="pdt-system-trace-status" class="pdt-hint" role="status">
-      {length(@trace.events)} of at most {Tracer.max_events()} messages, oldest first, redacted · {trace_state(
-        @trace
-      )}
-    </p>
-    <ol :if={@trace.events != []} id="pdt-system-trace-list" class="pdt-list">
-      <li :for={event <- @trace.events} class="pdt-row pdt-process__relation">
-        <span class="pdt-time">+{event.at_ms} ms</span>
-        <span :if={event.dir == :in} class="pdt-tag" title="Received">in</span>
-        <span :if={event.dir == :out} class="pdt-tag" title="Sent">out</span>
-        <ProcessView.pid_link
-          :if={is_pid(event.peer)}
-          id={inspect(event.peer)}
-          link="inspect"
-          target={@target}
-        />
-        <code :if={is_binary(event.peer)}>{event.peer}</code>
-        <pre class="pdt-system__message">{event.message}</pre>
-      </li>
-    </ol>
-    """
-  end
-
-  defp trace(assigns) do
-    ~H"""
-    <p class="pdt-hint">Starting…</p>
-    """
-  end
-
-  defp trace_state(%{running?: true, left_ms: left}),
-    do: "tracing, stops in #{div(left + 999, 1000)} s"
-
-  defp trace_state(%{stopped: :limit}), do: "stopped at the message limit"
-  defp trace_state(%{stopped: :time}), do: "stopped after 10 s"
-  defp trace_state(%{stopped: :exited}), do: "stopped: the process exited"
-  defp trace_state(%{stopped: :stopped}), do: "stopped"
-
-  attr :top, :any, required: true
-  attr :target, :any, required: true
-
-  defp top(%{top: {:ok, rows}} = assigns) do
-    assigns = assign(assigns, :rows, rows)
-
-    ~H"""
-    <table id="pdt-system-top-table" class="pdt-table">
-      <thead>
-        <tr>
-          <th>Process</th>
-          <th>Name</th>
-          <th>Memory</th>
-          <th>Queue</th>
-          <th>Reductions / s</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr :for={row <- @rows}>
-          <td><ProcessView.pid_link id={inspect(row.pid)} link="inspect" target={@target} /></td>
-          <td>
-            <code>{row.name}</code>
-            <span :if={row.toolbar?} class="pdt-tag" title="Part of the dev toolbar itself">
-              toolbar
-            </span>
-          </td>
-          <td>{bytes(row.memory)}</td>
-          <td>{row.queue}</td>
-          <td>{row.reductions_per_second || "…"}</td>
-        </tr>
-      </tbody>
-    </table>
-    """
-  end
-
-  defp top(%{top: {:error, {:too_many, count}}} = assigns) do
-    assigns = assign(assigns, :count, count)
-
-    ~H"""
-    <p id="pdt-system-top-error" class="pdt-hint">
-      {@count} processes: too many to sweep from the panel.
-    </p>
-    """
-  end
-
-  defp top(assigns) do
-    ~H"""
-    <p :if={is_nil(@top)} class="pdt-hint">
-      Read every process once and list the 50 that hold the most.
-    </p>
-    """
-  end
-
-  attr :apps, :any, required: true
-  attr :target, :any, required: true
-
-  defp apps(%{apps: {:ok, apps}} = assigns) do
-    assigns = assign(assigns, :groups, Enum.group_by(apps, & &1.group))
-
-    ~H"""
-    <.app_group
-      :if={@groups[:host]}
-      id="pdt-system-apps-host"
-      title="Your app and its deps"
-      apps={@groups[:host]}
-      target={@target}
-      open
-    />
-    <.app_group
-      :if={@groups[:elixir]}
-      id="pdt-system-apps-elixir"
-      title="Elixir"
-      apps={@groups[:elixir]}
-      target={@target}
-    />
-    <.app_group
-      :if={@groups[:otp]}
-      id="pdt-system-apps-otp"
-      title="OTP"
-      apps={@groups[:otp]}
-      target={@target}
-    />
-    """
-  end
-
-  defp apps(%{apps: {:error, _reason}} = assigns) do
-    ~H"""
-    <p id="pdt-system-apps-error" class="pdt-hint">
-      The application controller did not answer in time.
-    </p>
-    """
-  end
-
-  defp apps(assigns) do
-    ~H"""
-    <p class="pdt-hint">Reading…</p>
-    """
-  end
-
-  attr :id, :string, required: true
-  attr :title, :string, required: true
-  attr :apps, :list, required: true
-  attr :target, :any, required: true
-  attr :open, :boolean, default: false
-
-  defp app_group(assigns) do
-    ~H"""
-    <details id={@id} class="pdt-system__apps" open={@open}>
-      <summary>{@title} ({length(@apps)})</summary>
-      <ul class="pdt-list">
-        <li
-          :for={app <- @apps}
-          id={"pdt-system-app-#{app.name}"}
-          class="pdt-row pdt-process__relation"
-        >
-          <strong>{app.name}</strong>
-          <span class="pdt-hint">{app.version}</span>
-          <ProcessView.pid_link
-            :if={app.supervisor}
-            id={inspect(app.supervisor)}
-            link="inspect"
-            target={@target}
-          />
-          <span class="pdt-hint pdt-system__desc">{app.description}</span>
-        </li>
-      </ul>
-    </details>
-    """
-  end
-
   defp max_watched, do: @max_watched
 
   defp watch_title(watched, pid) do
@@ -1001,64 +755,4 @@ defmodule PhoenixDevToolbar.Panels.System do
       true -> "Keep an eye on it: its exit reason shows below when it goes down"
     end
   end
-
-  attr :peek, :any, required: true
-
-  defp peek(%{peek: {:ok, [], _total}} = assigns),
-    do: ~H"""
-    <p id="pdt-system-messages-empty" class="pdt-hint">The queue is empty.</p>
-    """
-
-  defp peek(%{peek: {:ok, _shown, _total}} = assigns) do
-    ~H"""
-    <p class="pdt-hint">
-      The first {length(elem(@peek, 1))} of {elem(@peek, 2)}, oldest first, redacted:
-    </p>
-    <ol id="pdt-system-messages-list" class="pdt-list">
-      <li :for={message <- elem(@peek, 1)}><pre>{message}</pre></li>
-    </ol>
-    """
-  end
-
-  defp peek(%{peek: {:error, why}} = assigns) do
-    assigns = assign(assigns, :why, why)
-
-    ~H"""
-    <p id="pdt-system-messages-error" class="pdt-hint">{@why}</p>
-    """
-  end
-
-  attr :status, :any, required: true
-
-  defp status(%{status: {:ok, _status}} = assigns) do
-    ~H"""
-    <p class="pdt-hint">{elem(@status, 1).module} · {elem(@status, 1).sys_state}</p>
-    <pre id="pdt-system-state-value">{elem(@status, 1).state}</pre>
-    """
-  end
-
-  defp status(%{status: {:error, reason}} = assigns) do
-    assigns = assign(assigns, :message, status_error(reason))
-
-    ~H"""
-    <p id="pdt-system-state-error" class="pdt-hint" role="status">{@message}</p>
-    """
-  end
-
-  defp status(assigns), do: ~H""
-
-  defp status_error(:timeout), do: "No answer within 1s: the process is busy."
-  defp status_error(:dead), do: "The process exited."
-  defp status_error(:not_otp), do: "Not an OTP process: it does not answer :sys."
-
-  defp status_error(:busy),
-    do:
-      "Not waiting in a server loop: busy in a callback (try again), or a Task, which never answers :sys."
-
-  defp status_error(:failed), do: "The process failed to report its state."
-  defp status_error(:suspended), do: "Suspended: it answers nothing until resumed."
-  defp status_error(:too_soon), do: "One read a second: try again."
-
-  defp status_error(:policy),
-    do: "Reading state follows the actions setting: not from this browser."
 end

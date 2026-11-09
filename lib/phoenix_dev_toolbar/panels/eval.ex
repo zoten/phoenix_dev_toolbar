@@ -1,10 +1,11 @@
 defmodule PhoenixDevToolbar.Panels.Eval do
   @moduledoc false
-  # The Eval tab (ADR 12). Who may use it: a browser on this machine, unless the
-  # host set `clients: :any` (the panel's websocket peer, from the internal
-  # `pdt_actions` assign). What runs: a read query picked by id, or, only with
-  # `allow: :eval`, typed code (EvalRunner), in start_async/3: one run at a
-  # time, the last @history kept. A forged event is checked like a click.
+  # The Eval tab (ADR 12). Read queries, picked by id, answer any browser, like
+  # the System tab's reads (ADR 10). Typed code (EvalRunner) runs only with
+  # `allow: :eval`, and only for a browser on this machine unless the host set
+  # `clients: :any` (the panel's websocket peer, from the internal `pdt_actions`
+  # assign). Both in start_async/3: one run at a time, the last @history kept.
+  # A forged event is checked like a click.
 
   use PhoenixDevToolbar.Panel
 
@@ -32,11 +33,9 @@ defmodule PhoenixDevToolbar.Panels.Eval do
   def handle_event("query", %{"query" => id}, socket) when is_binary(id) do
     socket = pick(socket, id)
 
-    with :ok <- allowed(socket),
-         true <- List.keymember?(EvalRunner.queries(), id, 0) do
-      {:noreply, start(socket, label(id), fn -> EvalRunner.query(id) end)}
-    else
-      _refused -> {:noreply, socket}
+    case List.keymember?(EvalRunner.queries(), id, 0) do
+      true -> {:noreply, start(socket, label(id), fn -> EvalRunner.query(id) end)}
+      false -> {:noreply, socket}
     end
   end
 
@@ -123,13 +122,13 @@ defmodule PhoenixDevToolbar.Panels.Eval do
 
     ~H"""
     <div id="pdt-eval" class="pdt-process">
-      <p :if={@gate != :ok} id="pdt-eval-off" class="pdt-empty">
-        The Eval tab only answers a browser on this machine, reaching the server directly (not
+      <p :if={@allow == :eval and @gate != :ok} id="pdt-eval-off" class="pdt-hint pdt-process__paused">
+        Code only runs for a browser on this machine, reaching the server directly (not
         through a proxy or a tunnel). From Docker or another machine, an SSH tunnel to
-        localhost keeps it that way; clients: :any in its options opens it to anyone who
-        reaches the dev server, and with allow: :eval lets them run code here.
+        localhost keeps it that way; clients: :any in the Eval options lets anyone who
+        reaches the dev server run code here.
       </p>
-      <div :if={@gate == :ok} class="pdt-snapshot-bar">
+      <div class="pdt-snapshot-bar">
         <form
           id="pdt-eval-query-form"
           class="pdt-actions__kill"

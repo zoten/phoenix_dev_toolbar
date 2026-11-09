@@ -213,8 +213,11 @@ defmodule PhoenixDevToolbar.Tracer do
   # Stops tracing and forgets the trace.
   defp clear(%{trace: nil} = state), do: state
 
-  defp clear(%{trace: trace} = state) do
+  # The owner stays monitored after a finish, so a finished trace still goes
+  # with its panel.
+  defp clear(%{trace: %{refs: [_target, owner_ref]} = trace} = state) do
     destroy(trace)
+    Process.demonitor(owner_ref, [:flush])
     drain()
     %{state | trace: nil}
   end
@@ -230,9 +233,9 @@ defmodule PhoenixDevToolbar.Tracer do
     end
   end
 
-  defp destroy(%{session: session, refs: refs, timer: timer, running?: running?}) do
+  defp destroy(%{session: session, refs: [target_ref, _owner], timer: timer, running?: running?}) do
     _ = Process.cancel_timer(timer)
-    Enum.each(refs, &Process.demonitor(&1, [:flush]))
+    Process.demonitor(target_ref, [:flush])
     destroy_session(session, running?)
   end
 

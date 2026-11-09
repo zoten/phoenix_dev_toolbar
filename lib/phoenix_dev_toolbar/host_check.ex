@@ -11,6 +11,8 @@ defmodule PhoenixDevToolbar.HostCheck do
   require Logger
 
   @logged {PhoenixDevToolbar.HostCheck, :logged}
+  # Distinct refused hosts named in the log, at most (an attacker can send any).
+  @max_logged 10
 
   @doc "Whether the request's Host may reach the panel."
   @spec allowed?(Plug.Conn.t()) :: boolean()
@@ -20,18 +22,24 @@ defmodule PhoenixDevToolbar.HostCheck do
     ip?(host) or localhost?(host) or host == endpoint_host(conn) or listed?(host)
   end
 
-  @doc "Logs, once per boot, that a host was refused and how to allow it."
+  @doc """
+  Logs a refused host and how to allow it: once per host, for the first
+  #{@max_logged} distinct ones of a boot.
+  """
   @spec log_refused(String.t()) :: :ok
   def log_refused(host) do
-    case :persistent_term.get(@logged, false) do
+    host = String.slice(host, 0, 100)
+    logged = :persistent_term.get(@logged, [])
+
+    case host in logged or length(logged) >= @max_logged do
       true ->
         :ok
 
       false ->
-        :persistent_term.put(@logged, true)
+        :persistent_term.put(@logged, [host | logged])
 
         Logger.warning(
-          "[phoenix_dev_toolbar] refused the panel for host #{inspect(String.slice(host, 0, 100))}: " <>
+          "[phoenix_dev_toolbar] refused the panel for host #{inspect(host)}: " <>
             "add it to `allowed_hosts:` in the toolbar config if it is yours (DNS rebinding guard)"
         )
     end

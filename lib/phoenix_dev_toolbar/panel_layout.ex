@@ -226,10 +226,15 @@ defmodule PhoenixDevToolbar.PanelLayout do
 
   # What only the built-in tabs get (ADR 10): the actions' context holds the
   # client's address and the panel's own processes, nothing a plugin needs.
-  defp internal_assigns(%{panel: panel}, pdt_actions) do
-    case Atom.to_string(panel) do
-      "Elixir.PhoenixDevToolbar.Panels." <> _builtin -> [pdt_actions: pdt_actions]
-      _plugin -> []
-    end
-  end
+  # An explicit list: a plugin naming its panel under PhoenixDevToolbar. gets nothing.
+  @internal_panels [
+    PhoenixDevToolbar.Panels.Process,
+    PhoenixDevToolbar.Panels.System,
+    PhoenixDevToolbar.Panels.Eval
+  ]
+
+  defp internal_assigns(%{panel: panel}, pdt_actions) when panel in @internal_panels,
+    do: [pdt_actions: pdt_actions]
+
+  defp internal_assigns(_tab, _pdt_actions), do: []
 end

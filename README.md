@@ -51,9 +51,9 @@ config :phoenix_dev_toolbar,
   # read only and for this machine's browser unless allow: :eval / clients: :any,
   # see SECURITY.md):
   # plugins: [:defaults, PhoenixDevToolbar.Plugins.Cluster, {PhoenixDevToolbar.Plugins.Eval, allow: :eval}],
-  # Kill, suspend and message peek (System and Process tabs) run only for a browser
-  # on this machine; :any for Docker or the LAN (anyone reaching the server can use
-  # them), false to turn them off
+  # Kill, suspend, message peek, state read and trace run only for a browser on
+  # this machine reaching the server directly; :any for Docker, the LAN or a local
+  # proxy or tunnel (anyone reaching the server can use them), false to turn them off
   actions: :loopback,
   # The panel answers IP addresses, localhost, and your endpoint's url host; list
   # other names you use for the dev server (a DNS rebinding guard)

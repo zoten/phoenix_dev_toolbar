@@ -36,8 +36,8 @@ reachable dev port must not freeze or kill the node.
   - Kill, with a reason picked from a fixed list: `kill` (`:kill`, untrappable),
     `shutdown`, or `crash` (an exit with a `RuntimeError`, as a crash looks to logs
     and supervisors). A suspended process can still be killed.
-  - Suspend for 10 s (`Suspender`, a toolbar child only when enabled, accepts 1 to
-    60 s and at most 10 processes). It resumes on the TTL, when the panel that asked
+  - Suspend for 10 s (`Suspender`, a toolbar child only when enabled, accepts 0.1
+    to 60 s and at most 10 processes). It resumes on the TTL, when the panel that asked
     goes away, or on Resume; a process it suspended is released by OTP if the
     Suspender itself dies. GC now and the state read refuse a suspended process
     (both would wait for it).
@@ -72,6 +72,8 @@ reachable dev port must not freeze or kill the node.
 - The endpoint's children (listener, acceptors, connection supervisors) and the
   host Repo pool are not protected: their supervisors restart them, but killing a
   connection supervisor drops the panel's own websocket until it reconnects.
+- The Suspender and the Tracer run whenever the toolbar is enabled, even with the
+  System tab excluded: idle, they hold nothing.
 - A process suspended while it holds a lock, a checked out Repo connection or a
   `:global` transaction stalls whoever waits on it until the TTL.
 - Message peek reads the queue length, then the queue: a process flooded between

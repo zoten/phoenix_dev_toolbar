@@ -93,3 +93,5 @@ polling (`ProcessInspector`), its rendering (`ProcessView`) and their options
 - On an OTP before 26.2 (no single dictionary key reads) ancestors fall back to
   `:parent` and the state button never shows.
 - No message trace before OTP 27 (no trace sessions).
+- Read state copies the whole state into the reading task before it is redacted
+  and truncated: a huge state costs that copy, once per click.

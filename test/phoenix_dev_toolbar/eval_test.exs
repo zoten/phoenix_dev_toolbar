@@ -44,7 +44,8 @@ defmodule PhoenixDevToolbar.EvalTest do
       assert capture_log(fn -> {:ok, _config} = Eval.init(allow: :eval, clients: :any) end) =~
                "anyone who reaches this dev server can run code"
 
-      assert capture_log(fn -> {:ok, _config} = Eval.init(clients: :any) end) =~ "any browser"
+      # clients: only matters for code: no warning when code is off.
+      assert capture_log(fn -> {:ok, _config} = Eval.init(clients: :any) end) == ""
     end
   end
 
@@ -91,7 +92,7 @@ defmodule PhoenixDevToolbar.EvalTest do
       assert has_element?(panel, "#pdt-eval-run-2", "42")
     end
 
-    test "a browser off this machine is refused, unless clients: :any" do
+    test "a browser off this machine runs no code, unless clients: :any; queries stay open" do
       attach(allow: :eval)
 
       remote =
@@ -101,7 +102,15 @@ defmodule PhoenixDevToolbar.EvalTest do
 
       assert has_element?(panel, "#pdt-eval-off")
       refute has_element?(panel, "#pdt-eval-form")
-      refute has_element?(panel, "#pdt-eval-query-form")
+
+      panel |> form("#pdt-eval-query-form", %{"query" => "counts"}) |> render_submit()
+      _ = render_async(panel)
+      assert has_element?(panel, "#pdt-eval-run-0", "processes")
+
+      # A forged eval event from that browser (sent to the tab) runs nothing.
+      panel |> with_target("#pdt-eval") |> render_click("eval", %{"code" => "1 + 1"})
+      _ = render_async(panel)
+      refute has_element?(panel, "#pdt-eval-run-1")
 
       attach(allow: :eval, clients: :any)
       panel = open(remote)

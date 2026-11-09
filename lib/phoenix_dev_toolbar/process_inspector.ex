@@ -139,6 +139,33 @@ defmodule PhoenixDevToolbar.ProcessInspector do
 
   def schedule(socket, kind, _module), do: cancel_timer(socket, kind)
 
+  @doc "Whether the tab polls: it is shown and the panel visible."
+  @spec polling?(Socket.t()) :: boolean()
+  def polling?(%{assigns: %{shown?: true, visible?: true}}), do: true
+  def polling?(_socket), do: false
+
+  @doc """
+  A `{kind, token}` tick: when it is the pending one and the tab polls, runs
+  `tick` then `schedule` for that kind (each panel says what a tick reads and how
+  it schedules the next one).
+  """
+  @spec handle_tick(
+          Socket.t(),
+          kind(),
+          reference(),
+          (Socket.t(), kind() -> Socket.t()),
+          (Socket.t(), kind() -> Socket.t())
+        ) :: Socket.t()
+  def handle_tick(socket, kind, token, tick, schedule) do
+    case take_tick(socket, kind, token) do
+      {:ok, socket} -> run_tick(socket, kind, polling?(socket), tick, schedule)
+      :stale -> socket
+    end
+  end
+
+  defp run_tick(socket, kind, true, tick, schedule), do: socket |> tick.(kind) |> schedule.(kind)
+  defp run_tick(socket, _kind, false, _tick, _schedule), do: socket
+
   @doc """
   Takes the tick `{kind, token}` if it is the pending timer of its kind: one
   loop per kind, whatever raced (a tick already queued when its timer was

@@ -42,7 +42,8 @@ defmodule PhoenixDevToolbar.ProcessActions do
 
       {:error, :not_loopback} ->
         {:error,
-         "Actions only run for a browser on this machine. From Docker or the LAN, set " <>
+         "Actions only run for a browser on this machine reaching the server directly. From " <>
+           "Docker, the LAN, or through a proxy or tunnel (x-forwarded-* headers), set " <>
            "actions: :any in config/dev.exs (anyone who reaches the dev server can then use them)."}
     end
   end
