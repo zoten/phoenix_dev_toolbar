@@ -87,6 +87,37 @@ defmodule PhoenixDevToolbar.PanelLayout do
             {tab.name}
           </button>
         </nav>
+        <%!-- Where the toolbar docks: client side only, the loader moves it
+             (assets/js/panel.js, ADR 04). Ignored by patches: panel.js owns
+             the menu's hidden and pressed state. --%>
+        <div id="pdt-dock-picker" class="pdt-dock-picker" phx-update="ignore">
+          <button
+            id="pdt-dock"
+            type="button"
+            class="pdt-dock"
+            data-pdt-dock-menu
+            aria-haspopup="true"
+            aria-expanded="false"
+            aria-controls="pdt-dock-menu"
+            aria-label="Move the toolbar"
+            title="Dock position"
+          >
+            <span class="pdt-dock__icon" aria-hidden="true"></span>
+          </button>
+          <div id="pdt-dock-menu" class="pdt-dock-menu" role="group" aria-label="Dock the toolbar" hidden>
+            <button
+              :for={dock <- ~w(bottom top left right)}
+              id={"pdt-dock-" <> dock}
+              type="button"
+              class="pdt-dock-option"
+              data-pdt-dock={dock}
+              aria-pressed="false"
+            >
+              <span class={["pdt-dock__icon", "pdt-dock__icon--" <> dock]} aria-hidden="true"></span>
+              {String.capitalize(dock)}
+            </button>
+          </div>
+        </div>
         <button
           id="pdt-hide"
           type="button"

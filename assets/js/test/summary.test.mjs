@@ -13,3 +13,8 @@ test("no badges, or all on one row: nothing hidden", () => {
 test("counts the badges wrapped below the first row", () => {
   assert.equal(countWrapped([0, 0, 26, 26, 52]), 3)
 })
+
+test("sideways strip: negated column offsets count the wrapped columns", () => {
+  // vertical-rl wraps columns leftwards: the first column has the largest offsetLeft.
+  assert.equal(countWrapped([38, 38, 12, 12, -14].map((left) => -left)), 3)
+})

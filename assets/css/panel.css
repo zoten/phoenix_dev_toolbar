@@ -57,8 +57,9 @@ body.pdt {
   display: flex;
   align-items: center;
   gap: 12px;
-  height: 34px;
-  padding: 0 8px 0 12px;
+  block-size: 34px;
+  padding-block: 0;
+  padding-inline: 12px 8px;
   background: var(--pdt-header);
   color: var(--pdt-header-fg);
   white-space: nowrap;
@@ -72,17 +73,18 @@ body.pdt {
 
 /* One row tall: badges that do not fit wrap out of sight and are counted by
    #pdt-summary-more. Open, the header grows to show them all. */
-.pdt-summary { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; height: 20px; overflow: hidden; }
-.pdt-open .pdt-header { height: auto; min-height: 34px; padding-block: 7px; }
-.pdt-open .pdt-summary { height: auto; }
+.pdt-summary { display: flex; flex-wrap: wrap; gap: 6px; min-inline-size: 0; block-size: 20px; overflow: hidden; }
+.pdt-open .pdt-header { block-size: auto; min-block-size: 34px; padding-block: 7px; }
+.pdt-open .pdt-summary { block-size: auto; }
 .pdt-summary-more { flex: none; }
 .pdt-summary-more[hidden] { display: none; }
 
 .pdt-badge {
   display: inline-flex;
   align-items: center;
-  height: 20px;
-  padding: 0 8px;
+  block-size: 20px;
+  padding-block: 0;
+  padding-inline: 8px;
   border-radius: 10px;
   font: 600 11px/20px var(--pdt-mono);
   background: rgba(255, 255, 255, .08);
@@ -95,11 +97,12 @@ body.pdt {
 .pdt-header .pdt-badge--warn { color: var(--pdt-header-warn); box-shadow: inset 0 0 0 1px var(--pdt-header-warn); }
 .pdt-badge--error { color: #fff; background: var(--pdt-error) !important; }
 
-.pdt-tabs { display: flex; gap: 2px; margin-left: auto; }
+.pdt-tabs { display: flex; gap: 2px; margin-inline-start: auto; }
 
 .pdt-tab {
-  height: 24px;
-  padding: 0 10px;
+  block-size: 24px;
+  padding-block: 0;
+  padding-inline: 10px;
   border: 0;
   border-radius: 4px;
   background: transparent;
@@ -116,6 +119,7 @@ body.pdt {
 .pdt-tab--error::after { content: " !"; font-weight: 700; }
 
 .pdt-toggle {
+  flex: none;
   display: grid;
   place-items: center;
   width: 26px;
@@ -130,6 +134,7 @@ body.pdt {
 .pdt-toggle:hover, .pdt-hide:hover { background: rgba(255, 255, 255, .08); }
 
 .pdt-hide {
+  flex: none;
   display: grid;
   place-items: center;
   width: 26px;
@@ -156,7 +161,101 @@ body.pdt {
 
 .pdt-open .pdt-toggle__icon { transform: translateY(-2px) rotate(225deg); }
 
+/* Docks (ADR 04): the loader reports the dock, panel.js sets pdt-dock-<name>
+   and, for left and right, pdt-side. The chevron points to the page while
+   collapsed (expand) and back to the docked edge while open (collapse). */
+.pdt-dock-top .pdt-toggle__icon { transform: translateY(-2px) rotate(225deg); }
+.pdt-dock-top.pdt-open .pdt-toggle__icon { transform: translateY(2px) rotate(45deg); }
+.pdt-dock-left .pdt-toggle__icon { transform: translateX(-2px) rotate(135deg); }
+.pdt-dock-left.pdt-open .pdt-toggle__icon { transform: translateX(2px) rotate(315deg); }
+.pdt-dock-right .pdt-toggle__icon { transform: translateX(2px) rotate(315deg); }
+.pdt-dock-right.pdt-open .pdt-toggle__icon { transform: translateX(-2px) rotate(135deg); }
+
+/* Collapsed on a side, the bar is a full height 34px strip: the header turns
+   sideways, and its logical sizes follow. */
+.pdt-side:not(.pdt-open) .pdt-header { writing-mode: vertical-rl; height: 100vh; overflow: hidden; }
+.pdt-side:not(.pdt-open) .pdt-section, .pdt-side:not(.pdt-open) .pdt-empty { display: none; }
+
+/* Dock picker: open only, a client side menu (assets/js/panel.js). */
+.pdt-dock-picker { position: relative; flex: none; display: none; }
+.pdt-open .pdt-dock-picker { display: block; }
+
+.pdt-dock {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  opacity: .7;
+  cursor: pointer;
+}
+
+.pdt-dock:hover, .pdt-dock[aria-expanded="true"] { opacity: 1; background: rgba(255, 255, 255, .08); }
+
+/* A window with its docked edge filled. */
+.pdt-dock__icon {
+  width: 14px;
+  height: 12px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  box-shadow: inset 0 -4px 0 currentColor;
+}
+
+/* The picker button shows the current dock; each menu option its own. */
+.pdt-dock-top .pdt-dock__icon { box-shadow: inset 0 4px 0 currentColor; }
+.pdt-dock-left .pdt-dock__icon { box-shadow: inset 4px 0 0 currentColor; }
+.pdt-dock-right .pdt-dock__icon { box-shadow: inset -4px 0 0 currentColor; }
+.pdt-dock-option .pdt-dock__icon--bottom { box-shadow: inset 0 -4px 0 currentColor; }
+.pdt-dock-option .pdt-dock__icon--top { box-shadow: inset 0 4px 0 currentColor; }
+.pdt-dock-option .pdt-dock__icon--left { box-shadow: inset 4px 0 0 currentColor; }
+.pdt-dock-option .pdt-dock__icon--right { box-shadow: inset -4px 0 0 currentColor; }
+
+.pdt-dock-menu {
+  position: absolute;
+  inset-block-start: calc(100% + 4px);
+  inset-inline-end: 0;
+  z-index: 10;
+  display: grid;
+  gap: 2px;
+  min-width: 120px;
+  padding: 4px;
+  border-radius: 6px;
+  background: var(--pdt-header);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .3);
+}
+
+.pdt-dock-menu[hidden] { display: none; }
+
+.pdt-dock-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.pdt-dock-option:hover { background: rgba(255, 255, 255, .08); }
+.pdt-dock-option[aria-pressed="true"] { background: rgba(255, 255, 255, .14); }
+
+/* Narrow open panel (a side dock, or a small window): the tabs get a row of
+   their own and scroll sideways. */
+@media (max-width: 560px) {
+  .pdt-open .pdt-header { flex-wrap: wrap; row-gap: 6px; }
+  .pdt-open .pdt-tabs { order: 1; flex: 1 0 100%; margin-inline-start: 0; overflow-x: auto; }
+}
+
 .pdt-tab:focus-visible, .pdt-toggle:focus-visible, .pdt-hide:focus-visible,
+.pdt-dock:focus-visible, .pdt-dock-option:focus-visible,
 .pdt-details summary:focus-visible {
   outline: 2px solid var(--pdt-accent);
   outline-offset: 1px;

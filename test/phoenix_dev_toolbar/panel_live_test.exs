@@ -165,6 +165,17 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
            )
   end
 
+  test "offers the four docks in a menu the client controls", %{conn: conn, request: request} do
+    view = open(conn, request)
+
+    assert has_element?(view, ~s(#pdt-dock-picker[phx-update="ignore"]))
+    assert has_element?(view, ~s(#pdt-dock[aria-controls="pdt-dock-menu"][aria-expanded="false"]))
+
+    for dock <- ~w(bottom top left right) do
+      assert has_element?(view, ~s(#pdt-dock-menu[hidden] #pdt-dock-#{dock}[data-pdt-dock="#{dock}"]))
+    end
+  end
+
   test "switches between the Ecto and Request tabs", %{conn: conn, request: request} do
     event = response(request)
     view = open(conn, request)

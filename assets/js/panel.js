@@ -16,9 +16,9 @@ const {LiveSocket} = window.LiveView
 const script =
   document.currentScript || document.querySelector("script[data-socket-path]")
 
-const toParent = (type) => {
+const toParent = (type, payload = {}) => {
   if (window.parent !== window) {
-    window.parent.postMessage({type: "pdt:" + type}, window.location.origin)
+    window.parent.postMessage({type: "pdt:" + type, ...payload}, window.location.origin)
   }
 }
 
@@ -38,8 +38,49 @@ const pushVisibility = () => {
 const setOpen = (next) => {
   open = next
   document.documentElement.classList.toggle("pdt-open", open)
+  if (!open) closeDockMenu(false)
   pushVisibility()
 }
+
+// Docks (ADR 04): the loader owns the dock and reports it with every state.
+// The root gets pdt-dock-<name>, plus pdt-side for left and right.
+const DOCKS = ["bottom", "top", "left", "right"]
+
+const setDock = (dock) => {
+  if (!DOCKS.includes(dock)) return
+  const root = document.documentElement
+  DOCKS.forEach((name) => root.classList.toggle("pdt-dock-" + name, name === dock))
+  root.classList.toggle("pdt-side", dock === "left" || dock === "right")
+  document.querySelectorAll("[data-pdt-dock]").forEach((option) => {
+    option.setAttribute("aria-pressed", String(option.dataset.pdtDock === dock))
+  })
+}
+
+const dockMenu = () => document.getElementById("pdt-dock-menu")
+const dockButton = () => document.getElementById("pdt-dock")
+
+function closeDockMenu(refocus) {
+  const menu = dockMenu()
+  if (!menu || menu.hidden) return
+  menu.hidden = true
+  dockButton().setAttribute("aria-expanded", "false")
+  if (refocus) dockButton().focus()
+}
+
+const toggleDockMenu = () => {
+  const menu = dockMenu()
+  if (!menu.hidden) return closeDockMenu(false)
+  menu.hidden = false
+  dockButton().setAttribute("aria-expanded", "true")
+  const current = menu.querySelector("[aria-pressed='true']") || menu.querySelector("[data-pdt-dock]")
+  current.focus()
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && event.target.closest && event.target.closest("#pdt-dock-picker")) {
+    closeDockMenu(true)
+  }
+})
 
 // Client events from the loader wait (at most CLIENT_BUFFER) until the hook joins.
 const CLIENT_BUFFER = 50
@@ -53,7 +94,10 @@ const pushClient = (payload) => {
 window.addEventListener("message", (event) => {
   if (event.origin !== window.location.origin || event.source !== window.parent) return
   const data = event.data
-  if (data && data.type === "pdt:state") setOpen(Boolean(data.open))
+  if (data && data.type === "pdt:state") {
+    setDock(data.dock)
+    setOpen(Boolean(data.open))
+  }
   if (data && data.type === "pdt:client") pushClient({event: data.event, dropped: data.dropped})
 })
 
@@ -91,7 +135,11 @@ const PdtSummaryMore = {
     this.count = () => {
       // Open, the summary is as tall as it needs: nothing is hidden. Toggling
       // resizes it, so the observer recounts.
-      const hidden = open ? 0 : countWrapped([...this.summary.children].map((badge) => badge.offsetTop))
+      // Collapsed on a side, the strip is sideways (vertical-rl): badges wrap
+      // into columns to the left, so the "row" is the column offset.
+      const side = document.documentElement.classList.contains("pdt-side")
+      const rows = [...this.summary.children].map((badge) => (side ? -badge.offsetLeft : badge.offsetTop))
+      const hidden = open ? 0 : countWrapped(rows)
       this.el.hidden = hidden === 0
       this.el.textContent = "+" + hidden
     }
@@ -253,7 +301,14 @@ const PdtExport = {
 // The toggle button collapses or expands, hide shrinks the toolbar to a corner
 // pill, and picking a tab always expands.
 document.addEventListener("click", (event) => {
-  if (event.target.closest("[data-pdt-toggle]")) toParent("toggle")
+  const dockOption = event.target.closest("[data-pdt-dock]")
+  if (!event.target.closest("#pdt-dock-picker")) closeDockMenu(false)
+
+  if (event.target.closest("[data-pdt-dock-menu]")) toggleDockMenu()
+  else if (dockOption) {
+    closeDockMenu(true)
+    toParent("dock", {dock: dockOption.dataset.pdtDock})
+  } else if (event.target.closest("[data-pdt-toggle]")) toParent("toggle")
   else if (event.target.closest("[data-pdt-hide]")) toParent("hide")
   else if (event.target.closest("[data-pdt-open]")) toParent("open")
   else if (event.target.closest("[role='tab']")) toParent("open")
