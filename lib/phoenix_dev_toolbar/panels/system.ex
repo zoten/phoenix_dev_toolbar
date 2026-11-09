@@ -14,6 +14,8 @@ defmodule PhoenixDevToolbar.Panels.System do
 
   use PhoenixDevToolbar.Panel
 
+  import PhoenixDevToolbar.Components, only: [bytes: 1]
+
   alias PhoenixDevToolbar.Panel
   alias PhoenixDevToolbar.Panels.System, as: SystemPanel
   alias PhoenixDevToolbar.ProcessActions
@@ -21,6 +23,7 @@ defmodule PhoenixDevToolbar.Panels.System do
   alias PhoenixDevToolbar.ProcessInfo
   alias PhoenixDevToolbar.ProcessInspector
   alias PhoenixDevToolbar.ProcessRef
+  alias PhoenixDevToolbar.ProcessTop
   alias PhoenixDevToolbar.ProcessTree
   alias PhoenixDevToolbar.ProcessView
   alias PhoenixDevToolbar.Truncate
@@ -38,6 +41,7 @@ defmodule PhoenixDevToolbar.Panels.System do
      |> assign(prev: nil, crumbs: [], error: nil, query: "")
      |> assign(ancestors: [], stacktrace: [], status: nil, status_at: nil)
      |> assign(watched: [], peek: nil, children: nil, apps: nil)
+     |> assign(top: nil, top_by: "memory", top_at: nil)
      |> ProcessInspector.init()}
   end
 
@@ -113,6 +117,17 @@ defmodule PhoenixDevToolbar.Panels.System do
 
   def handle_event("refresh_children", _params, socket), do: {:noreply, load_children(socket)}
 
+  def handle_event("top_by", %{"by" => by}, socket) when is_binary(by),
+    do: {:noreply, pick_top(socket, by)}
+
+  # An unknown sort reads nothing (not the previous one).
+  def handle_event("top", %{"by" => by}, socket) when is_binary(by) do
+    case ProcessTop.sort(by) do
+      {:ok, _sort} -> {:noreply, socket |> pick_top(by) |> read_top()}
+      :error -> {:noreply, socket}
+    end
+  end
+
   # Back to the applications list: nothing inspected, crumbs kept.
   def handle_event("apps", _params, socket) do
     {:noreply,
@@ -149,6 +164,9 @@ defmodule PhoenixDevToolbar.Panels.System do
     do: {:noreply, assign(socket, :children, result)}
 
   def handle_async(:children, _result, socket), do: {:noreply, assign(socket, :children, nil)}
+
+  def handle_async(:top, {:ok, result}, socket), do: {:noreply, assign(socket, :top, result)}
+  def handle_async(:top, _exit, socket), do: {:noreply, assign(socket, :top, nil)}
 
   def handle_async(:apps, {:ok, result}, socket), do: {:noreply, assign(socket, :apps, result)}
 
@@ -231,6 +249,37 @@ defmodule PhoenixDevToolbar.Panels.System do
   end
 
   defp maybe_load_apps(socket), do: socket
+
+  ## Top (ProcessTop: a sweep of every process, in a task, on a click)
+
+  # At most one sweep a second.
+  @top_every_ms 1000
+
+  defp pick_top(socket, by) do
+    case ProcessTop.sort(by) do
+      {:ok, _sort} -> assign(socket, :top_by, by)
+      :error -> socket
+    end
+  end
+
+  defp read_top(%{assigns: %{top: :loading}} = socket), do: socket
+
+  defp read_top(%{assigns: %{top_by: by, top_at: at}} = socket) do
+    case top_allowed?(at) do
+      true ->
+        {:ok, sort} = ProcessTop.sort(by)
+
+        socket
+        |> assign(top: :loading, top_at: System.monotonic_time(:millisecond))
+        |> start_async(:top, fn -> ProcessTop.top(sort) end)
+
+      false ->
+        socket
+    end
+  end
+
+  defp top_allowed?(nil), do: true
+  defp top_allowed?(at), do: System.monotonic_time(:millisecond) - at >= @top_every_ms
 
   ## Watch
 
@@ -424,6 +473,33 @@ defmodule PhoenixDevToolbar.Panels.System do
         Type a pid or a registered name, follow a process link from the Process tab, or
         start from an application below.
       </p>
+      <section :if={is_nil(@selected)} id="pdt-system-top" class="pdt-system__state">
+        <h3 class="pdt-process__title">Top processes</h3>
+        <form
+          id="pdt-system-top-form"
+          class="pdt-actions__kill"
+          phx-change="top_by"
+          phx-submit="top"
+          phx-target={@myself}
+        >
+          <select id="pdt-system-top-by" name="by" aria-label="Sort by">
+            <option value="memory" selected={@top_by == "memory"}>by memory</option>
+            <option value="reductions" selected={@top_by == "reductions"}>
+              by reductions per second
+            </option>
+            <option value="queue" selected={@top_by == "queue"}>by message queue</option>
+          </select>
+          <button
+            id="pdt-system-top-read"
+            type="submit"
+            class="pdt-button pdt-button--small"
+            aria-busy={to_string(@top == :loading)}
+          >
+            {if(@top == :loading, do: "reading…", else: "Read")}
+          </button>
+        </form>
+        <.top top={@top} target={@myself} />
+      </section>
       <section :if={is_nil(@selected)} id="pdt-system-apps" class="pdt-system__state">
         <h3 class="pdt-process__title">Applications</h3>
         <.apps apps={@apps} target={@myself} />
@@ -644,6 +720,59 @@ defmodule PhoenixDevToolbar.Panels.System do
   defp children_error(:timeout), do: "No answer within 1s: the supervisor is busy."
   defp children_error(:dead), do: "The supervisor exited."
   defp children_error(:not_supervisor), do: "Not a supervisor."
+
+  attr :top, :any, required: true
+  attr :target, :any, required: true
+
+  defp top(%{top: {:ok, rows}} = assigns) do
+    assigns = assign(assigns, :rows, rows)
+
+    ~H"""
+    <table id="pdt-system-top-table" class="pdt-table">
+      <thead>
+        <tr>
+          <th>Process</th>
+          <th>Name</th>
+          <th>Memory</th>
+          <th>Queue</th>
+          <th>Reductions / s</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr :for={row <- @rows}>
+          <td><ProcessView.pid_link id={inspect(row.pid)} link="inspect" target={@target} /></td>
+          <td>
+            <code>{row.name}</code>
+            <span :if={row.toolbar?} class="pdt-tag" title="Part of the dev toolbar itself">
+              toolbar
+            </span>
+          </td>
+          <td>{bytes(row.memory)}</td>
+          <td>{row.queue}</td>
+          <td>{row.reductions_per_second || "…"}</td>
+        </tr>
+      </tbody>
+    </table>
+    """
+  end
+
+  defp top(%{top: {:error, {:too_many, count}}} = assigns) do
+    assigns = assign(assigns, :count, count)
+
+    ~H"""
+    <p id="pdt-system-top-error" class="pdt-hint">
+      {@count} processes: too many to sweep from the panel.
+    </p>
+    """
+  end
+
+  defp top(assigns) do
+    ~H"""
+    <p :if={is_nil(@top)} class="pdt-hint">
+      Read every process once and list the 50 that hold the most.
+    </p>
+    """
+  end
 
   attr :apps, :any, required: true
   attr :target, :any, required: true

@@ -53,9 +53,13 @@ polling (`ProcessInspector`), its rendering (`ProcessView`) and their options
   Applications button brings the list back. Every call has a 1 s timeout or runs in
   a task killed after it (`application_master` answers without one), always in
   `start_async/3`.
-- **Top**: the 50 processes with the most memory, reductions since the last sample, or
-  the longest queue, sampled on demand or periodically only while shown. The sweep
-  runs in a task and stops past a process count cap, saying so.
+- **Top** (`ProcessTop`): in the start view, the 50 processes with the most memory,
+  the most reductions per second (two sweeps 500 ms apart) or the longest queue,
+  read on the Read click (once a second at most), never polled; each one a link.
+  A sweep is `process_info/2` of every process (no call, no message), in a task:
+  a process busy on another scheduler delays the task, never the panel. Above
+  100 000 processes (`:process_count`, checked before listing) nothing is read and
+  the panel says how many there are.
 - **Message trace**: opt-in, one pid at a time, through a trace session (OTP 27+) so
   it never takes the global tracer from `dbg` or `recon`; rate limited, stopped after
   N messages or T seconds, payloads truncated.
@@ -69,7 +73,9 @@ polling (`ProcessInspector`), its rendering (`ProcessView`) and their options
 
 ## Open limits
 
-- The process top and the message trace are not built yet (roadmap 5e, 5f).
+- The message trace is not built yet (roadmap 5f).
+- `:memory` of a process with a huge message queue walks that queue: the sweep
+  slows down for it.
 - In a release, or wherever deps live under `:code.root_dir/0`, every application
   is grouped as OTP.
 - A `proc_lib` process that hibernates without being a `gen` server is asked for its

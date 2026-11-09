@@ -185,6 +185,35 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
     end
   end
 
+  describe "top" do
+    test "the top processes by queue, each a link to inspect" do
+      pid = idle_process()
+      for n <- 1..300, do: send(pid, {:n, n})
+      panel = open()
+
+      panel |> form("#pdt-system-top-form", %{"by" => "queue"}) |> render_change()
+      panel |> form("#pdt-system-top-form", %{"by" => "queue"}) |> render_submit()
+      _ = render_async(panel)
+
+      link = ~s(#pdt-system-top-table button[phx-value-pid="#{inspect(pid)}"])
+      assert has_element?(panel, link)
+      assert has_element?(panel, "#pdt-system-top-by option[value=queue][selected]")
+
+      panel |> element(link) |> render_click()
+      assert has_element?(panel, "#pdt-system-target", inspect(pid))
+    end
+
+    test "an unknown sort reads nothing" do
+      panel = open()
+
+      render_submit(panel |> element("#pdt-system-top-form"), %{"by" => "pdt_nope"})
+      _ = render_async(panel)
+
+      refute has_element?(panel, "#pdt-system-top-table")
+      assert has_element?(panel, "#pdt-system-top-by option[value=memory][selected]")
+    end
+  end
+
   describe "actions" do
     test "Kill waits for a confirm, then kills" do
       pid = idle_process()

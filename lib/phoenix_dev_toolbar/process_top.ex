@@ -36,56 +36,59 @@ defmodule PhoenixDevToolbar.ProcessTop do
   @spec top(by(), keyword()) ::
           {:ok, [row()]} | {:error, {:too_many, non_neg_integer()}}
   def top(by, opts \\ []) when by in [:memory, :reductions, :queue] do
-    pids = Process.list()
-    count = length(pids)
+    # The count first: a node too big to sweep is not even listed.
+    count = :erlang.system_info(:process_count)
 
     case count > Keyword.get(opts, :max_processes, @max_processes) do
-      true -> {:error, {:too_many, count}}
-      false -> {:ok, read(by, pids, Keyword.get(opts, :interval_ms, @interval_ms))}
+      true ->
+        {:error, {:too_many, count}}
+
+      false ->
+        {:ok, read(by, Process.list(), max(Keyword.get(opts, :interval_ms, @interval_ms), 1))}
     end
   end
 
+  # The first sweep keeps only each pid's reductions across the wait.
   defp read(:reductions, pids, interval_ms) do
-    before = Map.new(sweep(pids), fn {pid, info} -> {pid, info.reductions} end)
+    before = Map.new(sweep(pids), fn {pid, _memory, _queue, reductions} -> {pid, reductions} end)
     Process.sleep(interval_ms)
 
     pids
     |> sweep()
-    |> Enum.flat_map(fn {pid, info} -> rate(pid, info, before, interval_ms) end)
+    |> Enum.flat_map(&rate(&1, before, interval_ms))
     |> keep(& &1.reductions_per_second)
   end
 
   defp read(:memory, pids, _interval_ms),
-    do: pids |> sweep() |> Enum.map(&row/1) |> keep(& &1.memory)
+    do: pids |> sweep() |> Enum.map(&row(&1, nil)) |> keep(& &1.memory)
 
   defp read(:queue, pids, _interval_ms),
-    do: pids |> sweep() |> Enum.map(&row/1) |> keep(& &1.queue)
+    do: pids |> sweep() |> Enum.map(&row(&1, nil)) |> keep(& &1.queue)
 
-  # Exited processes give nil: skipped. The panel's own process is read like any.
+  # Flat tuples, the least a sweep can hold. Exited processes give nil: skipped,
+  # and so is the sweeping task itself (it would top the reductions).
+  # A read of a process busy on another scheduler waits for it (a signal since
+  # OTP 21): in this task, never in the panel or a host process.
   defp sweep(pids) do
-    for pid <- pids, info = Process.info(pid, @keys), info != nil do
-      {pid,
-       %{
-         memory: info[:memory],
-         queue: info[:message_queue_len],
-         reductions: info[:reductions]
-       }}
-    end
+    me = self()
+
+    for pid <- pids,
+        pid != me,
+        [memory: memory, message_queue_len: queue, reductions: reductions] <-
+          [Process.info(pid, @keys)],
+        do: {pid, memory, queue, reductions}
   end
 
-  defp rate(pid, info, before, interval_ms) do
+  # A pid reused within the window could go backwards: never below zero.
+  defp rate({pid, _memory, _queue, reductions} = read, before, interval_ms) do
     case Map.fetch(before, pid) do
-      {:ok, earlier} ->
-        per_second = div((info.reductions - earlier) * 1000, max(interval_ms, 1))
-        [%{row({pid, info}) | reductions_per_second: per_second}]
-
-      :error ->
-        []
+      {:ok, earlier} -> [row(read, max(div((reductions - earlier) * 1000, interval_ms), 0))]
+      :error -> []
     end
   end
 
-  defp row({pid, info}),
-    do: %{pid: pid, memory: info.memory, queue: info.queue, reductions_per_second: nil}
+  defp row({pid, memory, queue, _reductions}, rate),
+    do: %{pid: pid, memory: memory, queue: queue, reductions_per_second: rate}
 
   # Only the first are named: naming reads each process's dictionary.
   defp keep(rows, value) do

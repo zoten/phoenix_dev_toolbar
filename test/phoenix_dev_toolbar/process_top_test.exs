@@ -8,14 +8,15 @@ defmodule PhoenixDevToolbar.ProcessTopTest do
   test "the process holding the most memory comes first" do
     {pid, :ok} =
       in_process(fn ->
-        Process.put(:big, Enum.to_list(1..2_000_000))
+        Process.put(:big, :lists.seq(1, 300_000))
         :ok
       end)
 
     assert {:ok, rows} = ProcessTop.top(:memory)
     assert %{memory: memory} = Enum.find(rows, &(&1.pid == pid))
-    assert memory > 10_000_000
+    assert memory > 4_000_000
     assert rows == Enum.sort_by(rows, & &1.memory, :desc)
+    stop(pid)
   end
 
   test "the longest queue comes first" do
@@ -24,6 +25,7 @@ defmodule PhoenixDevToolbar.ProcessTopTest do
 
     assert {:ok, rows} = ProcessTop.top(:queue)
     assert %{queue: 500} = Enum.find(rows, &(&1.pid == pid))
+    stop(pid)
   end
 
   test "a busy process shows in reductions per second" do
@@ -34,6 +36,7 @@ defmodule PhoenixDevToolbar.ProcessTopTest do
     assert %{reductions_per_second: rate} = Enum.find(rows, &(&1.pid == busy))
     assert rate > 0
     assert length(rows) <= 50
+    refute Enum.any?(rows, &(&1.pid == self()))
   end
 
   test "rows are named; toolbar processes are tagged" do
