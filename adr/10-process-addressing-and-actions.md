@@ -1,6 +1,6 @@
 # ADR 10: Process Addressing and Actions Policy
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Area:** architecture  
 **Related:** [ADR 09](./09-process-panel.md) (the Process tab, GC now), [ADR 11](./11-system-tab.md) (where any pid is inspected), [ADR 03](./03-event-storage.md) (bounds, no atoms from input)
 

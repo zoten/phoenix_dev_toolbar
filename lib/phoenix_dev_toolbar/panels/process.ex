@@ -11,13 +11,14 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
   use PhoenixDevToolbar.Panel
 
-  import PhoenixDevToolbar.Components, only: [sparkline: 1, bytes: 1]
+  import PhoenixDevToolbar.Components, only: [bytes: 1]
 
   alias PhoenixDevToolbar.Page
   alias PhoenixDevToolbar.Panel
   alias PhoenixDevToolbar.Panels.Process, as: ProcessPanel
   alias PhoenixDevToolbar.Plugins
   alias PhoenixDevToolbar.ProcessInfo
+  alias PhoenixDevToolbar.ProcessView
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
 
@@ -395,154 +396,20 @@ defmodule PhoenixDevToolbar.Panels.Process do
       <p :if={@sample == :dead} id="pdt-process-dead" class="pdt-empty">
         This process has exited.
       </p>
-      <div
+      <ProcessView.vitals
         :if={is_map(@sample)}
-        id="pdt-process-vitals"
-        class="pdt-process__vitals"
-        data-samples={length(@series.memory)}
-      >
-        <.vital
-          id="pdt-process-memory"
-          label="Memory"
-          value={bytes(@sample.memory)}
-          values={Enum.reverse(@series.memory)}
-          peak={peak(@series.memory, &bytes/1)}
-        />
-        <.vital
-          id="pdt-process-queue"
-          label="Message queue"
-          value={count(@sample.message_queue_len)}
-          values={Enum.reverse(@series.queue)}
-          peak={peak(@series.queue, &count/1)}
-          warn?={@sample.message_queue_len > 100}
-        />
-        <.vital
-          id="pdt-process-reductions"
-          label="Reductions / s"
-          title="Work done per second: a reduction is roughly one function call"
-          value={
-            if(@sample.reductions_per_second,
-              do: count(@sample.reductions_per_second),
-              else: "…"
-            )
-          }
-          values={Enum.reverse(@series.reductions)}
-          peak={peak(@series.reductions, &count/1)}
-        />
-      </div>
-      <dl :if={is_map(@sample)} id="pdt-process-details" class="pdt-process__details">
-        <dt>status</dt>
-        <dd>
-          {@sample.status}
-          <span :if={@sample.status == :waiting and @sample.message_queue_len > 100} class="pdt-hint">
-            · between two messages: the queue grows faster than they are handled
-          </span>
-        </dd>
-        <dt>current function</dt>
-        <dd><code>{@sample.current_function}</code></dd>
-        <dt>heap</dt>
-        <dd>
-          {words(@sample.heap_size)} heap · {words(@sample.total_heap_size)} total · {words(
-            @sample.stack_size
-          )} stack
-        </dd>
-        <dt>GC</dt>
-        <dd>
-          {@sample.minor_gcs} minor collections since the last full sweep · a full sweep every {@sample.fullsweep_after} minor ones
-        </dd>
-      </dl>
-      <section :if={is_map(@relations)} id="pdt-process-relations" class="pdt-process__relations">
-        <.relation_list
-          id="pdt-process-links"
-          title="Links"
-          relations={@relations.links}
-          more={@relations.more.links}
-        />
-        <.relation_list
-          id="pdt-process-monitors"
-          title="Monitors"
-          relations={@relations.monitors}
-          more={@relations.more.monitors}
-        />
-        <.relation_list
-          id="pdt-process-monitored-by"
-          title="Monitored by"
-          relations={@relations.monitored_by}
-          more={@relations.more.monitored_by}
-        />
-      </section>
+        prefix="pdt-process"
+        sample={@sample}
+        series={@series}
+      />
+      <ProcessView.relations
+        :if={is_map(@relations)}
+        prefix="pdt-process"
+        relations={@relations}
+      />
     </div>
     """
   end
-
-  attr :id, :string, required: true
-  attr :label, :string, required: true
-  attr :value, :string, required: true
-  attr :values, :list, required: true
-  attr :warn?, :boolean, default: false
-  attr :peak, :string, default: nil, doc: "the window's highest value, formatted"
-  attr :title, :string, default: nil
-
-  defp vital(assigns) do
-    ~H"""
-    <div id={@id} class={["pdt-vital", @warn? && "pdt-vital--warn"]}>
-      <span class="pdt-vital__label" title={@title}>{@label}</span>
-      <span class="pdt-vital__value">{@value}</span>
-      <.sparkline values={@values} label={sparkline_label(@label, @peak, length(@values))} />
-      <span :if={@peak} class="pdt-vital__peak">peak {@peak} over {samples(length(@values))}</span>
-    </div>
-    """
-  end
-
-  # The line is scaled to its own window: the peak gives it a size.
-  defp peak([], _format), do: nil
-  defp peak(values, format), do: format.(Enum.max(values))
-
-  defp sparkline_label(label, nil, _count), do: label <> " over time"
-
-  defp sparkline_label(label, peak, count),
-    do: "#{label} over the last #{samples(count)}, peak #{peak}"
-
-  defp samples(1), do: "1 sample"
-  defp samples(count), do: "#{count} samples"
-
-  # 1234567 -> "1,234,567": reductions per second reach the millions.
-  defp count(value) when is_integer(value),
-    do: value |> Integer.to_string() |> String.replace(~r/\B(?=(\d{3})+$)/, ",")
-
-  attr :id, :string, required: true
-  attr :title, :string, required: true
-  attr :relations, :list, required: true
-  attr :more, :integer, required: true
-
-  defp relation_list(assigns) do
-    ~H"""
-    <div id={@id}>
-      <h3 class="pdt-process__title">{@title} ({length(@relations) + @more})</h3>
-      <p :if={@relations == []} class="pdt-hint">None.</p>
-      <ul :if={@relations != []} class="pdt-list">
-        <li :for={relation <- @relations} class="pdt-row pdt-process__relation">
-          <code>{relation.id}</code>
-          <span>{relation.name}</span>
-          <span :if={relation.kind == :port} class="pdt-tag">port</span>
-          <span :if={relation.toolbar?} class="pdt-tag" title="Part of the dev toolbar itself">
-            toolbar
-          </span>
-          <span
-            :if={relation.child?}
-            class="pdt-tag pdt-tag--live"
-            title="Started by this LiveView ($callers)"
-          >
-            child
-          </span>
-        </li>
-      </ul>
-      <p :if={@more > 0} class="pdt-hint">and {@more} more</p>
-    </div>
-    """
-  end
-
-  defp words(words), do: bytes(words * :erlang.system_info(:wordsize))
 
   defp gc_result({:ok, before, after_gc}) when before > after_gc,
     do: "freed #{bytes(before - after_gc)}: #{bytes(before)} → #{bytes(after_gc)}"
