@@ -78,3 +78,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Redaction walks tuples, so queued messages and results are redacted too (ADR 10)
 - System tab trees: a supervisor's children, the application list with top supervisors (ADR 11)
 - System tab top: the 50 processes with the most memory, reductions or queue (ADR 11)
+- System tab message trace: one process, 100 messages or 10 s, OTP 27 sessions (ADR 11)

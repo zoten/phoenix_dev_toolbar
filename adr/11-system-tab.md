@@ -1,6 +1,6 @@
 # ADR 11: System Tab
 
-**Status:** Accepted  
+**Status:** Implemented (2026-11-09)  
 **Area:** ui  
 **Related:** [ADR 09](./09-process-panel.md) (the page centric Process tab), [ADR 10](./10-process-addressing-and-actions.md) (addressing, actions), [ADR 05](./05-plugin-behaviour.md) (a built-in plugin)
 
@@ -60,9 +60,18 @@ polling (`ProcessInspector`), its rendering (`ProcessView`) and their options
   a process busy on another scheduler delays the task, never the panel. Above
   100 000 processes (`:process_count`, checked before listing) nothing is read and
   the panel says how many there are.
-- **Message trace**: opt-in, one pid at a time, through a trace session (OTP 27+) so
-  it never takes the global tracer from `dbg` or `recon`; rate limited, stopped after
-  N messages or T seconds, payloads truncated.
+- **Message trace** (`Tracer`, a toolbar child only when enabled): "Trace messages"
+  records what the inspected process receives and sends, oldest first, each with
+  its time, its direction and, for a send, the receiver (a link), redacted and
+  truncated. Through an OTP 27 trace session, so it never takes the global tracer
+  `dbg` or `recon` may be using; on older OTPs a note replaces the button. One trace
+  on the node at a time (another panel is told it is busy); it stops by itself
+  after 100 messages or 10 s, when the process exits or the panel goes away, on
+  Stop, and when the tab inspects another process. Every stop destroys the
+  session, and so does the Tracer's own exit; trace messages queued after a stop
+  are dropped at once. It follows `actions:` and the protected set (ADR 10): it
+  copies messages, and tracing the toolbar or core processes could loop. The
+  panel reads it on its sample tick.
 
 ## Consequences
 
@@ -73,7 +82,8 @@ polling (`ProcessInspector`), its rendering (`ProcessView`) and their options
 
 ## Open limits
 
-- The message trace is not built yet (roadmap 5f).
+- A flood can queue many trace messages before the session stops: each one is a
+  copy the traced process pays for, bounded by the 10 s TTL, and dropped unread.
 - `:memory` of a process with a huge message queue walks that queue: the sweep
   slows down for it.
 - In a release, or wherever deps live under `:code.root_dir/0`, every application
@@ -82,5 +92,4 @@ polling (`ProcessInspector`), its rendering (`ProcessView`) and their options
   state and never answers: the read times out and the message stays.
 - On an OTP before 26.2 (no single dictionary key reads) ancestors fall back to
   `:parent` and the state button never shows.
-- Message trace before OTP 27 (no trace sessions): either skipped or uses the global
-  tracer with a warning, to settle in its phase plan.
+- No message trace before OTP 27 (no trace sessions).

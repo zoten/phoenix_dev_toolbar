@@ -40,7 +40,7 @@ Next free number: **13**.
 | 07 | [LiveView Panel: Profiler, Assigns, Event Log, Component Tree](./07-live-view-panel.md) | Implemented (2026-11-05) |
 | 08 | [Query Diagnostics: N+1 Detector and EXPLAIN](./08-query-diagnostics.md) | Implemented (2026-11-06) |
 | 09 | [Process Panel](./09-process-panel.md) | Implemented (2026-11-06) |
-| 11 | [System Tab](./11-system-tab.md) | Accepted |
+| 11 | [System Tab](./11-system-tab.md) | Implemented (2026-11-09) |
 
 ## Plugins
 

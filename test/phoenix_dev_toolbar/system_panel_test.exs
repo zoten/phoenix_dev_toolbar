@@ -185,6 +185,46 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
     end
   end
 
+  describe "message trace" do
+    @describetag :trace_sessions
+
+    test "records what it receives, redacted, until Stop" do
+      pid = idle_process()
+      panel = open()
+      search(panel, inspect(pid))
+
+      panel |> element("#pdt-system-trace-start") |> render_click()
+      assert has_element?(panel, "#pdt-system-trace-status", "tracing")
+
+      send(pid, {:login, %{password: "hunter2"}})
+      _ = :sys.get_state(PhoenixDevToolbar.Tracer)
+      panel |> element("#pdt-system-trace-stop") |> render_click()
+
+      assert has_element?(panel, "#pdt-system-trace-status", "stopped")
+      assert has_element?(panel, "#pdt-system-trace-list li", "[REDACTED]")
+      refute has_element?(panel, "#pdt-system-trace-list li", "hunter2")
+    end
+
+    test "a protected process offers no trace" do
+      panel = open()
+      search(panel, "code_server")
+
+      refute has_element?(panel, "#pdt-system-trace-start")
+    end
+
+    test "inspecting another process stops the trace" do
+      pid = idle_process()
+      panel = open()
+      search(panel, inspect(pid))
+      panel |> element("#pdt-system-trace-start") |> render_click()
+
+      search(panel, "code_server")
+
+      refute has_element?(panel, "#pdt-system-trace")
+      assert PhoenixDevToolbar.Tracer.status(panel.pid) |> then(&(&1 == nil or not &1.running?))
+    end
+  end
+
   describe "top" do
     test "the top processes by queue, each a link to inspect" do
       pid = idle_process()

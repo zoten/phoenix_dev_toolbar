@@ -11,6 +11,9 @@ defmodule PhoenixDevToolbar.Tracer do
 
   use GenServer
 
+  # OTP 26 has no :trace module: these only run when available?/0.
+  @dialyzer {:nowarn_function, do_start: 3, destroy_session: 2}
+
   alias PhoenixDevToolbar.Truncate
 
   @name PhoenixDevToolbar.Tracer
@@ -76,6 +79,8 @@ defmodule PhoenixDevToolbar.Tracer do
   def init(:ok) do
     # terminate/2 runs on a supervisor shutdown: the session is destroyed then.
     Process.flag(:trap_exit, true)
+    # A flood of trace messages stays off the heap: cheaper garbage collections.
+    Process.flag(:message_queue_data, :off_heap)
     {:ok, %{trace: nil}}
   end
 
@@ -118,7 +123,7 @@ defmodule PhoenixDevToolbar.Tracer do
           running?: true,
           stopped: nil,
           refs: [Process.monitor(pid), Process.monitor(owner)],
-          timer: Process.send_after(self(), :pdt_trace_time, @ttl_ms)
+          timer: Process.send_after(self(), {:pdt_trace_time, session}, @ttl_ms)
         }
 
         {:reply, :ok, %{state | trace: trace}}
@@ -148,8 +153,12 @@ defmodule PhoenixDevToolbar.Tracer do
   def handle_info({:trace, _pid, _kind, _message}, state), do: {:noreply, state}
   def handle_info({:trace, _pid, _kind, _message, _to}, state), do: {:noreply, state}
 
-  def handle_info(:pdt_trace_time, %{trace: %{running?: true}} = state),
-    do: {:noreply, finish(state, :time)}
+  # The timer of the running trace only (a previous trace's may still be queued).
+  def handle_info(
+        {:pdt_trace_time, session},
+        %{trace: %{session: session, running?: true}} = state
+      ),
+      do: {:noreply, finish(state, :time)}
 
   def handle_info(
         {:DOWN, ref, :process, _pid, _reason},
@@ -195,6 +204,7 @@ defmodule PhoenixDevToolbar.Tracer do
   # Stops tracing, keeps the events for the panel to read.
   defp finish(%{trace: %{running?: true} = trace} = state, why) do
     destroy(trace)
+    drain()
     %{state | trace: %{trace | running?: false, stopped: why}}
   end
 
@@ -205,7 +215,19 @@ defmodule PhoenixDevToolbar.Tracer do
 
   defp clear(%{trace: trace} = state) do
     destroy(trace)
+    drain()
     %{state | trace: nil}
+  end
+
+  # A flood queues more trace messages than the limit before the session is
+  # destroyed: dropped at once, so status calls do not wait behind them.
+  defp drain do
+    receive do
+      {:trace, _pid, _kind, _message} -> drain()
+      {:trace, _pid, _kind, _message, _to} -> drain()
+    after
+      0 -> :ok
+    end
   end
 
   defp destroy(%{session: session, refs: refs, timer: timer, running?: running?}) do

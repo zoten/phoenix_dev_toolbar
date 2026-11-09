@@ -546,6 +546,7 @@ body.pdt {
 .pdt-system__apps summary { cursor: pointer; color: var(--pdt-muted); font-weight: 600; padding: 2px 0; }
 .pdt-system__apps summary:focus-visible { outline: 2px solid var(--pdt-accent); outline-offset: 1px; }
 .pdt-system__desc { min-width: 0; overflow-wrap: anywhere; }
+.pdt-system__message { flex-basis: 100%; margin: 0; font: 11px/1.5 var(--pdt-mono); color: var(--pdt-code); white-space: pre-wrap; overflow-wrap: anywhere; }
 .pdt-system__down code { font: 11px var(--pdt-mono); color: var(--pdt-code); }
 
 /* The reload breaker's notice (ADR 04): the panel stopped trying to connect. */

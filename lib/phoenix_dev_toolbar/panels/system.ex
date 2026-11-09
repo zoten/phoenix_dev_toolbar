@@ -26,6 +26,7 @@ defmodule PhoenixDevToolbar.Panels.System do
   alias PhoenixDevToolbar.ProcessTop
   alias PhoenixDevToolbar.ProcessTree
   alias PhoenixDevToolbar.ProcessView
+  alias PhoenixDevToolbar.Tracer
   alias PhoenixDevToolbar.Truncate
 
   @max_crumbs 20
@@ -41,7 +42,7 @@ defmodule PhoenixDevToolbar.Panels.System do
      |> assign(prev: nil, crumbs: [], error: nil, query: "")
      |> assign(ancestors: [], stacktrace: [], status: nil, status_at: nil)
      |> assign(watched: [], peek: nil, children: nil, apps: nil)
-     |> assign(top: nil, top_by: "memory", top_at: nil)
+     |> assign(top: nil, top_by: "memory", top_at: nil, trace: nil)
      |> ProcessInspector.init()}
   end
 
@@ -115,6 +116,9 @@ defmodule PhoenixDevToolbar.Panels.System do
 
   def handle_event("watch", _params, socket), do: {:noreply, watch(socket)}
 
+  def handle_event("trace", _params, socket), do: {:noreply, start_trace(socket)}
+  def handle_event("trace_stop", _params, socket), do: {:noreply, stop_trace(socket)}
+
   def handle_event("refresh_children", _params, socket), do: {:noreply, load_children(socket)}
 
   def handle_event("top_by", %{"by" => by}, socket) when is_binary(by),
@@ -132,6 +136,7 @@ defmodule PhoenixDevToolbar.Panels.System do
   def handle_event("apps", _params, socket) do
     {:noreply,
      socket
+     |> clear_trace()
      |> cancel_status()
      |> ProcessInspector.cancel_timers()
      |> ProcessInspector.select(nil)
@@ -205,6 +210,7 @@ defmodule PhoenixDevToolbar.Panels.System do
 
   defp show(socket, pid) do
     socket
+    |> clear_trace()
     |> cancel_status()
     |> ProcessInspector.cancel_timers()
     |> ProcessInspector.select(pid)
@@ -281,6 +287,57 @@ defmodule PhoenixDevToolbar.Panels.System do
   defp top_allowed?(nil), do: true
   defp top_allowed?(at), do: System.monotonic_time(:millisecond) - at >= @top_every_ms
 
+  ## Trace (Tracer: one trace on the node, OTP 27+)
+
+  # Like peek it copies the process's messages, and tracing the toolbar or core
+  # processes could loop: the actions policy and the protected set apply (ADR 10).
+  defp start_trace(%{assigns: %{selected: pid}} = socket) when is_pid(pid) do
+    with :ok <- ProcessActions.allowed(pid, ProcessControls.context(socket)),
+         :ok <- Tracer.start(pid, self()) do
+      read_trace(assign(socket, :trace, :starting))
+    else
+      {:error, :busy} ->
+        assign(
+          socket,
+          :trace,
+          {:error, "Another panel is tracing a process: one trace at a time."}
+        )
+
+      {:error, :dead} ->
+        assign(socket, :trace, {:error, "It has exited."})
+
+      {:error, :unavailable} ->
+        assign(socket, :trace, {:error, "The tracer did not answer: try again."})
+
+      {:error, why} when is_binary(why) ->
+        assign(socket, :trace, {:error, why})
+    end
+  end
+
+  defp start_trace(socket), do: socket
+
+  defp stop_trace(%{assigns: %{trace: nil}} = socket), do: socket
+
+  defp stop_trace(socket) do
+    :ok = Tracer.stop(self())
+    read_trace(socket)
+  end
+
+  # Another target: its trace stops and goes, it belonged to the previous one.
+  defp clear_trace(%{assigns: %{trace: nil}} = socket), do: socket
+
+  defp clear_trace(socket) do
+    :ok = Tracer.stop(self())
+    assign(socket, :trace, nil)
+  end
+
+  # On every sample tick while a trace is shown: its events so far. A cleared
+  # trace (the target changed) reads nil.
+  defp read_trace(%{assigns: %{trace: trace}} = socket) when trace == :starting or is_map(trace),
+    do: assign(socket, :trace, Tracer.status(self()))
+
+  defp read_trace(socket), do: socket
+
   ## Watch
 
   # The panel monitors at most @max_watched processes, newest first; each one
@@ -348,6 +405,7 @@ defmodule PhoenixDevToolbar.Panels.System do
         socket
         |> ProcessInspector.read_all()
         |> read_where()
+        |> read_trace()
         |> schedule(:sample)
         |> schedule(:relations)
 
@@ -356,7 +414,7 @@ defmodule PhoenixDevToolbar.Panels.System do
     end
   end
 
-  defp tick(socket, :sample), do: ProcessInspector.read_sample(socket)
+  defp tick(socket, :sample), do: socket |> ProcessInspector.read_sample() |> read_trace()
 
   defp tick(socket, :relations),
     do: socket |> ProcessInspector.read_relations() |> read_where()
@@ -555,7 +613,40 @@ defmodule PhoenixDevToolbar.Panels.System do
         >
           Peek messages
         </button>
+        <button
+          :if={
+            Tracer.available?() and @gate == :ok and
+              not (is_map(@trace) and @trace.running?)
+          }
+          id="pdt-system-trace-start"
+          type="button"
+          class="pdt-button pdt-button--small"
+          phx-click="trace"
+          phx-target={@myself}
+          title={"Record what it receives and sends: #{Tracer.max_events()} messages or 10 s at most"}
+        >
+          Trace messages
+        </button>
+        <span :if={not Tracer.available?() and @gate == :ok} class="pdt-hint">
+          Message trace needs OTP 27.
+        </span>
       </div>
+      <section :if={@trace} id="pdt-system-trace" class="pdt-system__state">
+        <h3 class="pdt-process__title">
+          Message trace
+          <button
+            :if={is_map(@trace) and @trace.running?}
+            id="pdt-system-trace-stop"
+            type="button"
+            class="pdt-button pdt-button--small"
+            phx-click="trace_stop"
+            phx-target={@myself}
+          >
+            Stop
+          </button>
+        </h3>
+        <.trace trace={@trace} target={@myself} />
+      </section>
       <section :if={@peek} id="pdt-system-messages" class="pdt-system__state">
         <h3 class="pdt-process__title">Messages</h3>
         <.peek peek={@peek} />
@@ -720,6 +811,56 @@ defmodule PhoenixDevToolbar.Panels.System do
   defp children_error(:timeout), do: "No answer within 1s: the supervisor is busy."
   defp children_error(:dead), do: "The supervisor exited."
   defp children_error(:not_supervisor), do: "Not a supervisor."
+
+  attr :trace, :any, required: true
+  attr :target, :any, required: true
+
+  defp trace(%{trace: {:error, why}} = assigns) do
+    assigns = assign(assigns, :why, why)
+
+    ~H"""
+    <p id="pdt-system-trace-error" class="pdt-hint">{@why}</p>
+    """
+  end
+
+  defp trace(%{trace: %{}} = assigns) do
+    ~H"""
+    <p id="pdt-system-trace-status" class="pdt-hint" role="status">
+      {length(@trace.events)} of at most {Tracer.max_events()} messages, oldest first, redacted · {trace_state(
+        @trace
+      )}
+    </p>
+    <ol :if={@trace.events != []} id="pdt-system-trace-list" class="pdt-list">
+      <li :for={event <- @trace.events} class="pdt-row pdt-process__relation">
+        <span class="pdt-time">+{event.at_ms} ms</span>
+        <span :if={event.dir == :in} class="pdt-tag" title="Received">in</span>
+        <span :if={event.dir == :out} class="pdt-tag" title="Sent">out</span>
+        <ProcessView.pid_link
+          :if={is_pid(event.peer)}
+          id={inspect(event.peer)}
+          link="inspect"
+          target={@target}
+        />
+        <code :if={is_binary(event.peer)}>{event.peer}</code>
+        <pre class="pdt-system__message">{event.message}</pre>
+      </li>
+    </ol>
+    """
+  end
+
+  defp trace(assigns) do
+    ~H"""
+    <p class="pdt-hint">Starting…</p>
+    """
+  end
+
+  defp trace_state(%{running?: true, left_ms: left}),
+    do: "tracing, stops in #{div(left + 999, 1000)} s"
+
+  defp trace_state(%{stopped: :limit}), do: "stopped at the message limit"
+  defp trace_state(%{stopped: :time}), do: "stopped after 10 s"
+  defp trace_state(%{stopped: :exited}), do: "stopped: the process exited"
+  defp trace_state(%{stopped: :stopped}), do: "stopped"
 
   attr :top, :any, required: true
   attr :target, :any, required: true

@@ -23,8 +23,12 @@ defmodule PhoenixDevToolbar.TracerTest do
     pong()
   end
 
-  # The Tracer has handled every trace message sent before this call.
+  # The Tracer has handled every trace message sent before this call. A DOWN
+  # comes from another sender: the Tracer may get it after a later call, so
+  # the tests that wait on one sync with it first.
   defp status(owner \\ self()), do: Tracer.status(owner)
+
+  defp sync, do: _ = :sys.get_state(Tracer)
 
   setup do
     on_exit(fn -> Tracer.stop(self()) end)
@@ -66,6 +70,7 @@ defmodule PhoenixDevToolbar.TracerTest do
     :ok = Tracer.start(pid, self())
     send(pid, :hello)
     stop(pid)
+    sync()
 
     assert %{running?: false, stopped: :exited, events: [%{message: ":hello"} | _rest]} =
              status()
@@ -94,6 +99,7 @@ defmodule PhoenixDevToolbar.TracerTest do
     :ok = Tracer.start(pid, owner)
 
     stop(owner)
+    sync()
 
     assert status(owner) == nil
     assert Tracer.start(pid, self()) == :ok
