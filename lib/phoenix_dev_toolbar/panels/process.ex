@@ -15,6 +15,7 @@ defmodule PhoenixDevToolbar.Panels.Process do
   alias PhoenixDevToolbar.Panel
   alias PhoenixDevToolbar.Panels.Process, as: ProcessPanel
   alias PhoenixDevToolbar.Plugins
+  alias PhoenixDevToolbar.ProcessControls
   alias PhoenixDevToolbar.ProcessInfo
   alias PhoenixDevToolbar.ProcessInspector
   alias PhoenixDevToolbar.ProcessView
@@ -100,21 +101,13 @@ defmodule PhoenixDevToolbar.Panels.Process do
 
   def handle_event("select", _params, socket), do: {:noreply, socket}
 
-  def handle_event("gc", _params, socket),
-    do: {:noreply, ProcessInspector.gc(socket, ProcessPanel)}
-
-  # Kill (ADR 10): armed by a first click, run by a confirm.
-  def handle_event("arm", params, socket), do: {:noreply, ProcessInspector.arm(socket, params)}
-
-  def handle_event("kill_reason", params, socket),
-    do: {:noreply, ProcessInspector.pick_reason(socket, params)}
-
-  def handle_event("confirm", _params, socket), do: {:noreply, ProcessInspector.confirm(socket)}
-  def handle_event("cancel", _params, socket), do: {:noreply, ProcessInspector.cancel(socket)}
-
   # A process link: the System tab inspects it (it parses the pid again).
   def handle_event("inspect", %{"pid" => pid}, socket) when is_binary(pid),
     do: {:noreply, Panel.navigate(socket, :system, %{"pid" => pid})}
+
+  # GC now and Kill (ADR 09, ADR 10): ProcessControls; anything else is ignored.
+  def handle_event(event, params, socket),
+    do: {:noreply, ProcessControls.handle_event(event, params, socket, ProcessPanel)}
 
   @impl Phoenix.LiveComponent
   def handle_async(:gc, result, socket), do: {:noreply, ProcessInspector.gc_done(socket, result)}
@@ -250,6 +243,12 @@ defmodule PhoenixDevToolbar.Panels.Process do
             </option>
           </select>
         </form>
+        <ProcessView.pid_link
+          :if={length(@targets) > 1 and is_pid(@selected)}
+          id={inspect(@selected)}
+          link={@inspect}
+          target={@myself}
+        />
         <span :if={length(@targets) == 1} id="pdt-process-target-label">
           <strong>{hd(@targets).label}</strong>
           <ProcessView.pid_link id={inspect(hd(@targets).pid)} link={@inspect} target={@myself} />
@@ -258,38 +257,29 @@ defmodule PhoenixDevToolbar.Panels.Process do
           started in <code>{@about.initial_call}</code>
           <span :if={@about.trap_exit}> · traps exits</span>
         </span>
-        <button
+        <ProcessView.gc_control
           :if={is_map(@sample)}
-          id="pdt-process-gc"
-          type="button"
-          class="pdt-button pdt-button--small"
-          phx-click="gc"
-          phx-target={@myself}
-          aria-busy={to_string(@gc == :running)}
-          title="Run a garbage collection on this process: what is left is memory it really holds"
-        >
-          {if(@gc == :running, do: "collecting…", else: "GC now")}
-        </button>
-        <span :if={is_map(@sample)} id="pdt-process-gc-result" class="pdt-hint" role="status">
-          {ProcessView.gc_result(@gc)}<span :if={@gc_note} id="pdt-process-gc-note"> · {@gc_note}</span>
-        </span>
+          prefix="pdt-process"
+          target={@myself}
+          gc={@gc}
+          gc_note={@gc_note}
+        />
       </div>
-      <p :if={@targets != [] and not (@shown? and @visible?)} class="pdt-hint pdt-process__paused">
-        Paused while the panel is hidden.
-      </p>
+      <ProcessView.paused :if={@targets != [] and not (@shown? and @visible?)} />
       <div :if={is_map(@sample)} id="pdt-process-act" class="pdt-snapshot-bar pdt-actions-bar">
         <ProcessView.actions
           prefix="pdt-process"
           target={@myself}
-          gate={ProcessInspector.gate(%{selected: @selected, pdt_actions: @pdt_actions})}
+          gate={@gate}
           confirm={@confirm}
           note={@note}
           kill_reason={@kill_reason}
+          suspended?={@sample.status == :suspended}
           suspend?={false}
         />
       </div>
       <p :if={@sample == :dead} id="pdt-process-dead" class="pdt-empty">
-        This process has exited.
+        This process has exited.<span :if={@note} id="pdt-process-action-note">{elem(@note, 1)}</span>
       </p>
       <ProcessView.vitals
         :if={is_map(@sample)}

@@ -32,9 +32,7 @@ reachable dev port must not freeze or kill the node.
 - **Actions** (`ProcessActions`; the System tab offers all of them, the Process tab
   Kill for its LiveView, which then reconnects and remounts). Kill and suspend wait
   for a confirm click, run at most once a second per tab and are logged with
-  `Logger.warning/1`. The toolbar hands every tab an internal `pdt_actions` assign
-  (the client's address, the panel's pid, its transport and the endpoint) for
-  these checks:
+  `Logger.warning/1`:
   - Kill, with a reason picked from a fixed list: `kill` (`:kill`, untrappable),
     `shutdown`, or `crash` (an exit with a `RuntimeError`, as a crash looks to logs
     and supervisors). A suspended process can still be killed.
@@ -49,11 +47,15 @@ reachable dev port must not freeze or kill the node.
     watch whose `DOWN` was dropped while the tab was disabled is marked on Re-enable.
   - Message peek: the first 10 messages, each redacted and truncated, only while
     `message_queue_len` is under 100; `:messages` is never read above it.
-- **Who may act**: reads, GC and Watch are open to any panel. Kill, suspend and message peek
-  follow the top level `actions:` config: `:loopback` (default, the panel socket's
+- **Who may act**: process info reads, GC and Watch are open to any panel. What acts
+  on a host process or copies its data (kill, suspend, message peek, the state read
+  of ADR 11) follows the top level `actions:` config: `:loopback` (default, the panel socket's
   peer must be a loopback address), `:any` (warned at boot), `false` (no actions).
-  Docker and LAN setups need `actions: :any`; the panel says so in place of the
-  actions when it refuses, as it says why a protected process offers none.
+  Docker and LAN setups need `actions: :any`; the panel says so in place of Kill and
+  Suspend when it refuses (and hides Peek and Read state), as it says why a protected
+  process offers none. With `actions: false` none of them shows, without a hint.
+  The context these checks need (the client's address, the panel's pid, transport
+  and endpoint) is an internal `pdt_actions` assign given to the built-in tabs only.
 - **Not offered**: link/unlink (only creates cascading crashes), sending arbitrary
   messages (needs term parsing: that is eval, ADR 12), forced hibernate.
 
@@ -73,6 +75,7 @@ reachable dev port must not freeze or kill the node.
 - A process suspended while it holds a lock, a checked out Repo connection or a
   `:global` transaction stalls whoever waits on it until the TTL.
 - Message peek reads the queue length, then the queue: a process flooded between
-  the two reads is copied whole into the panel once.
+  the two reads is copied whole into the panel once. Under 100 messages is no bound on
+  their size: large messages are copied whole before truncation.
 - Redaction walks tuples of up to 50 elements: a secret in a bigger tuple (a large
   record) is shown, truncated.

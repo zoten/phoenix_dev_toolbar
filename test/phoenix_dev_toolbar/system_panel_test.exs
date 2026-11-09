@@ -231,8 +231,31 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
       assert has_element?(panel, "#pdt-system-actions-off", "actions: :any")
       refute has_element?(panel, "#pdt-system-kill")
 
-      panel |> element("#pdt-system-peek") |> render_click()
-      assert has_element?(panel, "#pdt-system-messages-error", "actions: :any")
+      # Reading its messages or its state copies the process's data: refused too.
+      refute has_element?(panel, "#pdt-system-peek")
+      refute has_element?(panel, "#pdt-system-status")
+      assert has_element?(panel, "#pdt-system-watch")
+    end
+
+    test "actions: false shows no actions at all, and no hint" do
+      previous = Application.fetch_env(:phoenix_dev_toolbar, :actions)
+      Application.put_env(:phoenix_dev_toolbar, :actions, false)
+
+      on_exit(fn ->
+        case previous do
+          {:ok, value} -> Application.put_env(:phoenix_dev_toolbar, :actions, value)
+          :error -> Application.delete_env(:phoenix_dev_toolbar, :actions)
+        end
+      end)
+
+      agent = start_supervised!({Agent, fn -> :ok end})
+      panel = open()
+      search(panel, inspect(agent))
+
+      refute has_element?(panel, "#pdt-system-kill")
+      refute has_element?(panel, "#pdt-system-actions-off")
+      refute has_element?(panel, "#pdt-system-peek")
+      refute has_element?(panel, "#pdt-system-status")
     end
 
     test "Suspend freezes it until Resume" do
@@ -263,6 +286,9 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
       assert has_element?(panel, "#pdt-system-watched-0", "alive")
 
       stop(pid)
+      # The DOWN reaches the panel, which then updates the tab with a message of
+      # its own: one render lets that one through too.
+      _ = render(panel)
 
       assert has_element?(panel, "#pdt-system-watched-0", "exited at")
       assert has_element?(panel, "#pdt-system-watched-0 code", ":normal")
@@ -289,10 +315,15 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
       panel |> element("#pdt-system-watch") |> render_click()
 
       stop(pid)
+      # The DOWN reaches the panel, which then updates the tab with a message of
+      # its own: one render lets that one through too.
+      _ = render(panel)
 
       assert has_element?(panel, "#pdt-system-watched-0", "exited at")
       assert has_element?(panel, "#strict")
       refute has_element?(panel, "#pdt-disabled-strict")
+      # The actions' context (client address, panel pids) is for built-in tabs only.
+      assert has_element?(panel, "#strict[data-internal=false]")
     end
 
     test "Forget drops a watch; at ten, Watch is off" do

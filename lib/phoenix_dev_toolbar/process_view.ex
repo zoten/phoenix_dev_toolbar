@@ -8,6 +8,8 @@ defmodule PhoenixDevToolbar.ProcessView do
 
   import PhoenixDevToolbar.Components, only: [sparkline: 1, bytes: 1]
 
+  alias PhoenixDevToolbar.ProcessControls
+
   attr :prefix, :string, required: true
   attr :sample, :map, required: true, doc: "a ProcessInfo.sample/1 with its reductions_per_second"
   attr :series, :map, required: true, doc: "newest first: memory, queue and reductions points"
@@ -179,7 +181,7 @@ defmodule PhoenixDevToolbar.ProcessView do
 
   attr :prefix, :string, required: true
   attr :target, :any, required: true, doc: "the events' phx-target"
-  attr :gate, :any, required: true, doc: "ProcessActions.allowed/2 for the target"
+  attr :gate, :any, required: true, doc: "ProcessControls' gate: :ok, {:error, why}, :off or nil"
   attr :confirm, :any, default: nil, doc: "the action waiting for a confirm click"
   attr :note, :any, default: nil, doc: "{:ok | :error, text}: what the last action did"
   attr :suspended?, :boolean, default: false
@@ -195,6 +197,7 @@ defmodule PhoenixDevToolbar.ProcessView do
     ~H"""
     <div id={"#{@prefix}-actions"} class="pdt-actions">
       <%= case @gate do %>
+        <% gate when gate in [nil, :off] -> %>
         <% {:error, why} -> %>
           <p id={"#{@prefix}-actions-off"} class="pdt-hint">{why}</p>
         <% :ok -> %>
@@ -247,14 +250,14 @@ defmodule PhoenixDevToolbar.ProcessView do
               phx-click="arm"
               phx-value-action="suspend"
               phx-target={@target}
-              title="Freeze it for 10 seconds: it resumes by itself"
+              title={"Freeze it for #{ProcessControls.suspend_seconds()} seconds: it resumes by itself"}
             >
-              Suspend 10 s
+              Suspend {ProcessControls.suspend_seconds()} s
             </button>
           <% end %>
       <% end %>
       <button
-        :if={@suspend? and @suspended?}
+        :if={@suspended?}
         id={"#{@prefix}-resume"}
         type="button"
         class="pdt-button pdt-button--small"
@@ -276,7 +279,7 @@ defmodule PhoenixDevToolbar.ProcessView do
   end
 
   defp confirm_text({:kill, reason}), do: "Kill it (#{reason})?"
-  defp confirm_text(:suspend), do: "Suspend it for 10 s?"
+  defp confirm_text(:suspend), do: "Suspend it for #{ProcessControls.suspend_seconds()} s?"
 
   attr :id, :string, required: true, doc: "the pid as inspected, or another id"
   attr :link, :any, default: nil, doc: "the event to send with phx-value-pid, or nil/false"
@@ -301,6 +304,38 @@ defmodule PhoenixDevToolbar.ProcessView do
   def pid_link(assigns), do: ~H"<code>{@id}</code>"
 
   defp words(words), do: bytes(words * :erlang.system_info(:wordsize))
+
+  attr :prefix, :string, required: true
+  attr :target, :any, required: true
+  attr :gc, :any, required: true, doc: "ProcessInspector's gc state"
+  attr :gc_note, :string, default: nil
+
+  @doc "GC now and what it did (ADR 09): sends `gc`."
+  def gc_control(assigns) do
+    ~H"""
+    <button
+      id={"#{@prefix}-gc"}
+      type="button"
+      class="pdt-button pdt-button--small"
+      phx-click="gc"
+      phx-target={@target}
+      aria-busy={to_string(@gc == :running)}
+      title="Run a garbage collection on this process: what is left is memory it really holds"
+    >
+      {if(@gc == :running, do: "collecting…", else: "GC now")}
+    </button>
+    <span id={"#{@prefix}-gc-result"} class="pdt-hint" role="status">
+      {gc_result(@gc)}<span :if={@gc_note} id={"#{@prefix}-gc-note"}> · {@gc_note}</span>
+    </span>
+    """
+  end
+
+  @doc "The line a polling tab shows while the panel is hidden."
+  def paused(assigns) do
+    ~H"""
+    <p class="pdt-hint pdt-process__paused">Paused while the panel is hidden.</p>
+    """
+  end
 
   @doc "What a GC now did, for the line next to its button."
   @spec gc_result(term()) :: String.t()

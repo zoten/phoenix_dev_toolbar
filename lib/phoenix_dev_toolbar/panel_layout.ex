@@ -202,7 +202,7 @@ defmodule PhoenixDevToolbar.PanelLayout do
           page={@page}
           shown?={@tab == tab.id}
           visible?={@visible?}
-          pdt_actions={@pdt_actions}
+          {internal_assigns(tab, @pdt_actions)}
         />
       </section>
     </div>
@@ -223,4 +223,13 @@ defmodule PhoenixDevToolbar.PanelLayout do
   # Why a tab is disabled: its collector, its summary or its component raised.
   defp tab_error(quarantined, shell, panel_errors, tab_id),
     do: quarantined[tab_id] || Shell.broken(shell)[tab_id] || panel_errors[tab_id]
+
+  # What only the built-in tabs get (ADR 10): the actions' context holds the
+  # client's address and the panel's own processes, nothing a plugin needs.
+  defp internal_assigns(%{panel: panel}, pdt_actions) do
+    case Atom.to_string(panel) do
+      "Elixir.PhoenixDevToolbar.Panels." <> _builtin -> [pdt_actions: pdt_actions]
+      _plugin -> []
+    end
+  end
 end

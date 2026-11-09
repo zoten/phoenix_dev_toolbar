@@ -1,13 +1,13 @@
 defmodule PhoenixDevToolbar.ClientPolicy do
   @moduledoc false
-  # Who may run destructive actions (kill, suspend, message peek: ADR 10), from
-  # the top level `actions:` config:
+  # Who may act on host processes or copy their data (kill, suspend, message
+  # peek, state read: ADR 10), from the top level `actions:` config:
   #
   #   * `:loopback` (default): only a panel whose socket peer is a loopback address
   #   * `:any`: any panel the endpoint lets in (warned at boot)
   #   * `false`: nobody
   #
-  # Reads and GC never ask here. A browser outside the container (Docker) or on
+  # Process info reads, GC and Watch never ask here. A browser outside the container (Docker) or on
   # the LAN is not loopback: such setups set `actions: :any`.
 
   import Bitwise

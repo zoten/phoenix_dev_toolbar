@@ -38,12 +38,12 @@ defmodule PhoenixDevToolbar.ProcessActions do
         :ok
 
       {:error, :disabled} ->
-        {:error, "Actions are off: `actions: false` in the toolbar config."}
+        {:error, "Actions are off: actions: false in the toolbar config."}
 
       {:error, :not_loopback} ->
         {:error,
          "Actions only run for a browser on this machine. From Docker or the LAN, set " <>
-           "`actions: :any` in config/dev.exs (anyone who reaches the dev server can then use them)."}
+           "actions: :any in config/dev.exs (anyone who reaches the dev server can then use them)."}
     end
   end
 

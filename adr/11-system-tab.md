@@ -30,7 +30,8 @@ polling (`ProcessInspector`), its rendering (`ProcessView`) and their options
   polled only while shown and visible, plus, with the relations: who started it
   (`$ancestors`, else `:parent` on OTP 25+, 20 at most, each a link) and its current
   stacktrace (as deep as `backtrace_depth`, 20 frames at most).
-- **State**: for processes started through `proc_lib`, a "Read state" button runs
+- **State**: for processes started through `proc_lib`, and only for clients the
+  `actions:` policy allows (it copies the process's data, ADR 10), a "Read state" button runs
   `:sys.get_status/2` in `start_async/3`: 1 s timeout, once a second at most. Only a
   process waiting for its next message at a `gen` receive point (gen_server,
   gen_statem, gen_event, supervisors, LiveViews) or hibernated is asked; a Task

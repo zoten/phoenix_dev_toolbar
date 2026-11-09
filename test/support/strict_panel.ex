@@ -16,7 +16,7 @@ defmodule PhoenixDevToolbar.TestPlugins.StrictPanel do
   @impl Phoenix.LiveComponent
   def render(assigns) do
     ~H"""
-    <div id="strict">strict</div>
+    <div id="strict" data-internal={to_string(Map.has_key?(assigns, :pdt_actions))}>strict</div>
     """
   end
 end

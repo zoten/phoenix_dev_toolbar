@@ -17,6 +17,7 @@ defmodule PhoenixDevToolbar.Panels.System do
   alias PhoenixDevToolbar.Panel
   alias PhoenixDevToolbar.Panels.System, as: SystemPanel
   alias PhoenixDevToolbar.ProcessActions
+  alias PhoenixDevToolbar.ProcessControls
   alias PhoenixDevToolbar.ProcessInfo
   alias PhoenixDevToolbar.ProcessInspector
   alias PhoenixDevToolbar.ProcessRef
@@ -106,20 +107,7 @@ defmodule PhoenixDevToolbar.Panels.System do
     end
   end
 
-  def handle_event("gc", _params, socket),
-    do: {:noreply, ProcessInspector.gc(socket, SystemPanel)}
-
   def handle_event("status", _params, socket), do: {:noreply, read_status(socket)}
-
-  # Kill and suspend (ADR 10): armed by a first click, run by a confirm.
-  def handle_event("arm", params, socket), do: {:noreply, ProcessInspector.arm(socket, params)}
-
-  def handle_event("kill_reason", params, socket),
-    do: {:noreply, ProcessInspector.pick_reason(socket, params)}
-
-  def handle_event("confirm", _params, socket), do: {:noreply, ProcessInspector.confirm(socket)}
-  def handle_event("cancel", _params, socket), do: {:noreply, ProcessInspector.cancel(socket)}
-  def handle_event("resume", _params, socket), do: {:noreply, ProcessInspector.resume(socket)}
 
   def handle_event("watch", _params, socket), do: {:noreply, watch(socket)}
 
@@ -141,10 +129,12 @@ defmodule PhoenixDevToolbar.Panels.System do
 
   def handle_event("peek", _params, %{assigns: %{selected: pid}} = socket) when is_pid(pid),
     do:
-      {:noreply,
-       assign(socket, :peek, ProcessActions.peek(pid, ProcessInspector.context(socket)))}
+      {:noreply, assign(socket, :peek, ProcessActions.peek(pid, ProcessControls.context(socket)))}
 
-  def handle_event(_event, _params, socket), do: {:noreply, socket}
+  # GC now, Kill, Suspend, Resume (ADR 09, ADR 10): ProcessControls; anything
+  # else is ignored.
+  def handle_event(event, params, socket),
+    do: {:noreply, ProcessControls.handle_event(event, params, socket, SystemPanel)}
 
   @impl Phoenix.LiveComponent
   def handle_async(:gc, result, socket), do: {:noreply, ProcessInspector.gc_done(socket, result)}
@@ -277,7 +267,7 @@ defmodule PhoenixDevToolbar.Panels.System do
   defp unwatch(socket, _index), do: socket
 
   defp down(%{ref: ref, down: nil} = watch, ref, reason) do
-    at = Time.utc_now() |> Time.truncate(:second) |> Time.to_string()
+    at = (Time.utc_now() |> Time.truncate(:second) |> Time.to_string()) <> " UTC"
 
     %{
       watch
@@ -344,15 +334,19 @@ defmodule PhoenixDevToolbar.Panels.System do
 
   # Runs code in the target (`:sys`): on a click only, in a task, at most once a
   # second, and only for processes that answer system messages.
+  # It copies the process's data: like message peek, it follows `actions:` (ADR 10).
   defp read_status(%{assigns: %{selected: pid, status: status, status_at: at}} = socket)
        when is_pid(pid) and status != :running do
-    case status_allowed?(at) do
-      true ->
+    cond do
+      not ProcessControls.client?(socket) ->
+        assign(socket, :status, {:error, :policy})
+
+      status_allowed?(at) ->
         socket
         |> assign(status: :running, status_at: System.monotonic_time(:millisecond))
         |> start_async(:status, fn -> {pid, ProcessInfo.status(pid, @status_timeout_ms)} end)
 
-      false ->
+      true ->
         assign(socket, :status, {:error, :too_soon})
     end
   end
@@ -441,25 +435,15 @@ defmodule PhoenixDevToolbar.Panels.System do
           started in <code>{@about.initial_call}</code>
           <span :if={@about.trap_exit}> · traps exits</span>
         </span>
-        <button
+        <ProcessView.gc_control
           :if={is_map(@sample)}
-          id="pdt-system-gc"
-          type="button"
-          class="pdt-button pdt-button--small"
-          phx-click="gc"
-          phx-target={@myself}
-          aria-busy={to_string(@gc == :running)}
-          title="Run a garbage collection on this process: what is left is memory it really holds"
-        >
-          {if(@gc == :running, do: "collecting…", else: "GC now")}
-        </button>
-        <span :if={is_map(@sample)} id="pdt-system-gc-result" class="pdt-hint" role="status">
-          {ProcessView.gc_result(@gc)}<span :if={@gc_note}> · {@gc_note}</span>
-        </span>
+          prefix="pdt-system"
+          target={@myself}
+          gc={@gc}
+          gc_note={@gc_note}
+        />
       </div>
-      <p :if={is_pid(@selected) and not (@shown? and @visible?)} class="pdt-hint pdt-process__paused">
-        Paused while the panel is hidden.
-      </p>
+      <ProcessView.paused :if={is_pid(@selected) and not (@shown? and @visible?)} />
       <p :if={@sample == :dead} id="pdt-system-dead" class="pdt-empty">
         This process has exited.<span :if={@note} id="pdt-system-action-note">{elem(@note, 1)}</span>
       </p>
@@ -467,7 +451,7 @@ defmodule PhoenixDevToolbar.Panels.System do
         <ProcessView.actions
           prefix="pdt-system"
           target={@myself}
-          gate={ProcessInspector.gate(%{selected: @selected, pdt_actions: @pdt_actions})}
+          gate={@gate}
           confirm={@confirm}
           note={@note}
           kill_reason={@kill_reason}
@@ -479,12 +463,13 @@ defmodule PhoenixDevToolbar.Panels.System do
           class="pdt-button pdt-button--small"
           phx-click="watch"
           phx-target={@myself}
-          disabled={Enum.any?(@watched, &(&1.pid == @selected)) or length(@watched) >= 10}
+          disabled={Enum.any?(@watched, &(&1.pid == @selected)) or length(@watched) >= max_watched()}
           title={watch_title(@watched, @selected)}
         >
           Watch
         </button>
         <button
+          :if={ProcessControls.client?(%{pdt_actions: @pdt_actions})}
           id="pdt-system-peek"
           type="button"
           class="pdt-button pdt-button--small"
@@ -546,7 +531,10 @@ defmodule PhoenixDevToolbar.Panels.System do
         <.children children={@children} target={@myself} />
       </section>
       <section
-        :if={(is_map(@sample) and @about) && @about.otp?}
+        :if={
+          (is_map(@sample) and @about) && @about.otp? &&
+            ProcessControls.client?(%{pdt_actions: @pdt_actions})
+        }
         id="pdt-system-state"
         class="pdt-system__state"
       >
@@ -734,6 +722,8 @@ defmodule PhoenixDevToolbar.Panels.System do
     """
   end
 
+  defp max_watched, do: @max_watched
+
   defp watch_title(watched, pid) do
     cond do
       Enum.any?(watched, &(&1.pid == pid)) -> "Watched already"
@@ -798,4 +788,7 @@ defmodule PhoenixDevToolbar.Panels.System do
   defp status_error(:failed), do: "The process failed to report its state."
   defp status_error(:suspended), do: "Suspended: it answers nothing until resumed."
   defp status_error(:too_soon), do: "One read a second: try again."
+
+  defp status_error(:policy),
+    do: "Reading state follows the actions setting: not from this browser."
 end

@@ -74,8 +74,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Panel.navigate/3`: switch to another tab with params (ADR 10)
 - System tab: any process by pid or name, breadcrumbs, ancestors, stacktrace, state (ADR 11)
 - Process tab: every process is a link to the System tab (ADR 09)
-- System tab review fixes: no :sys to Tasks blocked in a call, plain pids without System (ADR 11)
 - Process actions: kill (with reason), suspend 10 s with auto resume, watch, message peek (ADR 10)
 - Redaction walks tuples, so queued messages and results are redacted too (ADR 10)
-- Actions review fixes: kill reason select, DOWN routed to the watching tab only (ADR 10)
 - System tab trees: a supervisor's children, the application list with top supervisors (ADR 11)

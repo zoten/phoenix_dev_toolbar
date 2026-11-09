@@ -139,7 +139,9 @@ defmodule PhoenixDevToolbar.PanelLive do
   end
 
   # Monitors a tab set with Panel.monitor/3 (it runs in this process): the DOWN
-  # goes to that tab only, never to tabs that did not ask (plugins).
+  # goes to that tab only, never to tabs that did not ask (plugins). A route
+  # whose DOWN came before it was registered stays until Panel.demonitor/1;
+  # the tab's own caps bound how many there can be.
   def handle_info({:pdt_monitor, ref, module, id}, socket),
     do: {:noreply, update(socket, :monitors, &Map.put(&1, ref, {module, id}))}
 

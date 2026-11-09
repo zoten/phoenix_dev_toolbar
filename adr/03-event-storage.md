@@ -76,8 +76,10 @@ serialize every query of the app behind one mailbox.
   these limits, including plug options and thrown or exited reasons.
   Keys whose name contains an entry of `config :phoenix_dev_toolbar, redact: [...]`
   (default `["password", "token", "secret"]`, case insensitive) become `"[REDACTED]"`;
-  redaction is bounded in depth (6) and width: only the first 50 items of a list and
-  the first 50 entries of a map (iteration order) are walked.
+  redaction is bounded in depth (6) and width: only the first 50 items of a list, the
+  first 50 entries of a map (iteration order) and tuples of up to 50 elements are
+  walked (tuples too since the BEAM tools: queued messages and results are tuples; it
+  runs in collectors in host processes, at the same bounded cost as lists).
 - LiveView assigns and params can be huge (preloaded lists), so they go through
   `Truncate.preview/3` instead: at most 200 nodes and 20 items per container are walked,
   whatever is not walked becomes `"…"` (so a sensitive key past the budget is cut, never

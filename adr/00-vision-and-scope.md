@@ -26,11 +26,16 @@ and bounded.
   with total/queue/query/decode times, source, stacktrace origin, N+1 detection
   and an `EXPLAIN` action
 - **BEAM**: LiveView process memory, message queue length, GC stats, reductions,
-  linked/monitored processes, client to server socket RTT
+  linked/monitored processes, client to server socket RTT. Beyond the page, the
+  System tab inspects, walks (links, ancestors, supervision and application trees)
+  and acts on (kill, suspend, watch) any local process: the debugging a developer
+  would otherwise do from a remote shell or observer, next to the page that
+  prompted it (ADR 10, ADR 11)
 - **Extensibility**: every panel, including built-ins, is a `PhoenixDevToolbar.Plugin`
 
-Non-goals: production monitoring, historical storage across restarts, cluster
-wide views (that is LiveDashboard's job), non-Phoenix Plug apps.
+Non-goals: production monitoring, metrics over time and historical storage across
+restarts (that is LiveDashboard's job), non-Phoenix Plug apps. Cluster views are
+left to opt-in plugins (ADR 12).
 
 Supported versions: Elixir 1.17+, Phoenix 1.8+, LiveView 1.1+. License: MIT.
 
