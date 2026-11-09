@@ -1,14 +1,20 @@
 defmodule PhoenixDevToolbar.ProcessInfo do
   @moduledoc false
-  # Reads a host process for the Process tab (ADR 09), with `Process.info/2`
-  # and explicit key lists. The read is a signal the target answers: a target
-  # busy in a long NIF delays the panel, never the reverse. It never
-  # reads `:messages`, `:binary` or the whole `:dictionary`, which copy
-  # unbounded data (the dictionary holds assigns sized terms); only two
-  # dictionary keys are read, one at a time. Every read of a dead process is
-  # nil or :dead, never a raise.
+  # Reads a host process for the Process and System tabs (ADR 09, ADR 11), with
+  # `Process.info/2` and explicit key lists. The read is a signal the target
+  # answers: a target busy in a long NIF delays the panel, never the reverse.
+  # It never reads `:messages`, `:binary` or the whole `:dictionary`, which copy
+  # unbounded data (the dictionary holds assigns sized terms); only
+  # `$initial_call`, `$callers` and `$ancestors` are read, one key at a time.
+  # Every read of a dead process is nil, [] or :dead, never a raise. The one
+  # exception to "read only" is status/2 (`:sys`), on demand.
+
+  alias PhoenixDevToolbar.Truncate
 
   @max_relations 50
+  # Ancestors and stack frames shown at most.
+  @max_ancestors 20
+  @max_frames 20
 
   @sample_keys [
     :memory,
@@ -120,9 +126,22 @@ defmodule PhoenixDevToolbar.ProcessInfo do
 
   def reductions_per_second(_previous, _sample), do: 0
 
-  @doc "What the process is: its starting call, registered name, trap_exit."
-  @spec about(pid()) ::
-          %{initial_call: String.t(), name: String.t() | nil, trap_exit: boolean()} | nil
+  @type about :: %{
+          initial_call: String.t(),
+          name: String.t() | nil,
+          trap_exit: boolean(),
+          otp?: boolean()
+        }
+
+  @type ancestor :: %{id: String.t(), name: String.t(), pid: pid() | nil}
+
+  @type status :: %{module: String.t(), sys_state: String.t(), state: String.t()}
+
+  @doc """
+  What the process is: its starting call, registered name, trap_exit, and
+  whether it was started through `proc_lib` (`otp?/1`).
+  """
+  @spec about(pid()) :: about() | nil
   def about(pid) when is_pid(pid) do
     case Process.info(pid, [:initial_call, :registered_name, :trap_exit, :current_function]) do
       nil ->
@@ -132,7 +151,8 @@ defmodule PhoenixDevToolbar.ProcessInfo do
         %{
           initial_call: initial_call(pid, info[:initial_call], info[:current_function]),
           name: registered(info[:registered_name]),
-          trap_exit: info[:trap_exit]
+          trap_exit: info[:trap_exit],
+          otp?: otp?(pid)
         }
     end
   end
@@ -160,6 +180,122 @@ defmodule PhoenixDevToolbar.ProcessInfo do
           more: %{links: more_links, monitors: more_monitors, monitored_by: more_monitored_by}
         }
     end
+  end
+
+  @doc """
+  Who started the process, nearest first: its `$ancestors` (set by `proc_lib`,
+  registered names resolved to their pid), else its `:parent` (OTP 25+). At
+  most #{@max_ancestors}. `pid` is nil for a name no longer registered.
+  """
+  @spec ancestors(pid()) :: [ancestor()]
+  def ancestors(pid) when is_pid(pid) and node(pid) == node() do
+    case dictionary(pid, :"$ancestors") do
+      [_ | _] = ancestors -> ancestors |> Enum.take(@max_ancestors) |> Enum.map(&ancestor/1)
+      _missing -> parent(pid)
+    end
+  end
+
+  def ancestors(pid) when is_pid(pid), do: []
+
+  defp ancestor(pid) when is_pid(pid), do: %{id: inspect(pid), name: name(pid), pid: pid}
+
+  defp ancestor(name) when is_atom(name),
+    do: %{id: inspect(name), name: inspect(name), pid: Process.whereis(name)}
+
+  defp ancestor(other), do: %{id: inspect(other, limit: 5), name: "", pid: nil}
+
+  # `:parent` needs OTP 25: older ones raise on the unknown item.
+  defp parent(pid) do
+    case Process.info(pid, :parent) do
+      {:parent, parent} when is_pid(parent) -> [ancestor(parent)]
+      _none -> []
+    end
+  rescue
+    ArgumentError -> []
+  end
+
+  @doc """
+  Where the process is now: its current stacktrace, formatted, at most
+  #{@max_frames} frames. Toolbar frames are kept: here they are the truth.
+  """
+  @spec stacktrace(pid()) :: [String.t()]
+  def stacktrace(pid) when is_pid(pid) and node(pid) == node() do
+    case Process.info(pid, :current_stacktrace) do
+      {:current_stacktrace, frames} ->
+        frames |> Enum.take(@max_frames) |> Enum.map(&Exception.format_stacktrace_entry/1)
+
+      nil ->
+        []
+    end
+  end
+
+  def stacktrace(pid) when is_pid(pid), do: []
+
+  @doc """
+  Whether the process was started through `proc_lib` (GenServer, Agent, Task,
+  supervisors...): its dictionary holds `$initial_call` and `$ancestors`. Only
+  those answer system messages (`:sys`). False on an OTP before 26.2, which
+  cannot read single dictionary keys.
+  """
+  @spec otp?(pid()) :: boolean()
+  def otp?(pid) when is_pid(pid) and node(pid) == node() do
+    match?({_m, _f, _a}, dictionary(pid, :"$initial_call")) and
+      is_list(dictionary(pid, :"$ancestors"))
+  end
+
+  def otp?(pid) when is_pid(pid), do: false
+
+  @doc """
+  The process's state through `:sys.get_status/2` (so its own `format_status`
+  applies): its callback module, its sys status (`:running`, `:suspended`) and
+  its state, redacted and bounded like assigns. The process dictionary in the
+  status is left out. Runs code in the target: call it on demand from a task,
+  never polled.
+
+  A process not started through `proc_lib` is refused before anything is sent:
+  it would never answer, and the system message would stay in its mailbox.
+  """
+  @spec status(pid(), timeout()) :: {:ok, status()} | {:error, :not_otp | :timeout | :dead}
+  def status(pid, timeout) when is_pid(pid) and node(pid) == node() do
+    case {Process.alive?(pid), otp?(pid)} do
+      {false, _otp?} -> {:error, :dead}
+      {true, false} -> {:error, :not_otp}
+      {true, true} -> get_status(pid, timeout)
+    end
+  end
+
+  def status(pid, _timeout) when is_pid(pid), do: {:error, :not_otp}
+
+  defp get_status(pid, timeout) do
+    {:ok, pid |> :sys.get_status(timeout) |> present()}
+  catch
+    :exit, {:timeout, _call} -> {:error, :timeout}
+    :exit, _reason -> {:error, :dead}
+  end
+
+  # `{:status, pid, {:module, module}, [pdict, sys_state, parent, debug, misc]}`.
+  # The state is redacted on its own: redaction is depth bounded, and inside the
+  # status tuple it would sit too deep to reach.
+  defp present({:status, _pid, {:module, module}, [_pdict, sys_state, _parent, _debug, misc]}),
+    do: %{module: inspect(module), sys_state: inspect(sys_state), state: state(misc)}
+
+  defp present(other), do: %{module: "unknown", sys_state: "unknown", state: state(other)}
+
+  # gen_server, gen_statem, supervisors and their kin put the state under
+  # `{:data, [{~c"State", state}]}` in `misc`; anything else is shown whole.
+  defp state(misc) do
+    misc
+    |> List.wrap()
+    |> Enum.find_value(misc, fn
+      {:data, [{~c"State", state}]} -> {:state, state}
+      _other -> nil
+    end)
+    |> case do
+      {:state, state} -> state
+      whole -> whole
+    end
+    |> Truncate.redact()
+    |> Truncate.inspect_value()
   end
 
   @doc """

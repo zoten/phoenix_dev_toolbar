@@ -1,6 +1,8 @@
 defmodule PhoenixDevToolbar.ProcessInfoTest do
   use ExUnit.Case, async: true
 
+  import PhoenixDevToolbar.ProcessHelpers
+
   alias PhoenixDevToolbar.ProcessInfo
 
   defp idle, do: receive(do: (:stop -> :ok))
@@ -155,5 +157,69 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
     assert ProcessInfo.sample(pid) == :dead
     assert ProcessInfo.about(pid) == nil
     assert ProcessInfo.relations(pid) == nil
+  end
+
+  describe "ancestors/1" do
+    test "a proc_lib process lists who started it, nearest first, as links" do
+      agent = start_supervised!({Agent, fn -> :ok end})
+      [nearest | _rest] = ProcessInfo.ancestors(agent)
+
+      # start_supervised!/1 starts it under the test's supervisor.
+      assert [{:links, [supervisor | _links]}] = Process.info(agent, [:links])
+      assert %{pid: ^supervisor, id: id} = nearest
+      assert id == inspect(supervisor)
+    end
+
+    test "a plain process falls back to its parent" do
+      test = self()
+      {pid, :ok} = in_process(fn -> :ok end)
+
+      assert [%{pid: ^test}] = ProcessInfo.ancestors(pid)
+    end
+  end
+
+  test "stacktrace/1 tells where the process waits, at most 20 frames" do
+    frames = ProcessInfo.stacktrace(idle_process())
+
+    assert frames != []
+    assert length(frames) <= 20
+    assert Enum.all?(frames, &is_binary/1)
+  end
+
+  test "otp?/1 tells proc_lib processes from plain ones" do
+    assert ProcessInfo.otp?(start_supervised!({Agent, fn -> :ok end}))
+    refute ProcessInfo.otp?(idle_process())
+  end
+
+  describe "status/2" do
+    test "reads an OTP process's state, redacted" do
+      agent = start_supervised!({Agent, fn -> %{name: "Ada", password: "hunter2"} end})
+
+      assert {:ok, %{module: ":gen_server", sys_state: ":running", state: state}} =
+               ProcessInfo.status(agent, 1000)
+
+      assert state =~ "Ada"
+      assert state =~ "[REDACTED]"
+      refute state =~ "hunter2"
+    end
+
+    test "never sends a system message to a plain process" do
+      pid = idle_process()
+
+      assert ProcessInfo.status(pid, 1000) == {:error, :not_otp}
+      assert Process.info(pid, :message_queue_len) == {:message_queue_len, 0}
+    end
+
+    test "a busy process times out, a dead one is dead" do
+      agent = start_supervised!({Agent, fn -> :ok end})
+      Agent.cast(agent, fn state -> receive(do: (:release -> state)) end)
+
+      assert ProcessInfo.status(agent, 50) == {:error, :timeout}
+
+      send(agent, :release)
+      _ = Agent.get(agent, & &1)
+      stop_supervised!(Agent)
+      assert ProcessInfo.status(agent, 50) == {:error, :dead}
+    end
   end
 end
