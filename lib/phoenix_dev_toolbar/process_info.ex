@@ -45,6 +45,7 @@ defmodule PhoenixDevToolbar.ProcessInfo do
 
   @type relation :: %{
           toolbar?: boolean(),
+          link?: boolean(),
           id: String.t(),
           kind: :process | :port | :other,
           name: String.t(),
@@ -215,8 +216,9 @@ defmodule PhoenixDevToolbar.ProcessInfo do
   end
 
   @doc """
-  Where the process is now: its current stacktrace, formatted, at most
-  #{@max_frames} frames. Toolbar frames are kept: here they are the truth.
+  Where the process is now: its current stacktrace, formatted. As deep as the
+  VM's `backtrace_depth` (8 by default), capped at #{@max_frames}. Toolbar frames
+  are kept: here they are the truth.
   """
   @spec stacktrace(pid()) :: [String.t()]
   def stacktrace(pid) when is_pid(pid) and node(pid) == node() do
@@ -233,9 +235,9 @@ defmodule PhoenixDevToolbar.ProcessInfo do
 
   @doc """
   Whether the process was started through `proc_lib` (GenServer, Agent, Task,
-  supervisors...): its dictionary holds `$initial_call` and `$ancestors`. Only
-  those answer system messages (`:sys`). False on an OTP before 26.2, which
-  cannot read single dictionary keys.
+  supervisors...): its dictionary holds `$initial_call` and `$ancestors`. Not all
+  of them answer system messages: a Task does not (see `status/2`). False on an
+  OTP before 26.2, which cannot read single dictionary keys.
   """
   @spec otp?(pid()) :: boolean()
   def otp?(pid) when is_pid(pid) and node(pid) == node() do
@@ -252,25 +254,46 @@ defmodule PhoenixDevToolbar.ProcessInfo do
   status is left out. Runs code in the target: call it on demand from a task,
   never polled.
 
-  A process not started through `proc_lib` is refused before anything is sent:
-  it would never answer, and the system message would stay in its mailbox.
+  Only a process waiting in a `gen` behaviour's loop (gen_server, gen_statem,
+  gen_event, supervisors, LiveViews), or hibernated, is asked. Anything else is
+  refused before a message is sent: a Task or a plain process never answers,
+  and the system message would stay in its mailbox for good. A server busy in a
+  callback is refused too (`:busy`): try again.
   """
-  @spec status(pid(), timeout()) :: {:ok, status()} | {:error, :not_otp | :timeout | :dead}
+  @spec status(pid(), timeout()) ::
+          {:ok, status()} | {:error, :not_otp | :busy | :timeout | :dead | :failed}
   def status(pid, timeout) when is_pid(pid) and node(pid) == node() do
-    case {Process.alive?(pid), otp?(pid)} do
-      {false, _otp?} -> {:error, :dead}
-      {true, false} -> {:error, :not_otp}
-      {true, true} -> get_status(pid, timeout)
+    case answers_sys(pid) do
+      :yes -> get_status(pid, timeout)
+      other -> {:error, other}
     end
   end
 
   def status(pid, _timeout) when is_pid(pid), do: {:error, :not_otp}
 
+  @sys_loops [:gen_server, :gen_statem, :gen_event, :gen, :sys]
+
+  # Whether a system message sent now gets an answer: the process waits in a
+  # `gen` loop (or in `:sys`, already answering one), or hibernates (a server
+  # hibernates in :erlang.hibernate/3; only proc_lib processes are considered).
+  defp answers_sys(pid) do
+    case {otp?(pid), Process.info(pid, :current_function)} do
+      {_otp?, nil} -> :dead
+      {false, _function} -> :not_otp
+      {true, {:current_function, {module, _f, _a}}} when module in @sys_loops -> :yes
+      {true, {:current_function, {:erlang, :hibernate, 3}}} -> :yes
+      {true, _elsewhere} -> :busy
+    end
+  end
+
   defp get_status(pid, timeout) do
     {:ok, pid |> :sys.get_status(timeout) |> present()}
+  rescue
+    _error -> {:error, :failed}
   catch
     :exit, {:timeout, _call} -> {:error, :timeout}
-    :exit, _reason -> {:error, :dead}
+    :exit, {reason, _call} when reason in [:noproc, :normal, :shutdown] -> {:error, :dead}
+    :exit, _reason -> {:error, :failed}
   end
 
   # `{:status, pid, {:module, module}, [pdict, sys_state, parent, debug, misc]}`.
@@ -282,21 +305,17 @@ defmodule PhoenixDevToolbar.ProcessInfo do
   defp present(other), do: %{module: "unknown", sys_state: "unknown", state: state(other)}
 
   # gen_server, gen_statem, supervisors and their kin put the state under
-  # `{:data, [{~c"State", state}]}` in `misc`; anything else is shown whole.
+  # `{:data, [{~c"State", state}]}` in `misc`. Anything else is not shown: a
+  # custom shape could hold secrets deeper than redaction reaches.
   defp state(misc) do
-    misc
-    |> List.wrap()
-    |> Enum.find_value(misc, fn
-      {:data, [{~c"State", state}]} -> {:state, state}
-      _other -> nil
-    end)
-    |> case do
-      {:state, state} -> state
-      whole -> whole
+    case Enum.find_value(List.wrap(misc), &state_entry/1) do
+      {:state, state} -> state |> Truncate.redact() |> Truncate.inspect_value()
+      nil -> "(no State entry in this process's status: not shown)"
     end
-    |> Truncate.redact()
-    |> Truncate.inspect_value()
   end
+
+  defp state_entry({:data, [{~c"State", state}]}), do: {:state, state}
+  defp state_entry(_other), do: nil
 
   @doc """
   Whether `pid` is one of the toolbar's own processes: its registered name or
@@ -325,21 +344,43 @@ defmodule PhoenixDevToolbar.ProcessInfo do
       kind: :process,
       name: name,
       child?: child?(pid, owner),
-      toolbar?: toolbar_name?(name)
+      toolbar?: toolbar_name?(name),
+      link?: node(pid) == node()
     }
   end
 
   defp relation({:port, port}, owner), do: relation(port, owner)
 
   defp relation(port, _owner) when is_port(port),
-    do: %{id: inspect(port), kind: :port, name: port_name(port), child?: false, toolbar?: false}
+    do: %{
+      id: inspect(port),
+      kind: :port,
+      name: port_name(port),
+      child?: false,
+      toolbar?: false,
+      link?: false
+    }
 
   # A monitor by name ({name, node}) or a NIF resource.
   defp relation({name, node} = other, _owner) when is_atom(name) and is_atom(node),
-    do: %{id: inspect(other), kind: :other, name: inspect(name), child?: false, toolbar?: false}
+    do: %{
+      id: inspect(other),
+      kind: :other,
+      name: inspect(name),
+      child?: false,
+      toolbar?: false,
+      link?: false
+    }
 
   defp relation(other, _owner),
-    do: %{id: inspect(other, limit: 5), kind: :other, name: "", child?: false, toolbar?: false}
+    do: %{
+      id: inspect(other, limit: 5),
+      kind: :other,
+      name: "",
+      child?: false,
+      toolbar?: false,
+      link?: false
+    }
 
   # Process.info/2 and Port.info/2 raise on another node's pid or port: those
   # are only named by their node.

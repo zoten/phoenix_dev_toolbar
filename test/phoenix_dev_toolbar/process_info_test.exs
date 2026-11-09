@@ -210,16 +210,66 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
       assert Process.info(pid, :message_queue_len) == {:message_queue_len, 0}
     end
 
-    test "a busy process times out, a dead one is dead" do
-      agent = start_supervised!({Agent, fn -> :ok end})
-      Agent.cast(agent, fn state -> receive(do: (:release -> state)) end)
+    test "never sends a system message to a Task: it would never answer" do
+      supervisor = start_supervised!(Task.Supervisor)
+      test = self()
 
-      assert ProcessInfo.status(agent, 50) == {:error, :timeout}
+      task =
+        Task.Supervisor.async(supervisor, fn ->
+          send(test, :ready)
+          receive(do: (:stop -> :ok))
+        end)
+
+      assert_receive :ready
+      on_exit(fn -> send(task.pid, :stop) end)
+
+      assert ProcessInfo.otp?(task.pid)
+      assert ProcessInfo.status(task.pid, 1000) == {:error, :busy}
+      assert Process.info(task.pid, :message_queue_len) == {:message_queue_len, 0}
+    end
+
+    test "a hibernated server answers" do
+      agent =
+        start_supervised!(%{
+          id: :hibernating,
+          start: {Agent, :start_link, [fn -> :ok end, [hibernate_after: 0]]}
+        })
+
+      :ok = Agent.get(agent, & &1)
+      assert hibernated?(agent, 100_000)
+
+      assert {:ok, %{sys_state: ":running"}} = ProcessInfo.status(agent, 1000)
+    end
+
+    test "a server busy in a callback is refused, a dead one is dead" do
+      agent = start_supervised!({Agent, fn -> :ok end})
+      test = self()
+
+      Agent.cast(agent, fn state ->
+        send(test, :busy)
+        receive(do: (:release -> state))
+      end)
+
+      assert_receive :busy
+
+      assert ProcessInfo.status(agent, 50) == {:error, :busy}
 
       send(agent, :release)
       _ = Agent.get(agent, & &1)
       stop_supervised!(Agent)
       assert ProcessInfo.status(agent, 50) == {:error, :dead}
+    end
+  end
+
+  # A server hibernates right after it replies: no message tells when. OTP 27
+  # reports :gen_server.loop_hibernate/4, older ones :erlang.hibernate/3.
+  defp hibernated?(_pid, 0), do: false
+
+  defp hibernated?(pid, tries) do
+    case Process.info(pid, :current_function) do
+      {:current_function, {:erlang, :hibernate, 3}} -> true
+      {:current_function, {:gen_server, :loop_hibernate, _arity}} -> true
+      _other -> :erlang.yield() && hibernated?(pid, tries - 1)
     end
   end
 end
