@@ -127,14 +127,17 @@ defmodule PhoenixDevToolbar.Truncate do
   Replaces the value of sensitive keys with `"#{@redacted}"`.
 
   A key is sensitive when its name (atom or string, case insensitive) contains
-  one of `keys`. Walks maps, structs, keyword lists and lists, bounded in depth
-  and length.
+  one of `keys`. Walks maps, structs, keyword lists, lists and tuples, bounded in
+  depth and length.
 
       iex> PhoenixDevToolbar.Truncate.redact(%{"user" => %{"password" => "hunter2", "name" => "Ada"}})
       %{"user" => %{"password" => "[REDACTED]", "name" => "Ada"}}
 
       iex> PhoenixDevToolbar.Truncate.redact([api_token: "abc", page: 1])
       [api_token: "[REDACTED]", page: 1]
+
+      iex> PhoenixDevToolbar.Truncate.redact({:login, %{password: "hunter2"}})
+      {:login, %{password: "[REDACTED]"}}
 
   """
   @spec redact(term(), [String.t() | atom()]) :: term()
@@ -332,6 +335,14 @@ defmodule PhoenixDevToolbar.Truncate do
       {:ok, head, rest} -> Enum.map(head, &redact_item(&1, keys, depth)) ++ rest
       :improper -> list
     end
+  end
+
+  # Tuples (messages, {:ok, value} results): each element, when the tuple is small.
+  defp do_redact(tuple, keys, depth) when is_tuple(tuple) and tuple_size(tuple) <= @list_items do
+    tuple
+    |> Tuple.to_list()
+    |> Enum.map(&do_redact(&1, keys, depth + 1))
+    |> List.to_tuple()
   end
 
   defp do_redact(value, _keys, _depth), do: value

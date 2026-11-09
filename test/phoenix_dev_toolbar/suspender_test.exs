@@ -1,0 +1,106 @@
+defmodule PhoenixDevToolbar.SuspenderTest do
+  # Uses the application's Suspender (a named singleton).
+  use ExUnit.Case, async: false
+
+  import PhoenixDevToolbar.ProcessHelpers
+
+  alias PhoenixDevToolbar.Suspender
+
+  # Answers pings: a suspended one answers only once resumed.
+  defp pinger do
+    pid = spawn(fn -> pong() end)
+    on_exit(fn -> Process.exit(pid, :kill) end)
+    pid
+  end
+
+  defp pong do
+    receive do
+      {:ping, from} -> send(from, {:pong, self()})
+    end
+
+    pong()
+  end
+
+  defp suspended?(pid), do: Process.info(pid, :status) == {:status, :suspended}
+
+  test "suspends for the TTL, then resumes" do
+    pid = pinger()
+
+    assert Suspender.suspend(pid, 1000, self()) == :ok
+    assert suspended?(pid)
+    assert Map.has_key?(Suspender.suspended(), pid)
+
+    send(pid, {:ping, self()})
+    refute_receive {:pong, ^pid}, 200
+    assert_receive {:pong, ^pid}, 2000
+    refute Map.has_key?(Suspender.suspended(), pid)
+  end
+
+  test "resume/1 resumes at once; an unknown pid is not suspended" do
+    pid = pinger()
+    :ok = Suspender.suspend(pid, 60_000, self())
+
+    assert Suspender.resume(pid) == :ok
+    refute suspended?(pid)
+    assert Suspender.resume(pid) == {:error, :not_suspended}
+  end
+
+  test "the owner going away resumes what it suspended" do
+    pid = pinger()
+    owner = idle_process()
+    :ok = Suspender.suspend(pid, 60_000, owner)
+
+    stop(owner)
+    send(pid, {:ping, self()})
+
+    assert_receive {:pong, ^pid}
+  end
+
+  test "a target that exits is forgotten" do
+    pid = pinger()
+    :ok = Suspender.suspend(pid, 60_000, self())
+    ref = Process.monitor(pid)
+
+    Process.exit(pid, :kill)
+    assert_receive {:DOWN, ^ref, :process, ^pid, :killed}
+
+    refute Map.has_key?(Suspender.suspended(), pid)
+  end
+
+  test "refuses twice the same, a dead one, a bad TTL, and more than ten" do
+    # Earlier tests' suspensions end when their owner (that test) is gone.
+    for {suspended, _deadline} <- Suspender.suspended(), do: Suspender.resume(suspended)
+    pid = pinger()
+    :ok = Suspender.suspend(pid, 60_000, self())
+    assert Suspender.suspend(pid, 60_000, self()) == {:error, :already}
+
+    dead = idle_process()
+    stop(dead)
+    assert Suspender.suspend(dead, 60_000, self()) == {:error, :dead}
+    assert Suspender.suspend(pinger(), 999, self()) == {:error, :ttl}
+    assert Suspender.suspend(pinger(), 60_001, self()) == {:error, :ttl}
+
+    for _ <- 1..9, do: :ok = Suspender.suspend(pinger(), 60_000, self())
+    assert Suspender.suspend(pinger(), 60_000, self()) == {:error, :too_many}
+
+    for {suspended, _deadline} <- Suspender.suspended(), do: Suspender.resume(suspended)
+  end
+
+  test "a Suspender crash resumes everything it suspended" do
+    pid = pinger()
+    :ok = Suspender.suspend(pid, 60_000, self())
+    suspender = Process.whereis(Suspender)
+    ref = Process.monitor(suspender)
+
+    Process.exit(suspender, :kill)
+    assert_receive {:DOWN, ^ref, :process, ^suspender, :killed}
+
+    send(pid, {:ping, self()})
+    assert_receive {:pong, ^pid}
+
+    # The supervisor has restarted it before the next test (a sync call to it
+    # runs after it handled the exit).
+    _ = Supervisor.which_children(PhoenixDevToolbar.Supervisor)
+    assert is_pid(Process.whereis(Suspender))
+  end
+end

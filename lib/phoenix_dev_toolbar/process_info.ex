@@ -267,7 +267,8 @@ defmodule PhoenixDevToolbar.ProcessInfo do
   (`:busy`): try again.
   """
   @spec status(pid(), timeout()) ::
-          {:ok, status()} | {:error, :not_otp | :busy | :timeout | :dead | :failed}
+          {:ok, status()}
+          | {:error, :not_otp | :busy | :suspended | :timeout | :dead | :failed}
   def status(pid, timeout) when is_pid(pid) and node(pid) == node() do
     case answers_sys(pid) do
       :yes -> get_status(pid, timeout)
@@ -291,11 +292,13 @@ defmodule PhoenixDevToolbar.ProcessInfo do
 
   # Whether a system message sent now gets an answer: the process waits at a
   # `gen` receive point, or hibernates (only proc_lib processes are considered).
+  # A suspended process answers nothing until resumed.
   defp answers_sys(pid) do
-    case {otp?(pid), Process.info(pid, :current_function)} do
+    case {otp?(pid), Process.info(pid, [:current_function, :status])} do
       {_otp?, nil} -> :dead
-      {false, _function} -> :not_otp
-      {true, {:current_function, {module, fun, _a}}} -> waiting({module, fun})
+      {false, _info} -> :not_otp
+      {true, [current_function: _function, status: :suspended]} -> :suspended
+      {true, [current_function: {module, fun, _a}, status: _status]} -> waiting({module, fun})
     end
   end
 

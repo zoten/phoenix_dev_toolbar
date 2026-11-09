@@ -174,6 +174,10 @@ defmodule PhoenixDevToolbar.ProcessInspector do
   in a long NIF never blocks the panel; at most once a second.
   """
   @spec gc(Socket.t(), module()) :: Socket.t()
+  # A suspended process would only collect once resumed: the task would wait.
+  def gc(%{assigns: %{sample: %{status: :suspended}}} = socket, _module),
+    do: assign(socket, :gc, :suspended)
+
   def gc(%{assigns: %{selected: pid, gc: gc}} = socket, module)
       when is_pid(pid) and gc != :running do
     case gc_allowed?(socket) do

@@ -209,5 +209,6 @@ defmodule PhoenixDevToolbar.ProcessView do
   def gc_result({:ok, _before, after_gc}), do: "nothing to free: #{bytes(after_gc)} held"
   def gc_result(:dead), do: "the process exited"
   def gc_result(:too_soon), do: "one collection a second: try again"
+  def gc_result(:suspended), do: "suspended: it would only collect once resumed"
   def gc_result(_none_or_running), do: ""
 end

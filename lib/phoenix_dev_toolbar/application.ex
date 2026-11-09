@@ -54,7 +54,9 @@ defmodule PhoenixDevToolbar.Application do
 
   # Disabled means no processes, no ETS tables and no handlers (ADR 01).
   defp children(false), do: []
-  defp children(true), do: [PhoenixDevToolbar.Store, PhoenixDevToolbar.Notify]
+
+  defp children(true),
+    do: [PhoenixDevToolbar.Store, PhoenixDevToolbar.Notify, PhoenixDevToolbar.Suspender]
 
   defp maybe_attach(false), do: :ok
 

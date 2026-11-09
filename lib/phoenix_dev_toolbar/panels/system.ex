@@ -386,5 +386,6 @@ defmodule PhoenixDevToolbar.Panels.System do
       "Not waiting in a server loop: busy in a callback (try again), or a Task, which never answers :sys."
 
   defp status_error(:failed), do: "The process failed to report its state."
+  defp status_error(:suspended), do: "Suspended: it answers nothing until resumed."
   defp status_error(:too_soon), do: "One read a second: try again."
 end
