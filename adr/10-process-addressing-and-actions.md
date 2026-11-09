@@ -19,13 +19,15 @@ reachable dev port must not freeze or kill the node.
   against `Process.registered/0` (never `String.to_atom/1`). Local node only. The
   server re-validates every reference it gets from the browser. Page targets keep the
   ADR 09 index rule.
-- **Navigation**: `Panel.navigate/3` (public) switches tab with params; every pid the
-  toolbar renders is a link to the inspector. The panel keeps a breadcrumb stack of
-  at most 20 entries.
-- **Protected set** (one module, unit tested): the toolbar's own processes, the
-  panel's pid and its socket transport, `init`, `code_server`,
-  `application_controller`, `logger`, kernel and stdlib supervisors, the host
-  endpoint's supervisor. Reads and GC are allowed on them; kill and suspend are refused.
+- **Navigation**: `Panel.navigate/3` (public) switches tab and hands the target panel
+  `{:navigate, params}`; every pid the toolbar renders links to the inspector. The
+  System tab (ADR 11) keeps a breadcrumb stack of at most 20 entries.
+- **Protected set** (one module, unit tested): the toolbar's own processes (the
+  `PhoenixDevToolbar.` name rule ADR 09 tags them with), the panel's pid and its
+  socket transport, core registered names (`init`, `code_server`,
+  `application_controller`, `logger`, ...), any process of the `kernel`, `stdlib`,
+  `elixir`, `logger` or `compiler` applications, and the host endpoint's supervisor.
+  Reads and GC are allowed on them; kill and suspend are refused.
 - **Actions**, each behind a confirm step, rate limited and logged with `Logger`:
   - Kill: the page's LiveView with a chosen reason (`:kill`, `:shutdown`,
     `{:shutdown, :debug}`, a raise), or any non protected pid.
@@ -35,6 +37,10 @@ reachable dev port must not freeze or kill the node.
   - Watch: the panel monitors up to 10 pids and shows exit reason and time.
   - Message peek: the first messages only while `message_queue_len` is under a
     threshold (100); `:messages` is never read above it.
+- **Who may act**: reads and GC are open to any panel. Kill, suspend and message peek
+  follow the top level `actions:` config: `:loopback` (default, the panel socket's
+  peer must be a loopback address), `:any` (warned at boot), `false` (no actions).
+  Docker and LAN setups need `actions: :any`; the panel says so when it refuses.
 - **Not offered**: link/unlink (only creates cascading crashes), sending arbitrary
   messages (needs term parsing: that is eval, ADR 12), forced hibernate.
 
@@ -46,6 +52,5 @@ reachable dev port must not freeze or kill the node.
 
 ## Open limits
 
-- Whether kill and suspend also default to loopback clients only, like eval (ADR 12):
-  to settle in the Phase 5a plan.
+- A client behind a local reverse proxy reads as loopback.
 - A process suspended while it holds a lock others wait on stalls them until the TTL.
