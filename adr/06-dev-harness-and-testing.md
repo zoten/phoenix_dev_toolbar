@@ -82,7 +82,9 @@ correctness and boundedness need tests, not just eyeballing.
   Dialyzer, ExDoc, the fixture host app and the built assets check. The minimum row is
   what covers `PhoenixDevToolbar.LiveViewCompat` on LiveView 1.1. `agent-tools/ci-min.sh`
   replays that row locally in Docker, on a copy of the working tree: `mix precommit`
-  only runs on the local toolchain.
+  only runs on the local toolchain. Both rows start a `postgres:17` service and set
+  `PDT_POSTGRES_URL`, which runs the `:postgres` tests (ADR 08); without it (locally,
+  `ci-min.sh`) they are excluded.
 - Releases: `mix bump` (tooling/mix/tasks/bump.ex) gates on `mix precommit` and the
   minimum CI row, writes the version and the CHANGELOG section, commits and tags
   `<version>`; `publish.sh` pushes, waits for CI and runs `mix hex.publish`. Repository

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - DOM-level JS tests for `loader.js` and `panel.js` wiring and postMessage origin gate (ADR 06)
+- EXPLAIN tests on Postgres, a Postgres service in CI (ADR 08)
 
 ## [0.0.1] - 2026-11-10
 

@@ -16,7 +16,37 @@ Application.put_env(:phoenix_dev_toolbar, DemoWeb.SQLiteRepo, database: database
 DemoWeb.SQLiteRepo.query!("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
 DemoWeb.SQLiteRepo.query!("INSERT INTO users (name) VALUES ('Ada'), ('Grace')")
 
+# Postgres for the EXPLAIN tests (ADR 08), when PDT_POSTGRES_URL is set (CI sets
+# it): one schema per run, first in search_path, dropped when the suite ends.
+postgres? =
+  case System.get_env("PDT_POSTGRES_URL", "") do
+    "" ->
+      false
+
+    url ->
+      schema = "pdt_test_#{System.pid()}"
+
+      Application.put_env(:phoenix_dev_toolbar, DemoWeb.PostgresRepo,
+        url: url,
+        pool_size: 1,
+        after_connect: {Postgrex, :query!, ["SET search_path TO #{schema}", []]}
+      )
+
+      {:ok, _} = DemoWeb.PostgresRepo.start_link()
+      DemoWeb.PostgresRepo.query!("DROP SCHEMA IF EXISTS #{schema} CASCADE")
+      DemoWeb.PostgresRepo.query!("CREATE SCHEMA #{schema}")
+
+      ExUnit.after_suite(fn _result ->
+        DemoWeb.PostgresRepo.query!("DROP SCHEMA IF EXISTS #{schema} CASCADE")
+      end)
+
+      true
+  end
+
 # Message trace needs OTP 27 trace sessions (ADR 11): skipped on older OTPs.
-exclude = if Code.ensure_loaded?(:trace), do: [], else: [:trace_sessions]
+exclude =
+  [trace_sessions: not Code.ensure_loaded?(:trace), postgres: not postgres?]
+  |> Enum.filter(fn {_tag, skip?} -> skip? end)
+  |> Enum.map(fn {tag, _skip?} -> tag end)
 
 ExUnit.start(exclude: exclude)

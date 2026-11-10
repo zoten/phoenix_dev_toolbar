@@ -60,6 +60,8 @@ defmodule PhoenixDevToolbar.MixProject do
       {:esbuild, "~> 0.10", only: :dev, runtime: false},
       # The `mix dev` harness (dev.exs, ADR 06) and the EXPLAIN tests (ADR 08).
       {:ecto_sqlite3, "~> 0.22", only: [:dev, :test]},
+      # The Postgres EXPLAIN tests, run when PDT_POSTGRES_URL is set (ADR 08).
+      {:postgrex, "~> 0.20", only: :test},
       # The example plugin (examples/oban, ADR 05): never needed by host apps.
       {:oban, "~> 2.19", only: [:dev, :test]},
       # The harness server, and the panel socket's end to end test (ADR 04).

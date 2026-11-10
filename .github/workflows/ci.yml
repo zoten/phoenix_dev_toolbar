@@ -16,6 +16,20 @@ jobs:
       MIX_ENV: test
       # Read by mix.exs: overrides the LiveView requirement (empty = published one).
       PDT_LIVE_VIEW: ${{ matrix.live_view }}
+      # Read by test_helper.exs: runs the Postgres EXPLAIN tests (ADR 08).
+      PDT_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     strategy:
       fail-fast: false
       matrix:

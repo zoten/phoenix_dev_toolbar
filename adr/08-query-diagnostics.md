@@ -102,8 +102,11 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
   top of the stored SQL, so about 2.3 MB per session under the per plugin cap.
 - `ecto_sql` stays optional: `Explain` only runs for an attached Ecto plugin, and its
   reference to `Ecto.Adapters.SQL` is compiled without an undefined warning.
-- Tests run EXPLAIN on a real SQLite database (`DemoWeb.SQLiteRepo`); `ecto_sqlite3` is
-  a dev and test dependency.
+- Tests run EXPLAIN on a real SQLite database (`DemoWeb.SQLiteRepo`) and, when
+  `PDT_POSTGRES_URL` is set (always in CI, a `postgres:17` service), on Postgres
+  (`DemoWeb.PostgresRepo`, tag `:postgres`, one schema per run): typed params, the plan
+  lines, the query never run, the local timeout, errors leaving the connection usable.
+  `ecto_sqlite3` is a dev and test dependency, `postgrex` a test one. MyXQL is untested.
 
 ## Open limits
 
