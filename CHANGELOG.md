@@ -85,3 +85,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Breaking: unset `enabled` means on only in Mix `:dev`; prod under Mix is off (ADR 01)
 - Breaking: panel socket requires a same-origin `Origin`, whatever the host `check_origin` (ADR 04)
 - `access-control-*` headers stripped from panel and export responses (ADR 04)
+- Breaking: `actions:` defaults to `false`; `:loopback` opts in; Eval refused only on explicit false (ADR 10, ADR 12)

@@ -306,25 +306,32 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
       assert has_element?(panel, "#pdt-system-watch")
     end
 
-    test "actions: false shows no actions at all, and no hint" do
-      previous = Application.fetch_env(:phoenix_dev_toolbar, :actions)
-      Application.put_env(:phoenix_dev_toolbar, :actions, false)
+    # Unset is the default: off. An explicit false looks the same.
+    for {name, setup} <- [{"unset", :delete}, {"false", false}] do
+      test "actions #{name} shows no actions, and a hint naming the option" do
+        previous = Application.fetch_env(:phoenix_dev_toolbar, :actions)
 
-      on_exit(fn ->
-        case previous do
-          {:ok, value} -> Application.put_env(:phoenix_dev_toolbar, :actions, value)
-          :error -> Application.delete_env(:phoenix_dev_toolbar, :actions)
+        case unquote(setup) do
+          :delete -> Application.delete_env(:phoenix_dev_toolbar, :actions)
+          value -> Application.put_env(:phoenix_dev_toolbar, :actions, value)
         end
-      end)
 
-      agent = start_supervised!({Agent, fn -> :ok end})
-      panel = open()
-      search(panel, inspect(agent))
+        on_exit(fn ->
+          case previous do
+            {:ok, value} -> Application.put_env(:phoenix_dev_toolbar, :actions, value)
+            :error -> Application.delete_env(:phoenix_dev_toolbar, :actions)
+          end
+        end)
 
-      refute has_element?(panel, "#pdt-system-kill")
-      refute has_element?(panel, "#pdt-system-actions-off")
-      refute has_element?(panel, "#pdt-system-peek")
-      refute has_element?(panel, "#pdt-system-status")
+        agent = start_supervised!({Agent, fn -> :ok end})
+        panel = open()
+        search(panel, inspect(agent))
+
+        refute has_element?(panel, "#pdt-system-kill")
+        assert has_element?(panel, "#pdt-system-actions-off", "actions: :loopback")
+        refute has_element?(panel, "#pdt-system-peek")
+        refute has_element?(panel, "#pdt-system-status")
+      end
     end
 
     test "Suspend freezes it until Resume" do

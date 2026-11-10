@@ -23,6 +23,8 @@ Application.put_env(:phoenix_dev_toolbar, Demo.Endpoint,
 
 Application.put_env(:phoenix_dev_toolbar, Demo.Repo, database: database, stacktrace: true)
 Application.put_env(:phoenix_dev_toolbar, :repos, [Demo.Repo])
+# The harness demonstrates process actions (opt-in, ADR 10).
+Application.put_env(:phoenix_dev_toolbar, :actions, :loopback)
 
 # Plugins (ADR 05): the example Oban plugin and a demo plugin that fails on
 # demand, next to the built-ins, and the opt-in Cluster and Eval tabs (ADR 12;

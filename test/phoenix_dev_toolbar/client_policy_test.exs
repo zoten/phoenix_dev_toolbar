@@ -30,8 +30,17 @@ defmodule PhoenixDevToolbar.ClientPolicyTest do
     refute ClientPolicy.loopback?(nil)
   end
 
-  test "by default only loopback clients may act" do
+  test "by default nobody may act, and the default does not warn" do
     Application.delete_env(:phoenix_dev_toolbar, :actions)
+
+    assert ClientPolicy.mode() == false
+    assert ClientPolicy.check_actions({127, 0, 0, 1}) == {:error, :disabled}
+    refute ClientPolicy.explicitly_off?()
+    assert capture_log(fn -> ClientPolicy.warn_config() end) == ""
+  end
+
+  test "actions: :loopback lets only loopback clients act" do
+    Application.put_env(:phoenix_dev_toolbar, :actions, :loopback)
 
     assert ClientPolicy.check_actions({127, 0, 0, 1}) == :ok
     assert ClientPolicy.check_actions({10, 0, 0, 2}) == {:error, :not_loopback}
@@ -49,13 +58,15 @@ defmodule PhoenixDevToolbar.ClientPolicyTest do
     Application.put_env(:phoenix_dev_toolbar, :actions, false)
 
     assert ClientPolicy.check_actions({127, 0, 0, 1}) == {:error, :disabled}
+    assert ClientPolicy.explicitly_off?()
   end
 
-  test "an invalid value counts as :loopback, and warns" do
+  test "an invalid value counts as off, and warns" do
     Application.put_env(:phoenix_dev_toolbar, :actions, :everyone)
 
-    assert ClientPolicy.mode() == :loopback
-    assert ClientPolicy.check_actions({10, 0, 0, 2}) == {:error, :not_loopback}
+    assert ClientPolicy.mode() == false
+    assert ClientPolicy.check_actions({127, 0, 0, 1}) == {:error, :disabled}
+    refute ClientPolicy.explicitly_off?()
     assert capture_log(fn -> ClientPolicy.warn_config() end) =~ "invalid actions"
   end
 end

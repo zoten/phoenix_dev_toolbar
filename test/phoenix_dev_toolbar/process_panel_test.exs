@@ -53,6 +53,25 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     visible(panel)
   end
 
+  test "with actions unset, the tab offers none and says which option turns them on" do
+    previous = Application.fetch_env(:phoenix_dev_toolbar, :actions)
+    Application.delete_env(:phoenix_dev_toolbar, :actions)
+
+    on_exit(fn ->
+      case previous do
+        {:ok, value} -> Application.put_env(:phoenix_dev_toolbar, :actions, value)
+        :error -> Application.delete_env(:phoenix_dev_toolbar, :actions)
+      end
+    end)
+
+    {_host, sid} = visit("/demo")
+    panel = open(sid)
+    visible(panel)
+
+    refute has_element?(panel, "#pdt-process-kill")
+    assert has_element?(panel, "#pdt-process-actions-off", "actions: :loopback")
+  end
+
   test "the host LiveView's vital signs and relations, once the panel is visible" do
     {host, sid} = visit("/demo")
     panel = open(sid)

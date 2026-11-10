@@ -59,8 +59,9 @@ the panel's `start_async/3` tasks, never in the panel process.
 - Evaluated code is the developer's: it may create atoms, spawn processes the
   timeout does not stop, run commands, or halt the node. Compiler diagnostics go
   to the host's stderr.
-- `actions: false` does not turn Eval off: Eval has its own options and is
-  installed on purpose.
+- Eval does not depend on `actions:` (off unless set): it has its own options and
+  is installed on purpose. Only an explicit `actions: false` in the host config
+  refuses code (`ClientPolicy.explicitly_off?/0`); queries stay open.
 
 ## Open limits
 

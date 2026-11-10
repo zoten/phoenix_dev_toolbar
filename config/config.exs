@@ -22,6 +22,10 @@ if config_env() == :test do
   # LiveView logs every mount at :debug; tests drive real mount telemetry.
   config :logger, level: :warning
 
+  # Process actions are opt-in (ADR 10): the suite runs them for loopback clients;
+  # the default-off tests delete the key.
+  config :phoenix_dev_toolbar, actions: :loopback
+
   # Mix.env() is :test here, not :dev: enable explicitly (ADR 01).
   config :phoenix_dev_toolbar, enabled: true
 

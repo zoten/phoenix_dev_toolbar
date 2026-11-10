@@ -18,6 +18,10 @@ defmodule PhoenixDevToolbar.Plugins.Eval do
     * `timeout_ms:` how long code may run before it is stopped, 5000 by default
       (100 to 60000)
 
+  Eval is its own opt-in and does not depend on the top level `actions:` option
+  (kill, suspend, message peek: off by default). It is refused only when the host
+  sets `actions: false` explicitly.
+
   `allow: :eval` with `clients: :any` lets anyone who reaches the dev server run
   code as the BEAM user: both overrides are warned about when the toolbar
   starts. See SECURITY.md.

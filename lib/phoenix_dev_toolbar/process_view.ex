@@ -197,7 +197,11 @@ defmodule PhoenixDevToolbar.ProcessView do
     ~H"""
     <div id={"#{@prefix}-actions"} class="pdt-actions">
       <%= case @gate do %>
-        <% gate when gate in [nil, :off] -> %>
+        <% nil -> %>
+        <% :off -> %>
+          <p id={"#{@prefix}-actions-off"} class="pdt-hint">
+            Actions are off: set actions: :loopback in the toolbar config to kill or suspend from here.
+          </p>
         <% {:error, why} -> %>
           <p id={"#{@prefix}-actions-off"} class="pdt-hint">{why}</p>
         <% :ok -> %>

@@ -38,7 +38,7 @@ defmodule PhoenixDevToolbar.ProcessActions do
         :ok
 
       {:error, :disabled} ->
-        {:error, "Actions are off: actions: false in the toolbar config."}
+        {:error, "Actions are off: set actions: :loopback in the toolbar config to turn them on."}
 
       {:error, :not_loopback} ->
         {:error,

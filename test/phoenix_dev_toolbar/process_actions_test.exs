@@ -11,7 +11,7 @@ defmodule PhoenixDevToolbar.ProcessActionsTest do
 
   setup do
     previous = Application.fetch_env(:phoenix_dev_toolbar, :actions)
-    Application.delete_env(:phoenix_dev_toolbar, :actions)
+    Application.put_env(:phoenix_dev_toolbar, :actions, :loopback)
 
     on_exit(fn ->
       case previous do
@@ -34,6 +34,16 @@ defmodule PhoenixDevToolbar.ProcessActionsTest do
 
     Application.put_env(:phoenix_dev_toolbar, :actions, false)
     assert {:error, "Actions are off" <> _rest} = ProcessActions.allowed(pid, context)
+  end
+
+  test "with actions unset nobody acts, and the message names the option", %{context: context} do
+    Application.delete_env(:phoenix_dev_toolbar, :actions)
+    pid = idle_process()
+
+    assert {:error, message} = ProcessActions.kill(pid, "kill", context)
+    assert message =~ "actions: :loopback"
+    assert {:error, _message} = ProcessActions.peek(pid, context)
+    assert Process.alive?(pid)
   end
 
   test "a protected process is never killed", %{context: context} do

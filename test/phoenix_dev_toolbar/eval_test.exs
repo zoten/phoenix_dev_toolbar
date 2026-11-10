@@ -67,6 +67,48 @@ defmodule PhoenixDevToolbar.EvalTest do
       refute has_element?(panel, "#pdt-eval-run-1")
     end
 
+    test "a forged eval event under the default config runs nothing" do
+      attach([])
+      panel = open()
+      pid = :erlang.pid_to_list(self())
+      code = "send(:erlang.list_to_pid(~c\"#{pid}\"), :forged_eval_ran)"
+
+      assert has_element?(panel, "#pdt-eval-read-only")
+      panel |> with_target("#pdt-eval") |> render_click("eval", %{"code" => code})
+      _ = render_async(panel)
+
+      refute_received :forged_eval_ran
+      assert has_element?(panel, "#pdt-eval-note")
+      refute has_element?(panel, "#pdt-eval-run-0")
+    end
+
+    test "an explicit actions: false refuses code even with allow: :eval; unset does not" do
+      previous = Application.fetch_env(:phoenix_dev_toolbar, :actions)
+
+      on_exit(fn ->
+        case previous do
+          {:ok, value} -> Application.put_env(:phoenix_dev_toolbar, :actions, value)
+          :error -> Application.delete_env(:phoenix_dev_toolbar, :actions)
+        end
+      end)
+
+      attach(allow: :eval)
+
+      Application.delete_env(:phoenix_dev_toolbar, :actions)
+      assert has_element?(open(), "#pdt-eval-form")
+
+      Application.put_env(:phoenix_dev_toolbar, :actions, false)
+      panel = open()
+      assert has_element?(panel, "#pdt-eval-disabled", "actions: false")
+      refute has_element?(panel, "#pdt-eval-form")
+
+      pid = :erlang.pid_to_list(self())
+      code = "send(:erlang.list_to_pid(~c\"#{pid}\"), :forged_eval_ran)"
+      panel |> with_target("#pdt-eval") |> render_click("eval", %{"code" => code})
+      _ = render_async(panel)
+      refute_received :forged_eval_ran
+    end
+
     test "with allow: :eval, code runs: result, output, errors and a timeout" do
       attach(allow: :eval, timeout_ms: 200)
       panel = open()

@@ -17,13 +17,18 @@ not in public issues.
 They run for whoever can open the panel, so each has a safe default:
 
 - **Process actions** (kill, suspend, message peek, state read, message trace:
-  [ADR 10](adr/10-process-addressing-and-actions.md)) run only for a browser on the
-  same machine (`actions: :loopback`). `actions: :any` opens them to any browser
-  that reaches the dev server (Docker, LAN); `actions: false` turns them off.
+  [ADR 10](adr/10-process-addressing-and-actions.md)) are off by
+  default. `actions: :loopback` runs them for a browser on the same machine only;
+  `actions: :any` opens them to any browser that reaches the dev server (Docker, LAN).
+- **Panel socket origin**: the panel's websocket accepts only an `Origin` that is the
+  page's own host (and port), whatever the host's `check_origin` says. The panel,
+  its socket and the export also answer only for a Host that cannot be DNS rebound
+  ([ADR 04](adr/04-ui-delivery.md)).
 - **The Eval plugin** ([ADR 12](adr/12-cluster-and-eval-plugins.md)) is not
   installed by default. Once added it is read only: a fixed list of read queries,
   open like the System tab. With `allow: :eval` it runs code typed in the panel as
-  the BEAM user, for a browser on this machine only; with `clients: :any` too,
+  the BEAM user, for a browser on this machine only (an explicit `actions: false` in
+  the host config refuses code too; unset `actions` does not); with `clients: :any` too,
   **anyone who reaches the dev server can run code on your machine**. Code is
   logged as a warning when the toolbar starts, with who may run it.
 - "Loopback" is the address the panel's websocket comes from, with no

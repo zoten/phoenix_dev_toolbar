@@ -94,14 +94,17 @@ defmodule PhoenixDevToolbar.Panels.Eval do
 
   defp config(socket), do: Plugins.Eval.config(socket.assigns[:config])
 
-  # A browser on this machine, unless the host opened the tab to any.
+  # A browser on this machine, unless the host opened the tab to any. An explicit
+  # `actions: false` in the host config refuses code altogether; an unset
+  # `actions` (also off for kill and suspend) does not: Eval has its own opt-in.
   defp allowed(socket) do
     client = (socket.assigns[:pdt_actions] || %{})[:client]
 
-    case {config(socket).clients, ClientPolicy.loopback?(client)} do
-      {:any, _loopback?} -> :ok
-      {:loopback, true} -> :ok
-      {:loopback, false} -> {:error, :not_loopback}
+    case {ClientPolicy.explicitly_off?(), config(socket).clients, ClientPolicy.loopback?(client)} do
+      {true, _clients, _loopback?} -> {:error, :disabled}
+      {false, :any, _loopback?} -> :ok
+      {false, :loopback, true} -> :ok
+      {false, :loopback, false} -> {:error, :not_loopback}
     end
   end
 
@@ -122,7 +125,18 @@ defmodule PhoenixDevToolbar.Panels.Eval do
 
     ~H"""
     <div id="pdt-eval" class="pdt-process">
-      <p :if={@allow == :eval and @gate != :ok} id="pdt-eval-off" class="pdt-hint pdt-process__paused">
+      <p
+        :if={@allow == :eval and @gate == {:error, :disabled}}
+        id="pdt-eval-disabled"
+        class="pdt-hint pdt-process__paused"
+      >
+        Code is off: the host config sets actions: false. Remove it, or set actions: :loopback.
+      </p>
+      <p
+        :if={@allow == :eval and @gate == {:error, :not_loopback}}
+        id="pdt-eval-off"
+        class="pdt-hint pdt-process__paused"
+      >
         Code only runs for a browser on this machine, reaching the server directly (not
         through a proxy or a tunnel). From Docker or another machine, an SSH tunnel to
         localhost keeps it that way; clients: :any in the Eval options lets anyone who

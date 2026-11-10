@@ -49,11 +49,13 @@ reachable dev port must not freeze or kill the node.
     `message_queue_len` is under 100; `:messages` is never read above it.
 - **Who may act**: process info reads, GC and Watch are open to any panel. What acts
   on a host process or copies its data (kill, suspend, message peek, the state read
-  of ADR 11) follows the top level `actions:` config: `:loopback` (default, the panel socket's
-  peer must be a loopback address), `:any` (warned at boot), `false` (no actions).
-  Docker and LAN setups need `actions: :any`; the panel says so in place of Kill and
-  Suspend when it refuses (and hides Peek and Read state), as it says why a protected
-  process offers none. With `actions: false` none of them shows, without a hint.
+  of ADR 11) follows the top level `actions:` config, opt-in: `false` (default, no actions),
+  `:loopback` (the panel socket's peer must be a loopback address), `:any` (warned at
+  boot). Docker and LAN setups need `actions: :any`; the panel says so in place of Kill
+  and Suspend when it refuses (and hides Peek and Read state), as it says why a
+  protected process offers none. With actions off (unset or `false`) none of them shows
+  and the tab says which option turns them on (`actions: :loopback`). An invalid value
+  counts as `false`.
   The context these checks need (the client's address, the panel's pid, transport
   and endpoint) is an internal `pdt_actions` assign given to the built-in tabs only.
 - **Not offered**: link/unlink (only creates cascading crashes), sending arbitrary
