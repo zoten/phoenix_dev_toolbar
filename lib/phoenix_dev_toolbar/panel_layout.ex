@@ -28,7 +28,13 @@ defmodule PhoenixDevToolbar.PanelLayout do
 
   def panel(assigns) do
     ~H"""
-    <div id="pdt-panel" class="pdt-panel">
+    <%!-- data-pdt-* attributes are a contract for agents (ADR 14). --%>
+    <div
+      id="pdt-panel"
+      class="pdt-panel"
+      data-pdt-root={@page.root}
+      data-pdt-sids={Enum.join(@page.sids, ",")}
+    >
       <%!-- The hook lives on its own empty element: LiveView locks a hook's
            element while its pushEvent is in flight, and a diff landing in a
            locked tree loses its stream resets (seen on live navigation). --%>
@@ -166,6 +172,7 @@ defmodule PhoenixDevToolbar.PanelLayout do
         :for={tab <- @tabs}
         id={"pdt-section-" <> tab.id}
         class="pdt-section"
+        data-pdt-tab={tab.id}
         role="tabpanel"
         aria-labelledby={"pdt-tab-" <> tab.id}
         hidden={@tab != tab.id}

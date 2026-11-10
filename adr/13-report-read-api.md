@@ -55,6 +55,8 @@ Store, built for IEx and agents:
   `/posts` is gone, 23 queries became 3") without a browser in the loop.
 - The Markdown export and an MCP endpoint (roadmap) can render or serve these
   maps instead of reading the Store themselves.
+- Agents that drive a browser read the same values off the panel's `data-pdt-*`
+  attributes, named after these keys (ADR 14).
 - The API is a contract: changing an event's `data` keys in a built-in plugin
   now needs a matching change in `Report`, covered by its tests.
 - Only what the Store still holds is readable (caps and TTL, ADR 03): a page

@@ -346,4 +346,115 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
 
     assert Plug.Conn.get_resp_header(conn, "x-content-type-options") == ["nosniff"]
   end
+
+  describe "standalone panel URL (ADR 14)" do
+    # Sessions created back to back can share a microsecond: give each its own.
+    defp page(kind, opts, offset) do
+      session = Session.new(kind, opts)
+      Store.new_session(%{session | started_at: session.started_at + offset})
+    end
+
+    defp panel_root(conn, query) do
+      {:ok, view, _html} = live(conn, "/__pdt/panel" <> query)
+      view
+    end
+
+    test "?path= opens the newest page at that exact path", %{conn: conn, request: older} do
+      newer = page(:request, [path: "/users"], 1_000)
+      _other = page(:request, [path: "/users/1"], 2_000)
+
+      view = panel_root(conn, "?path=/users")
+
+      assert has_element?(view, ~s(#pdt-panel[data-pdt-root="#{newer.sid}"]))
+      refute has_element?(view, ~s(#pdt-panel[data-pdt-root="#{older}"]))
+    end
+
+    test "without a parameter it opens the newest page", %{conn: conn} do
+      newest = page(:request, [path: "/latest"], 1_000)
+
+      view = panel_root(conn, "")
+
+      assert has_element?(view, ~s(#pdt-panel[data-pdt-root="#{newest.sid}"]))
+    end
+
+    test "a connected mount opens as its request's page",
+         %{conn: conn, request: request, transport: transport} do
+      opts = [parent: request, path: "/users", owner: idle_process(), transport: transport]
+      live = page(:live_view, opts, 1_000)
+
+      view = panel_root(conn, "?path=/users")
+
+      assert has_element?(view, ~s(#pdt-panel[data-pdt-root="#{request}"]))
+      assert has_element?(view, ~s(#pdt-panel[data-pdt-sids="#{request},#{live.sid}"]))
+    end
+
+    test "a live navigated LiveView is a page of its own",
+         %{conn: conn, request: request, transport: transport} do
+      first = live_view_session(request, transport)
+      opts = [parent: first.sid, path: "/next", owner: idle_process(), transport: transport]
+      navigated = page(:live_view, opts, 1_000)
+
+      view = panel_root(conn, "?path=/next")
+
+      assert has_element?(view, ~s(#pdt-panel[data-pdt-root="#{navigated.sid}"]))
+    end
+
+    test "an unknown path shows the empty state", %{conn: conn} do
+      view = panel_root(conn, "?path=/nowhere")
+
+      assert has_element?(view, "#pdt-empty")
+      refute has_element?(view, "#pdt-panel[data-pdt-root]")
+    end
+  end
+
+  describe "data-pdt-* attributes (ADR 14)" do
+    test "the panel, its tabs, query and request rows carry raw values",
+         %{conn: conn, request: request} do
+      response(request)
+      query = query(request, "SELECT 1", 2)
+
+      view = open(conn, request)
+
+      assert has_element?(view, ~s(#pdt-section-ecto[data-pdt-tab="ecto"]))
+
+      assert has_element?(
+               view,
+               ~s(#pdt-query-#{query.seq}[data-pdt-row="query"][data-pdt-sid="#{request}"]) <>
+                 ~s([data-pdt-seq="#{query.seq}"][data-pdt-duration-us="2000"][data-pdt-source="users"])
+             )
+
+      refute has_element?(view, "#pdt-query-#{query.seq}[data-pdt-error]")
+      refute has_element?(view, "#pdt-query-#{query.seq}[data-pdt-n-plus-one]")
+
+      assert has_element?(
+               view,
+               ~s(#pdt-requests [data-pdt-row="request"][data-pdt-kind="response"]) <>
+                 ~s([data-pdt-method="GET"][data-pdt-status="200"][data-pdt-duration-us="12000"])
+             )
+    end
+
+    test "a failed query is flagged", %{conn: conn, request: request} do
+      data = %{
+        repo: DemoWeb.FakeRepo,
+        sql: "SELECT boom",
+        params: "[]",
+        source: nil,
+        result: {:error, "no such column"},
+        times: %{},
+        stacktrace: [],
+        caller?: false
+      }
+
+      failed = record(request, :ecto, :query, data, 1)
+
+      view = open(conn, request)
+
+      assert has_element?(
+               view,
+               ~s(#pdt-query-#{failed.seq}[data-pdt-row="query"][data-pdt-error])
+             )
+
+      refute has_element?(view, "#pdt-query-#{failed.seq}[data-pdt-source]")
+    end
+  end
 end

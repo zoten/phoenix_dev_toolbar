@@ -20,6 +20,9 @@ assumptions. Full API: the `PhoenixDevToolbar.Report` docs.
 The data lives in the dev server's VM (`mix phx.server` or `mix dev`, in dev).
 
 - With Tidewave: run the code below through `project_eval`.
+- With only a browser tool: skip the Elixir below and read the standalone
+  panel, `http://localhost:4000/__pdt/panel?path=/posts`, through its
+  `data-pdt-*` attributes (see the package's usage rules).
 - Otherwise: a remote shell (`iex --sname probe --remsh app@<host>`), which needs
   the server started with a node name (`iex --sname app -S mix phx.server`), or
   ask the user to run it in the IEx session that started the server.

@@ -104,7 +104,9 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   path: `//__pdt/panel` also reaches the panel and would yield a protocol relative URL
   to another host), and passes `<path>/live` to `panel.js`. The plug runs before the
   host's `Plug.Session` in a generated endpoint, so the panel never touches the cookie
-  session (LiveView treats an unfetched session as empty).
+  session (LiveView treats an unfetched session as empty). Without `?sid=` the plug
+  picks the page itself (`?path=`, or the newest), and `panel.js` opened outside the
+  iframe runs standalone: ADR 14.
 - **Panel downloads**: `GET <path>/export/ecto.json` answers the Ecto tab's Download as
   an attachment (ADR 08). Downloads use same-origin URLs, never `blob:` links: Firefox
   checks a link clicked in the iframe against the host's `frame-src`.

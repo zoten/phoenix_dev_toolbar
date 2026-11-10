@@ -61,7 +61,15 @@ defmodule PhoenixDevToolbar.Components do
 
   def query_row(assigns) do
     ~H"""
-    <li id={@id} class={["pdt-row", failed?(@event) && "pdt-row--error"]}>
+    <li
+      id={@id}
+      class={["pdt-row", failed?(@event) && "pdt-row--error"]}
+      {row_attrs("query", @event,
+        "data-pdt-source": @event.data.source,
+        "data-pdt-error": failed?(@event),
+        "data-pdt-n-plus-one": @event.data[:n_plus_one?] == true
+      )}
+    >
       <div class="pdt-row__head">
         <code class="pdt-sql">{@event.data.sql}</code>
         <span class="pdt-time" title={times_title(@event.data.times)}>{duration(@event.duration)}</span>
@@ -192,7 +200,14 @@ defmodule PhoenixDevToolbar.Components do
         </button>
       </div>
       <ul class="pdt-list">
-        <li :for={group <- @groups} id={"pdt-n-plus-one-#{group.seq}"} class="pdt-row">
+        <li
+          :for={group <- @groups}
+          id={"pdt-n-plus-one-#{group.seq}"}
+          class="pdt-row"
+          data-pdt-row="n-plus-one"
+          data-pdt-count={group.count}
+          data-pdt-callbacks={group.callbacks}
+        >
           <div class="pdt-row__head">
             <code class="pdt-sql">{group.sql}</code>
             <span
@@ -260,7 +275,7 @@ defmodule PhoenixDevToolbar.Components do
 
   def request_row(%{event: %Event{kind: :response}} = assigns) do
     ~H"""
-    <li id={@id} class="pdt-row">
+    <li id={@id} class="pdt-row" {request_attrs(@event)}>
       <div class="pdt-row__head">
         <span class="pdt-method">{@event.data.method}</span>
         <code>{@event.data.path}</code>
@@ -277,7 +292,11 @@ defmodule PhoenixDevToolbar.Components do
 
   def request_row(assigns) do
     ~H"""
-    <li id={@id} class={["pdt-row", @event.kind == :exception && "pdt-row--error"]}>
+    <li
+      id={@id}
+      class={["pdt-row", @event.kind == :exception && "pdt-row--error"]}
+      {request_attrs(@event)}
+    >
       <div class="pdt-row__head">
         <span class="pdt-method">{@event.data.method}</span>
         <code>{@event.data.route}</code>
@@ -374,6 +393,30 @@ defmodule PhoenixDevToolbar.Components do
   defp status_class(status) when is_integer(status) and status >= 500, do: "pdt-badge--error"
   defp status_class(status) when is_integer(status) and status >= 400, do: "pdt-badge--warn"
   defp status_class(_status), do: "pdt-badge--ok"
+
+  @doc """
+  The `data-pdt-*` attributes of a row showing one event (ADR 14): a contract
+  for agents reading the panel, with raw values. `extra` attributes that are
+  nil or false are left out, true ones are written bare.
+  """
+  @spec row_attrs(String.t(), Event.t(), keyword()) :: keyword()
+  def row_attrs(row, %Event{} = event, extra \\ []) do
+    [
+      "data-pdt-row": row,
+      "data-pdt-sid": event.sid,
+      "data-pdt-seq": event.seq,
+      "data-pdt-duration-us": event.duration
+    ] ++ extra
+  end
+
+  defp request_attrs(%Event{} = event) do
+    row_attrs("request", event,
+      "data-pdt-kind": Atom.to_string(event.kind),
+      "data-pdt-method": event.data[:method],
+      "data-pdt-status": event.data[:status],
+      "data-pdt-error": event.kind == :exception
+    )
+  end
 
   defp failed?(%Event{data: %{result: {:error, _}}}), do: true
   defp failed?(_event), do: false

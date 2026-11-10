@@ -7,7 +7,7 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
 
   use Phoenix.Component
 
-  import PhoenixDevToolbar.Components, only: [duration: 1]
+  import PhoenixDevToolbar.Components, only: [duration: 1, row_attrs: 3]
 
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Profile
@@ -221,7 +221,15 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
         </tr>
       </thead>
       <tbody>
-        <tr :for={{row, index} <- Enum.with_index(@rows)} id={"pdt-profile-#{index}"}>
+        <tr
+          :for={{row, index} <- Enum.with_index(@rows)}
+          id={"pdt-profile-#{index}"}
+          data-pdt-row="profile"
+          data-pdt-callback={label(row.key)}
+          data-pdt-count={row.count}
+          data-pdt-total-us={row.total_us}
+          data-pdt-max-us={row.max_us}
+        >
           <td><code>{label(row.key)}</code></td>
           <td class="pdt-num pdt-count">{row.count}</td>
           <td class="pdt-num">{duration(row.total_us)}</td>
@@ -239,7 +247,15 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
 
   defp event_row(%{event: %Event{kind: :callback}} = assigns) do
     ~H"""
-    <li id={@id} class={["pdt-row", @event.data.error && "pdt-row--error"]}>
+    <li
+      id={@id}
+      class={["pdt-row", @event.data.error && "pdt-row--error"]}
+      {row_attrs("callback", @event,
+        "data-pdt-callback": Atom.to_string(@event.data.callback),
+        "data-pdt-event": @event.data[:event],
+        "data-pdt-error": @event.data.error != nil
+      )}
+    >
       <div class="pdt-row__head">
         <code>{label(@event.data)}</code>
         <span class="pdt-time">{duration(@event.duration)}</span>
@@ -269,7 +285,7 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
 
   defp event_row(%{event: %Event{kind: :client}} = assigns) do
     ~H"""
-    <li id={@id} class="pdt-row">
+    <li id={@id} class="pdt-row" {row_attrs("client", @event, "data-pdt-event": @event.data.type)}>
       <div class="pdt-row__head">
         <code>{@event.data.type}</code>
       </div>
@@ -283,7 +299,11 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
 
   defp event_row(%{event: %Event{kind: :render}} = assigns) do
     ~H"""
-    <li id={@id} class={["pdt-row", @event.data.error && "pdt-row--error"]}>
+    <li
+      id={@id}
+      class={["pdt-row", @event.data.error && "pdt-row--error"]}
+      {row_attrs("render", @event, "data-pdt-error": @event.data.error != nil)}
+    >
       <div class="pdt-row__head">
         <code>{render_label(@event.data)}</code>
         <span class="pdt-time">{duration(@event.duration)}</span>

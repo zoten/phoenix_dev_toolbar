@@ -156,6 +156,43 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
     assert has_element?(view, "#pdt-profile-0", "inc")
   end
 
+  test "rows carry data-pdt-* attributes with raw values (ADR 14)",
+       %{request: request, live: live} do
+    callback(live, :handle_event, 5, %{event: "save"})
+    callback(live, :handle_info, 1, %{error: "** (RuntimeError) bad"})
+    render_event(live, 2, nil)
+
+    view = open_panel(request) |> open_tab("events")
+    [save, failed, render] = Store.events(live)
+
+    assert has_element?(
+             view,
+             ~s(#pdt-lv-#{save.seq}[data-pdt-row="callback"][data-pdt-sid="#{live}"]) <>
+               ~s([data-pdt-seq="#{save.seq}"][data-pdt-duration-us="5000"]) <>
+               ~s([data-pdt-callback="handle_event"][data-pdt-event="save"])
+           )
+
+    refute has_element?(view, "#pdt-lv-#{save.seq}[data-pdt-error]")
+
+    assert has_element?(
+             view,
+             ~s(#pdt-lv-#{failed.seq}[data-pdt-callback="handle_info"][data-pdt-error])
+           )
+
+    assert has_element?(
+             view,
+             ~s(#pdt-lv-#{render.seq}[data-pdt-row="render"][data-pdt-duration-us="2000"])
+           )
+
+    view |> element("#pdt-lv-tab-profiler") |> render_click()
+
+    assert has_element?(
+             view,
+             ~s(#pdt-profile-0[data-pdt-row="profile"][data-pdt-callback='handle_event "save"']) <>
+               ~s([data-pdt-count="1"][data-pdt-total-us="5000"][data-pdt-max-us="5000"])
+           )
+  end
+
   describe "assigns snapshot" do
     test "explains when the page has no LiveView" do
       Store.reset()
@@ -215,6 +252,11 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       assert has_element?(view, "#pdt-lv-client-1", "phx:page-loading-start")
       assert has_element?(view, "#pdt-lv-client-1 .pdt-tag", "/posts")
       assert has_element?(view, "#pdt-lv-client-1 .pdt-tag--client")
+
+      assert has_element?(
+               view,
+               ~s(#pdt-lv-client-1[data-pdt-row="client"][data-pdt-event="phx:page-loading-start"])
+             )
     end
 
     test "ignores unknown events and fields, caps strings, shows drops", %{request: request} do

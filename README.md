@@ -145,6 +145,8 @@ Report.latest(path: "/posts") |> Report.n_plus_one()
 
 It sees what the panel sees, for as long as the toolbar keeps it (10 minutes by default). A separate `mix run` starts another VM with nothing captured.
 
+Agents that drive a browser can open the panel in a tab of its own: `/__pdt/panel?path=/posts` shows the newest `/posts` page, `/__pdt/panel` the newest page. Its rows carry `data-pdt-*` attributes with raw values (microseconds, counts, sids), listed in the `PhoenixDevToolbar.Plug` docs.
+
 The package ships [usage rules](https://hexdocs.pm/usage_rules) and a skill that teaches coding agents this check-before-and-after routine. With `usage_rules` in your project:
 
 ```elixir

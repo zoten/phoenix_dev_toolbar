@@ -35,3 +35,18 @@ Report.sessions(path: ~r{^/posts}, limit: 5)
 - Data expires after 10 minutes by default: trigger the page again rather than
   looking for old sessions.
 - It is read-only. EXPLAIN and process actions are in the browser panel only.
+
+## Reading it in a browser
+
+When you drive a browser instead of evaluating code in the app:
+
+- Load the page, then open `/__pdt/panel?path=/posts` (the newest `/posts`
+  page), `/__pdt/panel` (the newest page) or `/__pdt/panel?sid=<sid>`. `/__pdt`
+  is the plug's default `:path`.
+- Read the `data-pdt-*` attributes, not the formatted text: for example
+  `[data-pdt-row="query"]` rows carry `data-pdt-duration-us`, `data-pdt-source`
+  and `data-pdt-n-plus-one`; `#pdt-panel[data-pdt-root]` is the page's sid.
+  Every tab is in the DOM, hidden ones too. The full list is in the plug docs
+  (`PhoenixDevToolbar.Plug`, "Standalone panel").
+- Reload the panel after triggering the page again: it shows the page it found
+  when it loaded.

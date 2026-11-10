@@ -52,6 +52,13 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
     assert has_element?(panel, "#pdt-badge-ecto-n-plus-one", "N+1 ×1")
     assert has_element?(panel, "#pdt-n-plus-one li", "SELECT * FROM posts WHERE user_id = $1")
     assert has_element?(panel, "#pdt-n-plus-one li", "×6")
+    # The raw values for agents (ADR 14).
+    assert has_element?(
+             panel,
+             ~s(#pdt-n-plus-one li[data-pdt-row="n-plus-one"][data-pdt-count="6"][data-pdt-callbacks="1"])
+           )
+
+    assert has_element?(panel, ~s(#pdt-queries [data-pdt-row="query"][data-pdt-n-plus-one]))
     # Rows from the threshold on (the 5th and 6th) are tagged.
     tags =
       panel

@@ -180,6 +180,12 @@ body.pdt {
 .pdt-dock-picker { position: relative; flex: none; display: none; }
 .pdt-open .pdt-dock-picker { display: block; }
 
+/* Standalone (ADR 14): a tab of its own, no loader to dock, hide or collapse. */
+.pdt-standalone .pdt-dock-picker,
+.pdt-standalone .pdt-hide,
+.pdt-standalone .pdt-toggle,
+.pdt-standalone .pdt-summary-more { display: none; }
+
 .pdt-dock {
   display: grid;
   place-items: center;

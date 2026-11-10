@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `allowed_origins:` for proxies and tunnels that rewrite the Host header (ADR 04)
 - `PhoenixDevToolbar.Report`: read API over captured sessions for IEx and agents (ADR 13)
 - Shipped `usage-rules.md` and the `phoenix-dev-toolbar-report` agent skill (ADR 13)
+- Standalone panel URL: `<path>/panel?path=...` or the newest page, standalone mode (ADR 14)
+- Documented `data-pdt-*` row attributes with raw values, for browser-driving agents (ADR 14)
 
 ## [0.0.1] - 2026-11-10
 

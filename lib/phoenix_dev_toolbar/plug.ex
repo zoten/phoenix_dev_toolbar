@@ -30,6 +30,21 @@ defmodule PhoenixDevToolbar.Plug do
           # or, if your plug stores it elsewhere
           plug PhoenixDevToolbar.Plug, nonce_assign: :my_nonce
 
+  ## Standalone panel
+
+  The panel also opens in a browser tab of its own, for example from a
+  browser-driving agent:
+
+    * `<path>/panel?path=/posts` - the newest page whose path is exactly `/posts`
+    * `<path>/panel` - the newest page
+    * `<path>/panel?sid=<sid>` - one page, by the sid `PhoenixDevToolbar.Report`
+      returns, or the `data-pdt-sid` of the toolbar's script tag on the page
+
+  A page is the request and the LiveView it mounted, as the toolbar shows it.
+  The page is picked when the panel loads: reload the panel for a newer one.
+  Rows carry stable `data-pdt-*` attributes with raw values (microseconds,
+  counts, sids), listed in [ADR 14](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/14-standalone-panel-and-row-attributes.md).
+
   ## Access rules
 
   The panel, its socket and the export answer only a request whose `Host` cannot
@@ -55,6 +70,7 @@ defmodule PhoenixDevToolbar.Plug do
   alias PhoenixDevToolbar.HostCheck
   alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.PanelSocket
+  alias PhoenixDevToolbar.Report
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
   alias Plug.Conn
@@ -241,8 +257,37 @@ defmodule PhoenixDevToolbar.Plug do
 
   defp serve_export(conn), do: conn |> untracked() |> Conn.send_resp(405, "") |> Conn.halt()
 
+  # `?sid=` is the loader's iframe. Without it the panel is opened on its own
+  # (ADR 14): `?path=` picks the newest page at that exact path, nothing at all
+  # the newest page. ETS reads only, resolved once per panel load.
   defp panel_sid(%{"sid" => sid}) when is_binary(sid), do: sid
-  defp panel_sid(_params), do: ""
+  defp panel_sid(%{"path" => path}) when is_binary(path), do: newest_page(path: path)
+  defp panel_sid(_params), do: newest_page([])
+
+  defp newest_page(opts) do
+    case Report.latest(opts) do
+      %{kind: :live_view, sid: sid, parent: parent} when is_binary(parent) ->
+        request_parent(parent, sid)
+
+      %{sid: sid} ->
+        sid
+
+      nil ->
+        ""
+    end
+  end
+
+  # A connected mount shows as its request's page; a live navigated LiveView
+  # (its parent is a LiveView) is a page of its own, as in the iframe.
+  defp request_parent(parent, sid) do
+    case Store.session(parent) do
+      {:ok, %Session{kind: :request}} -> parent
+      _other -> sid
+    end
+  rescue
+    # The Store's tables are gone while it restarts.
+    ArgumentError -> sid
+  end
 
   # Already tracked: the plug is in the pipeline twice (endpoint and router).
   defp maybe_track(%Conn{private: %{phoenix_dev_toolbar: _}} = conn, _opts), do: conn

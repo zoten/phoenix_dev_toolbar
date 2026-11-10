@@ -154,6 +154,22 @@ test("opened as a top level page, it posts nothing", async (t) => {
   assert.deepEqual(page.window.posted, [])
 })
 
+test("opened as a top level page, it is a standalone open panel", async (t) => {
+  const page = await load(t, {framed: false})
+
+  assert.ok(page.html.contains("pdt-standalone"))
+  assert.ok(page.html.contains("pdt-open"))
+  assert.ok(page.html.contains("pdt-dock-bottom"))
+  assert.deepEqual(page.join().pushed, [{event: "pdt:visibility", payload: {open: true, visible: true}}])
+})
+
+test("in the loader's iframe, it waits for the loader's state", async (t) => {
+  const page = await load(t)
+
+  assert.ok(!page.html.contains("pdt-standalone"))
+  assert.ok(!page.html.contains("pdt-open"))
+})
+
 test("the dock menu opens on its button and closes on Escape", async (t) => {
   const page = await load(t)
   const menu = page.byId("pdt-dock-menu")

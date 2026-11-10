@@ -121,6 +121,15 @@ window.addEventListener("message", (event) => {
 
 document.addEventListener("visibilitychange", pushVisibility)
 
+// Opened in a browser tab of its own (ADR 14), not in the loader's iframe: no
+// loader sends pdt:state, so the panel is open at the bottom dock, and CSS
+// hides the controls that would talk to a loader (pdt-standalone).
+if (window.parent === window) {
+  document.documentElement.classList.add("pdt-standalone")
+  setDock("bottom")
+  setOpen(true)
+}
+
 // On #pdt-bridge: reports visibility on join and after reconnects, and
 // forwards client events.
 const PdtPanel = {
