@@ -308,10 +308,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
     # Unset is the default: off. An explicit false looks the same.
     for {name, setup} <- [{"unset", :delete}, {"false", false}] do
       test "actions #{name} shows no actions, and a hint naming the option" do
-        case unquote(setup) do
-          :delete -> delete_app_env(:actions)
-          value -> put_app_env(:actions, value)
-        end
+        set_actions(unquote(setup))
 
         agent = start_supervised!({Agent, fn -> :ok end})
         panel = open()
@@ -547,4 +544,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
       assert PhoenixDevToolbar.Tracer.status(panel.pid) == nil
     end
   end
+
+  defp set_actions(:delete), do: delete_app_env(:actions)
+  defp set_actions(value), do: put_app_env(:actions, value)
 end
