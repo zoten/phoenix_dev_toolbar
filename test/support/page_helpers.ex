@@ -39,6 +39,50 @@ defmodule PhoenixDevToolbar.PageHelpers do
   end
 
   @doc """
+  Connects the panel LiveView for `sid`. `:conn` is the conn to connect with
+  (default `build_conn()`, e.g. for a custom `peer_data`).
+  """
+  @spec open_panel(String.t(), keyword()) :: struct()
+  def open_panel(sid, opts \\ []) do
+    conn = Keyword.get_lazy(opts, :conn, &build_conn/0)
+    {:ok, panel, _html} = live(conn, "/__pdt/panel?sid=#{sid}")
+    panel
+  end
+
+  @doc """
+  Has the panel handle everything the Store sent it (`:pdt_flush`) and renders.
+  """
+  @spec flush(struct()) :: String.t()
+  def flush(view) do
+    send(view.pid, :pdt_flush)
+    render(view)
+  end
+
+  @doc """
+  Delivers the pending `kind` timer tick of the panel component `module` with
+  DOM id `id` right away, with its real token, instead of waiting for the timer.
+  The token is private to the component, so this reads it from the LiveView
+  process state (Phoenix LiveView 1.2.13: `components` is
+  `{cid_to_component, ...}` with `{module, id, assigns, ...}` values). Isolated
+  here on purpose; configure the tab's interval high so the real timer cannot race.
+  """
+  @spec tick_now(struct(), module(), String.t(), atom()) :: String.t()
+  def tick_now(view, module, id, kind) do
+    {cid_to_component, _id_to_cid, _uuids} = :sys.get_state(view.pid).components
+
+    {_cid, {_module, ^id, assigns, _private, _prints}} =
+      Enum.find(cid_to_component, fn {_cid, component} -> elem(component, 1) == id end)
+
+    {_ref, token} = Map.fetch!(assigns.timers, kind)
+    PhoenixDevToolbar.Panel.send_now(view.pid, module, id, {kind, token})
+    render(view)
+  end
+
+  @doc "Milliseconds as native time units (event timestamps)."
+  @spec ms(integer()) :: integer()
+  def ms(n), do: System.convert_time_unit(n, :millisecond, :native)
+
+  @doc """
   ExUnit setup for the Ecto tab on real SQLite queries: the Store reset, the Ecto
   plugin on `DemoWeb.SQLiteRepo`, `/demo` visited and its panel connected.
   Restores the plugins and the Store on exit.
@@ -47,8 +91,7 @@ defmodule PhoenixDevToolbar.PageHelpers do
   def sqlite_panel(context) do
     :ok = sqlite_plugins(context)
     {host, sid} = visit("/demo")
-    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
-    %{host: host, panel: panel}
+    %{host: host, panel: open_panel(sid)}
   end
 
   @doc """

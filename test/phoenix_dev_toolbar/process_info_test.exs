@@ -240,7 +240,7 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
       assert_receive :busy
       supervisor = start_supervised!(Task.Supervisor)
       task = Task.Supervisor.async(supervisor, fn -> Agent.get(busy, & &1, :infinity) end)
-      assert waiting_in_call?(task.pid, 100_000)
+      wait_until(fn -> waiting_in_call?(task.pid) end)
 
       assert ProcessInfo.status(task.pid, 1000) == {:error, :busy}
       assert Process.info(task.pid, :message_queue_len) == {:message_queue_len, 0}
@@ -257,7 +257,7 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
         })
 
       :ok = Agent.get(agent, & &1)
-      assert hibernated?(agent, 100_000)
+      wait_until(fn -> hibernated?(agent) end)
 
       assert {:ok, %{sys_state: ":running"}} = ProcessInfo.status(agent, 1000)
     end
@@ -283,24 +283,16 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
   end
 
   # A call blocks right after it is sent: no message tells when.
-  defp waiting_in_call?(_pid, 0), do: false
-
-  defp waiting_in_call?(pid, tries) do
-    case Process.info(pid, :current_function) do
-      {:current_function, {:gen, :do_call, 4}} -> true
-      _other -> :erlang.yield() && waiting_in_call?(pid, tries - 1)
-    end
-  end
+  defp waiting_in_call?(pid),
+    do: Process.info(pid, :current_function) == {:current_function, {:gen, :do_call, 4}}
 
   # A server hibernates right after it replies: no message tells when. OTP 27
   # reports :gen_server.loop_hibernate/4, older ones :erlang.hibernate/3.
-  defp hibernated?(_pid, 0), do: false
-
-  defp hibernated?(pid, tries) do
+  defp hibernated?(pid) do
     case Process.info(pid, :current_function) do
       {:current_function, {:erlang, :hibernate, 3}} -> true
       {:current_function, {:gen_server, :loop_hibernate, _arity}} -> true
-      _other -> :erlang.yield() && hibernated?(pid, tries - 1)
+      _other -> false
     end
   end
 end

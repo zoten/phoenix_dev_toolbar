@@ -29,6 +29,10 @@ if config_env() == :test do
   # Mix.env() is :test here, not :dev: enable explicitly (ADR 01).
   config :phoenix_dev_toolbar, enabled: true
 
+  # No automatic TTL sweep mid-test: sessions dated at the epoch would expire.
+  # Tests call Store.sweep/1 explicitly.
+  config :phoenix_dev_toolbar, limits: [sweep_ms: :timer.hours(24)]
+
   # The suite's canonical repo (test_helper.exs), so plugins start without the
   # "no Ecto repos" warning; tests of other repos override it and restore it.
   config :phoenix_dev_toolbar, repos: [DemoWeb.SQLiteRepo]

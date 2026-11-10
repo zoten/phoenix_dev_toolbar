@@ -4,6 +4,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
 
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
+  import PhoenixDevToolbar.PageHelpers, only: [attach_plugins: 0, ms: 1]
   import PhoenixDevToolbar.ProcessHelpers
 
   alias Phoenix.LiveView.Socket
@@ -23,15 +24,13 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
     Collector.attach([LiveViewPlugin])
 
     on_exit(fn ->
-      Collector.attach(PhoenixDevToolbar.Application.plugins())
+      attach_plugins()
       Store.reset()
     end)
 
     %Session{sid: sid} = Store.new_session(Session.new(:live_view))
     %{sid: sid}
   end
-
-  defp ms(n), do: System.convert_time_unit(n, :millisecond, :native)
 
   # Sockets come from LiveView's public API, as the real callbacks produce them.
   defp socket(assigns \\ []),
@@ -257,7 +256,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
 
   describe "end to end with a real host LiveView" do
     setup do
-      Collector.attach(PhoenixDevToolbar.Application.plugins())
+      attach_plugins()
       :ok
     end
 

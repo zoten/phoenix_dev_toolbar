@@ -12,8 +12,7 @@ defmodule PhoenixDevToolbar.EctoExportPanelTest do
 
   defp run(host, panel, sql, params) do
     render_hook(host, "sqlite", %{"sql" => sql, "params" => params})
-    send(panel.pid, :pdt_flush)
-    _ = render(panel)
+    _ = flush(panel)
   end
 
   defp choose(panel, fields), do: panel |> form("#pdt-ecto-export", fields) |> render_change()
@@ -58,7 +57,7 @@ defmodule PhoenixDevToolbar.EctoExportPanelTest do
     # it once the form shows a newer page.
     test "an export says its page; once the LiveView joins, both export it" do
       {conn, root} = load_page("/demo/loaders")
-      {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{root}")
+      panel = open_panel(root)
 
       copy(panel, %{"format" => "full"})
       assert_push_event(panel, "pdt:export", %{payload: early, page: ^root})

@@ -34,4 +34,51 @@ defmodule PhoenixDevToolbar.ProcessHelpers do
     _ = assert_receive {:DOWN, ^ref, :process, ^pid, :normal}
     :ok
   end
+
+  @doc """
+  A process that answers pings, so it both receives and sends: `{:ping, from}`
+  gets `{:pong, pid}`, `{:ping, from, payload}` gets `{:pong, payload}`. A
+  suspended one answers only once resumed. Killed on exit.
+  """
+  @spec ponger() :: pid()
+  def ponger do
+    pid = spawn(fn -> pong() end)
+    on_exit(fn -> Process.exit(pid, :kill) end)
+    pid
+  end
+
+  defp pong do
+    receive do
+      {:ping, from} -> send(from, {:pong, self()})
+      {:ping, from, payload} -> send(from, {:pong, payload})
+    end
+
+    pong()
+  end
+
+  @doc """
+  Polls `fun` until it is truthy, then returns. Flunks after `timeout_ms` (a
+  monotonic deadline). Yields between polls: no sleep, no fixed iteration count.
+  """
+  @spec wait_until((-> as_boolean(term())), pos_integer()) :: :ok
+  def wait_until(fun, timeout_ms \\ 1000) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    poll(fun, deadline, timeout_ms)
+  end
+
+  defp poll(fun, deadline, timeout_ms) do
+    cond do
+      fun.() ->
+        :ok
+
+      System.monotonic_time(:millisecond) > deadline ->
+        flunk("condition not met within #{timeout_ms} ms")
+
+      true ->
+        receive do
+        after
+          1 -> poll(fun, deadline, timeout_ms)
+        end
+    end
+  end
 end

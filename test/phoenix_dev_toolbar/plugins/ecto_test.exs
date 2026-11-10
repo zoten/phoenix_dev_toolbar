@@ -3,6 +3,8 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
+  import PhoenixDevToolbar.EnvHelpers
+  import PhoenixDevToolbar.PageHelpers, only: [attach_plugins: 0, ms: 1]
   import PhoenixDevToolbar.ProcessHelpers
 
   alias PhoenixDevToolbar.Attribution
@@ -16,22 +18,19 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
 
   setup do
     Store.reset()
-    put_repos([DemoWeb.FakeRepo])
-    Collector.attach([EctoPlugin])
 
+    # Registered before the env change: runs after it is restored.
     on_exit(fn ->
-      put_repos([DemoWeb.SQLiteRepo])
-      Collector.attach(PhoenixDevToolbar.Application.plugins())
+      attach_plugins()
       Store.reset()
     end)
+
+    put_app_env(:repos, [DemoWeb.FakeRepo])
+    Collector.attach([EctoPlugin])
 
     %Session{sid: sid} = Store.new_session(Session.new(:request))
     %{sid: sid}
   end
-
-  defp put_repos(repos), do: Application.put_env(:phoenix_dev_toolbar, :repos, repos)
-
-  defp ms(n), do: System.convert_time_unit(n, :millisecond, :native)
 
   defp query_metadata(overrides) do
     Map.merge(
@@ -75,7 +74,7 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
   end
 
   test "the plugin's repos option wins over the app env, and is validated" do
-    put_repos([DemoWeb.HelloPlug])
+    put_app_env(:repos, [DemoWeb.HelloPlug])
 
     assert events(repos: [DemoWeb.FakeRepo]) == [@event]
     assert {:error, message} = EctoPlugin.init(repos: DemoWeb.FakeRepo)
@@ -84,26 +83,25 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
 
   describe "without repos configured" do
     setup do
-      Application.delete_env(:phoenix_dev_toolbar, :repos)
-      on_exit(fn -> Application.delete_env(:phoenix_dev_toolbar, :ecto_repos) end)
+      delete_app_env(:repos)
     end
 
     test "falls back to the :ecto_repos of the loaded applications" do
-      Application.put_env(:phoenix_dev_toolbar, :ecto_repos, [DemoWeb.FakeRepo])
+      put_app_env(:ecto_repos, [DemoWeb.FakeRepo])
 
       assert events([]) == [@event]
     end
 
     test "explicit config wins over the fallback" do
-      Application.put_env(:phoenix_dev_toolbar, :ecto_repos, [DemoWeb.HelloPlug])
+      put_app_env(:ecto_repos, [DemoWeb.HelloPlug])
 
       assert events(repos: [DemoWeb.FakeRepo]) == [@event]
-      put_repos([DemoWeb.FakeRepo])
+      put_app_env(:repos, [DemoWeb.FakeRepo])
       assert events([]) == [@event]
     end
 
     test "an explicit empty list opts out, silently" do
-      Application.put_env(:phoenix_dev_toolbar, :ecto_repos, [DemoWeb.FakeRepo])
+      put_app_env(:ecto_repos, [DemoWeb.FakeRepo])
 
       log = capture_log(fn -> assert events(repos: []) == [] end)
       assert log == ""
@@ -202,7 +200,7 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
   end
 
   test "skips, with a warning, configured modules that are not repos" do
-    put_repos([DemoWeb.HelloPlug])
+    put_app_env(:repos, [DemoWeb.HelloPlug])
 
     log = capture_log(fn -> assert events([]) == [] end)
 

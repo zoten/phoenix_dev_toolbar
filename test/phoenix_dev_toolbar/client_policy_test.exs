@@ -2,20 +2,10 @@ defmodule PhoenixDevToolbar.ClientPolicyTest do
   # Changes the application env.
   use ExUnit.Case, async: false
 
+  import PhoenixDevToolbar.EnvHelpers
   import ExUnit.CaptureLog
 
   alias PhoenixDevToolbar.ClientPolicy
-
-  setup do
-    previous = Application.fetch_env(:phoenix_dev_toolbar, :actions)
-
-    on_exit(fn ->
-      case previous do
-        {:ok, value} -> Application.put_env(:phoenix_dev_toolbar, :actions, value)
-        :error -> Application.delete_env(:phoenix_dev_toolbar, :actions)
-      end
-    end)
-  end
 
   test "loopback addresses" do
     assert ClientPolicy.loopback?({127, 0, 0, 1})
@@ -31,7 +21,7 @@ defmodule PhoenixDevToolbar.ClientPolicyTest do
   end
 
   test "by default nobody may act, and the default does not warn" do
-    Application.delete_env(:phoenix_dev_toolbar, :actions)
+    delete_app_env(:actions)
 
     assert ClientPolicy.mode() == false
     assert ClientPolicy.check_actions({127, 0, 0, 1}) == {:error, :disabled}
@@ -40,7 +30,7 @@ defmodule PhoenixDevToolbar.ClientPolicyTest do
   end
 
   test "actions: :loopback lets only loopback clients act" do
-    Application.put_env(:phoenix_dev_toolbar, :actions, :loopback)
+    put_app_env(:actions, :loopback)
 
     assert ClientPolicy.check_actions({127, 0, 0, 1}) == :ok
     assert ClientPolicy.check_actions({10, 0, 0, 2}) == {:error, :not_loopback}
@@ -48,21 +38,21 @@ defmodule PhoenixDevToolbar.ClientPolicyTest do
   end
 
   test "actions: :any lets every client act, and warns" do
-    Application.put_env(:phoenix_dev_toolbar, :actions, :any)
+    put_app_env(:actions, :any)
 
     assert ClientPolicy.check_actions({10, 0, 0, 2}) == :ok
     assert capture_log(fn -> ClientPolicy.warn_config() end) =~ "actions: :any"
   end
 
   test "actions: false lets nobody act" do
-    Application.put_env(:phoenix_dev_toolbar, :actions, false)
+    put_app_env(:actions, false)
 
     assert ClientPolicy.check_actions({127, 0, 0, 1}) == {:error, :disabled}
     assert ClientPolicy.explicitly_off?()
   end
 
   test "an invalid value counts as off, and warns" do
-    Application.put_env(:phoenix_dev_toolbar, :actions, :everyone)
+    put_app_env(:actions, :everyone)
 
     assert ClientPolicy.mode() == false
     assert ClientPolicy.check_actions({127, 0, 0, 1}) == {:error, :disabled}

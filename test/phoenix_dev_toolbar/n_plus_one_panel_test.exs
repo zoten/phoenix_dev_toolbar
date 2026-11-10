@@ -5,6 +5,7 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
 
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
+  import PhoenixDevToolbar.EnvHelpers
   import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Collector
@@ -15,26 +16,26 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
 
   defp start(plugins) do
     Store.reset()
-    Application.put_env(:phoenix_dev_toolbar, :repos, [DemoWeb.FakeRepo])
-    Collector.attach(plugins)
 
+    # Registered before the env change: runs after it is restored.
     on_exit(fn ->
-      Application.put_env(:phoenix_dev_toolbar, :repos, [DemoWeb.SQLiteRepo])
       attach_plugins()
       Store.reset()
     end)
 
+    put_app_env(:repos, [DemoWeb.FakeRepo])
+    Collector.attach(plugins)
+
     {conn, sid} = load_page("/demo")
 
     {:ok, host, _html} = live(conn)
-    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    panel = open_panel(sid)
     {host, panel}
   end
 
   # Tab deliveries land after the next render: render twice.
-  defp flush(panel) do
-    send(panel.pid, :pdt_flush)
-    _ = render(panel)
+  defp settle(panel) do
+    _ = flush(panel)
     _ = render(panel)
   end
 
@@ -46,7 +47,7 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
       "count" => 6
     })
 
-    flush(panel)
+    settle(panel)
 
     assert has_element?(panel, "#pdt-badge-ecto-n-plus-one", "N+1 ×1")
     assert has_element?(panel, "#pdt-n-plus-one li", "SELECT * FROM posts WHERE user_id = $1")
@@ -69,7 +70,7 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
     for file <- ["lib/a.ex", "lib/b.ex"],
         do: render_hook(host, "queries", %{"sql" => "SELECT u", "count" => 5, "origin" => file})
 
-    flush(panel)
+    settle(panel)
 
     assert has_element?(panel, "#pdt-badge-ecto-n-plus-one", "N+1 ×2")
     assert has_element?(panel, "#pdt-n-plus-one li .pdt-origin", "lib/a.ex:3")
@@ -81,20 +82,20 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
     {host, panel} = start(PhoenixDevToolbar.Application.plugins())
 
     for _click <- 1..2, do: render_hook(host, "queries", %{"sql" => "SELECT r", "count" => 5})
-    flush(panel)
+    settle(panel)
 
     assert has_element?(panel, "#pdt-badge-ecto-n-plus-one", "N+1 ×1")
     assert has_element?(panel, "#pdt-n-plus-one li", "in 2 callbacks")
 
     panel |> element("#pdt-n-plus-one-clear") |> render_click()
-    flush(panel)
+    settle(panel)
 
     refute has_element?(panel, "#pdt-badge-ecto-n-plus-one")
     refute has_element?(panel, "#pdt-n-plus-one")
 
     # Still there after a fix? It comes back on the next repeat.
     render_hook(host, "queries", %{"sql" => "SELECT r", "count" => 5})
-    flush(panel)
+    settle(panel)
     assert has_element?(panel, "#pdt-n-plus-one li", "in 1 callback")
   end
 
@@ -102,7 +103,7 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
     {host, panel} = start(PhoenixDevToolbar.Application.plugins())
 
     for _click <- 1..5, do: render_hook(host, "queries", %{"sql" => "SELECT 1", "count" => 1})
-    flush(panel)
+    settle(panel)
 
     assert has_element?(panel, "#pdt-badge-ecto-queries", "5 queries")
     refute has_element?(panel, "#pdt-badge-ecto-n-plus-one")
@@ -112,12 +113,12 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
   test "the threshold comes from the plugin's n_plus_one option; false disables it" do
     {host, panel} = start([{Plugins.Ecto, n_plus_one: 2}, Plugins.LiveView])
     render_hook(host, "queries", %{"sql" => "SELECT 2", "count" => 2})
-    flush(panel)
+    settle(panel)
     assert has_element?(panel, "#pdt-badge-ecto-n-plus-one")
 
     {host, panel} = start([{Plugins.Ecto, n_plus_one: false}, Plugins.LiveView])
     render_hook(host, "queries", %{"sql" => "SELECT 3", "count" => 9})
-    flush(panel)
+    settle(panel)
     refute has_element?(panel, "#pdt-badge-ecto-n-plus-one")
     refute has_element?(panel, "#pdt-n-plus-one")
   end

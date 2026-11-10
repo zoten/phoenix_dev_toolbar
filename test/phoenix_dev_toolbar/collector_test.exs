@@ -3,6 +3,7 @@ defmodule PhoenixDevToolbar.CollectorTest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
+  import PhoenixDevToolbar.PageHelpers, only: [attach_plugins: 0]
   import PhoenixDevToolbar.ProcessHelpers
 
   alias PhoenixDevToolbar.Attribution
@@ -23,7 +24,7 @@ defmodule PhoenixDevToolbar.CollectorTest do
     Store.reset()
 
     on_exit(fn ->
-      Collector.attach(PhoenixDevToolbar.Application.plugins())
+      attach_plugins()
       Store.reset()
     end)
 

@@ -2,6 +2,8 @@ defmodule PhoenixDevToolbar.HostCheckTest do
   # Changes the application env (`allowed_hosts:`).
   use ExUnit.Case, async: false
 
+  import PhoenixDevToolbar.EnvHelpers
+
   alias PhoenixDevToolbar.HostCheck
 
   defp conn(host, endpoint \\ nil) do
@@ -15,16 +17,7 @@ defmodule PhoenixDevToolbar.HostCheckTest do
   end
 
   setup do
-    previous = Application.fetch_env(:phoenix_dev_toolbar, :allowed_hosts)
-
-    on_exit(fn ->
-      case previous do
-        {:ok, value} -> Application.put_env(:phoenix_dev_toolbar, :allowed_hosts, value)
-        :error -> Application.delete_env(:phoenix_dev_toolbar, :allowed_hosts)
-      end
-    end)
-
-    Application.delete_env(:phoenix_dev_toolbar, :allowed_hosts)
+    delete_app_env(:allowed_hosts)
   end
 
   test "IP literals and localhost names cannot be rebound: allowed" do
@@ -51,7 +44,7 @@ defmodule PhoenixDevToolbar.HostCheckTest do
   end
 
   test "allowed_hosts: exact names, and suffixes starting with a dot" do
-    Application.put_env(:phoenix_dev_toolbar, :allowed_hosts, ["myapp.test", ".lan"])
+    put_app_env(:allowed_hosts, ["myapp.test", ".lan"])
 
     assert HostCheck.allowed?(conn("myapp.test"))
     assert HostCheck.allowed?(conn("box.lan"))

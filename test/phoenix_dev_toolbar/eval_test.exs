@@ -2,6 +2,7 @@ defmodule PhoenixDevToolbar.EvalTest do
   # The Eval tab (ADR 12): read only and loopback only unless the host says so.
   use ExUnit.Case, async: false
 
+  import PhoenixDevToolbar.EnvHelpers
   import ExUnit.CaptureLog
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
@@ -11,15 +12,13 @@ defmodule PhoenixDevToolbar.EvalTest do
   alias PhoenixDevToolbar.Plugins.Eval
   alias PhoenixDevToolbar.Store
 
-  @endpoint DemoWeb.Endpoint
-
   defp attach(opts) do
     capture_log(fn -> attach_plugins([{Eval, opts}]) end)
   end
 
   defp open(conn \\ build_conn()) do
     {_host, sid} = visit("/demo")
-    {:ok, panel, _html} = live(conn, "/__pdt/panel?sid=#{sid}")
+    panel = open_panel(sid, conn: conn)
     panel |> element("#pdt-tab-eval") |> render_click()
     panel
   end
@@ -83,21 +82,12 @@ defmodule PhoenixDevToolbar.EvalTest do
     end
 
     test "an explicit actions: false refuses code even with allow: :eval; unset does not" do
-      previous = Application.fetch_env(:phoenix_dev_toolbar, :actions)
-
-      on_exit(fn ->
-        case previous do
-          {:ok, value} -> Application.put_env(:phoenix_dev_toolbar, :actions, value)
-          :error -> Application.delete_env(:phoenix_dev_toolbar, :actions)
-        end
-      end)
-
       attach(allow: :eval)
 
-      Application.delete_env(:phoenix_dev_toolbar, :actions)
+      delete_app_env(:actions)
       assert has_element?(open(), "#pdt-eval-form")
 
-      Application.put_env(:phoenix_dev_toolbar, :actions, false)
+      put_app_env(:actions, false)
       panel = open()
       assert has_element?(panel, "#pdt-eval-disabled", "actions: false")
       refute has_element?(panel, "#pdt-eval-form")
@@ -177,10 +167,12 @@ defmodule PhoenixDevToolbar.EvalTest do
   end
 
   test "code is stopped on time even when its caller is gone" do
+    # The evaluator reports itself to this test, which is registered for it.
     probe = :"pdt_eval_probe_#{System.unique_integer([:positive])}"
-    code = "Process.register(self(), #{inspect(probe)}); Process.sleep(:infinity)"
-    caller = spawn(fn -> EvalRunner.eval(code, 100) end)
-    evaluator = wait_for_name(probe, 100_000)
+    Process.register(self(), probe)
+    code = "send(#{inspect(probe)}, {:evaluator, self()}); Process.sleep(:infinity)"
+    caller = start_supervised!({Task, fn -> EvalRunner.eval(code, 100) end})
+    assert_receive {:evaluator, evaluator}, 1000
     ref = Process.monitor(evaluator)
 
     Process.exit(caller, :kill)
@@ -188,13 +180,12 @@ defmodule PhoenixDevToolbar.EvalTest do
     assert_receive {:DOWN, ^ref, :process, ^evaluator, :killed}, 1000
   end
 
-  # The evaluator registers itself as soon as it runs: no message tells when.
-  defp wait_for_name(_name, 0), do: flunk("the evaluator never ran")
+  test "every read query runs and returns a bounded result" do
+    for {id, _label} <- EvalRunner.queries() do
+      assert {:ok, %{result: result, error: nil, output: ""}} = EvalRunner.query(id),
+             "query #{id} failed"
 
-  defp wait_for_name(name, tries) do
-    case Process.whereis(name) do
-      pid when is_pid(pid) -> pid
-      nil -> :erlang.yield() && wait_for_name(name, tries - 1)
+      assert byte_size(result) in 1..20_000, "query #{id} result is not bounded"
     end
   end
 

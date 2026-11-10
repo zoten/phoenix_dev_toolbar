@@ -3,6 +3,7 @@ defmodule PhoenixDevToolbar.ApplicationTest do
   # handlers, which other tests rely on.
   use ExUnit.Case, async: false
 
+  import PhoenixDevToolbar.EnvHelpers
   import ExUnit.CaptureLog
 
   import PhoenixDevToolbar.PageHelpers, only: [attach_plugins: 0]
@@ -11,25 +12,16 @@ defmodule PhoenixDevToolbar.ApplicationTest do
   alias PhoenixDevToolbar.Collector
 
   setup do
-    previous = Application.fetch_env(:phoenix_dev_toolbar, :enabled)
-
-    on_exit(fn ->
-      case previous do
-        {:ok, value} -> Application.put_env(:phoenix_dev_toolbar, :enabled, value)
-        :error -> Application.delete_env(:phoenix_dev_toolbar, :enabled)
-      end
-    end)
-
-    Application.delete_env(:phoenix_dev_toolbar, :enabled)
+    delete_app_env(:enabled)
   end
 
   test "an explicit value wins in any env" do
     for env <- [nil, :dev, :test, :prod] do
-      Application.put_env(:phoenix_dev_toolbar, :enabled, true)
+      put_app_env(:enabled, true)
       assert ToolbarApp.settle_enabled({:ok, true}, env) == :ok
       assert PhoenixDevToolbar.enabled?()
 
-      Application.put_env(:phoenix_dev_toolbar, :enabled, false)
+      put_app_env(:enabled, false)
       assert ToolbarApp.settle_enabled({:ok, false}, env) == :ok
       refute PhoenixDevToolbar.enabled?()
     end
@@ -42,7 +34,7 @@ defmodule PhoenixDevToolbar.ApplicationTest do
 
   test "unset anywhere else disables the toolbar and says why" do
     for env <- [nil, :prod, :test] do
-      Application.delete_env(:phoenix_dev_toolbar, :enabled)
+      delete_app_env(:enabled)
 
       log = capture_log(fn -> assert ToolbarApp.settle_enabled(:error, env) == :ok end)
 

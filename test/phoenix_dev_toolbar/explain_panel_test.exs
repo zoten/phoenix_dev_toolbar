@@ -3,19 +3,15 @@ defmodule PhoenixDevToolbar.ExplainPanelTest do
   # runs real SQLite queries; the Ecto tab explains them on click.
   use ExUnit.Case, async: false
 
-  import Phoenix.ConnTest
   import Phoenix.LiveViewTest
   import PhoenixDevToolbar.PageHelpers
-
-  @endpoint DemoWeb.Endpoint
 
   setup :sqlite_panel
 
   # Runs `sql` in the host LiveView; returns the seq of its row in the panel.
   defp run(host, panel, sql, params \\ []) do
     render_hook(host, "sqlite", %{"sql" => sql, "params" => params})
-    send(panel.pid, :pdt_flush)
-    _ = render(panel)
+    _ = flush(panel)
 
     [id] =
       panel
@@ -78,7 +74,7 @@ defmodule PhoenixDevToolbar.ExplainPanelTest do
     own = run(host, panel, "SELECT id FROM users")
 
     {other_host, other_sid} = visit("/demo")
-    {:ok, other_panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{other_sid}")
+    other_panel = open_panel(other_sid)
     other = run(other_host, other_panel, "SELECT name FROM users")
 
     # A tampered client: this page's button, another page's seq.

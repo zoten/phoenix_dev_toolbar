@@ -88,7 +88,7 @@ defmodule PhoenixDevToolbar.ProcessControls do
     case action_allowed?(socket) do
       true ->
         socket
-        |> assign(confirm: nil, action_at: System.monotonic_time(:millisecond))
+        |> assign(confirm: nil, action_at: ProcessInspector.now_ms())
         |> assign(:note, run(action, pid, context(socket)))
         |> ProcessInspector.read_sample()
 
@@ -132,5 +132,5 @@ defmodule PhoenixDevToolbar.ProcessControls do
   defp action_allowed?(%{assigns: %{action_at: nil}}), do: true
 
   defp action_allowed?(%{assigns: %{action_at: at}}),
-    do: System.monotonic_time(:millisecond) - at >= @action_every_ms
+    do: ProcessInspector.now_ms() - at >= @action_every_ms
 end

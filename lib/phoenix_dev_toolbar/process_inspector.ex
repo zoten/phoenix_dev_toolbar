@@ -214,7 +214,7 @@ defmodule PhoenixDevToolbar.ProcessInspector do
     case gc_allowed?(socket) do
       true ->
         socket
-        |> assign(gc: :running, gc_at: System.monotonic_time(:millisecond))
+        |> assign(gc: :running, gc_at: now_ms())
         |> start_async(:gc, fn -> {pid, ProcessInfo.collect(pid)} end)
 
       # The last result stays; a note says when the next collection is allowed.
@@ -238,7 +238,7 @@ defmodule PhoenixDevToolbar.ProcessInspector do
   def gc_ready(socket), do: assign(socket, gc_note: nil, gc_timer: nil)
 
   defp gc_ready_later(%{assigns: %{gc_timer: nil, gc_at: at}} = socket, module) do
-    wait = max(@gc_every_ms - (System.monotonic_time(:millisecond) - at), 0)
+    wait = max(@gc_every_ms - (now_ms() - at), 0)
     assign(socket, :gc_timer, Panel.send_after(module, socket.assigns.id, :gc_ready, wait))
   end
 
@@ -247,5 +247,17 @@ defmodule PhoenixDevToolbar.ProcessInspector do
   defp gc_allowed?(%{assigns: %{gc_at: nil}}), do: true
 
   defp gc_allowed?(%{assigns: %{gc_at: at}}),
-    do: System.monotonic_time(:millisecond) - at >= @gc_every_ms
+    do: now_ms() - at >= @gc_every_ms
+
+  @doc false
+  # Test seam, the only one: the clock (monotonic ms) of the one-a-second limits
+  # of GC now and the Process actions. Tests set `:clock_ms` to a zero-arity
+  # function to cross the window without waiting; unset, it is the real clock.
+  @spec now_ms() :: integer()
+  def now_ms do
+    case Application.get_env(:phoenix_dev_toolbar, :clock_ms) do
+      fun when is_function(fun, 0) -> fun.()
+      _none -> System.monotonic_time(:millisecond)
+    end
+  end
 end

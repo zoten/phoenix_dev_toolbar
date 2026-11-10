@@ -1,6 +1,7 @@
 defmodule PhoenixDevToolbar.Plugins.RequestTest do
   use ExUnit.Case, async: false
 
+  import PhoenixDevToolbar.PageHelpers, only: [attach_plugins: 0]
   import PhoenixDevToolbar.ProcessHelpers
   import Plug.Test
 
@@ -16,7 +17,7 @@ defmodule PhoenixDevToolbar.Plugins.RequestTest do
     Collector.attach([Request])
 
     on_exit(fn ->
-      Collector.attach(PhoenixDevToolbar.Application.plugins())
+      attach_plugins()
       Store.reset()
     end)
 

@@ -7,6 +7,7 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
   import ExUnit.CaptureLog
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
+  import PhoenixDevToolbar.EnvHelpers
   import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Collector
@@ -20,20 +21,21 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
 
   setup do
     Store.reset()
-    Application.put_env(:phoenix_dev_toolbar, :repos, [DemoWeb.FakeRepo])
-    attach_plugins([Fragile])
 
+    # Registered before the env change: runs after it is restored.
     on_exit(fn ->
-      Application.put_env(:phoenix_dev_toolbar, :repos, [DemoWeb.SQLiteRepo])
       attach_plugins()
       Store.reset()
     end)
+
+    put_app_env(:repos, [DemoWeb.FakeRepo])
+    attach_plugins([Fragile])
 
     {conn, sid} = load_page("/demo")
 
     {:ok, host, _html} = live(conn)
     Process.put({:pdt_test_sid, host.pid}, sid)
-    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    panel = open_panel(sid)
     %{host: host, panel: panel}
   end
 
@@ -41,8 +43,7 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
   # lands after the next render call: render twice.
   defp echo(host, panel, value) do
     render_hook(host, "echo", %{"value" => value})
-    send(panel.pid, :pdt_flush)
-    _ = render(panel)
+    _ = flush(panel)
     _ = render(panel)
   end
 
@@ -50,8 +51,7 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
 
   defp still_works(host, panel) do
     render_hook(host, "query", %{"sql" => "SELECT still works"})
-    send(panel.pid, :pdt_flush)
-    _ = render(panel)
+    _ = flush(panel)
     assert has_element?(panel, "#pdt-queries", "SELECT still works")
   end
 

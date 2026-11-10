@@ -6,25 +6,10 @@ defmodule PhoenixDevToolbar.SuspenderTest do
 
   alias PhoenixDevToolbar.Suspender
 
-  # Answers pings: a suspended one answers only once resumed.
-  defp pinger do
-    pid = spawn(fn -> pong() end)
-    on_exit(fn -> Process.exit(pid, :kill) end)
-    pid
-  end
-
-  defp pong do
-    receive do
-      {:ping, from} -> send(from, {:pong, self()})
-    end
-
-    pong()
-  end
-
   defp suspended?(pid), do: Process.info(pid, :status) == {:status, :suspended}
 
   test "suspends for the TTL, then resumes" do
-    pid = pinger()
+    pid = ponger()
 
     assert Suspender.suspend(pid, 200, self()) == :ok
     assert suspended?(pid)
@@ -37,7 +22,7 @@ defmodule PhoenixDevToolbar.SuspenderTest do
   end
 
   test "resume/1 resumes at once; an unknown pid is not suspended" do
-    pid = pinger()
+    pid = ponger()
     :ok = Suspender.suspend(pid, 60_000, self())
 
     assert Suspender.resume(pid) == :ok
@@ -46,7 +31,7 @@ defmodule PhoenixDevToolbar.SuspenderTest do
   end
 
   test "the owner going away resumes what it suspended" do
-    pid = pinger()
+    pid = ponger()
     owner = idle_process()
     :ok = Suspender.suspend(pid, 60_000, owner)
 
@@ -57,7 +42,7 @@ defmodule PhoenixDevToolbar.SuspenderTest do
   end
 
   test "a target that exits is forgotten" do
-    pid = pinger()
+    pid = ponger()
     :ok = Suspender.suspend(pid, 60_000, self())
     ref = Process.monitor(pid)
 
@@ -70,24 +55,24 @@ defmodule PhoenixDevToolbar.SuspenderTest do
   test "refuses twice the same, a dead one, a bad TTL, and more than ten" do
     # Earlier tests' suspensions end when their owner (that test) is gone.
     for {suspended, _deadline} <- Suspender.suspended(), do: Suspender.resume(suspended)
-    pid = pinger()
+    pid = ponger()
     :ok = Suspender.suspend(pid, 60_000, self())
     assert Suspender.suspend(pid, 60_000, self()) == {:error, :already}
 
     dead = idle_process()
     stop(dead)
     assert Suspender.suspend(dead, 60_000, self()) == {:error, :dead}
-    assert Suspender.suspend(pinger(), 99, self()) == {:error, :ttl}
-    assert Suspender.suspend(pinger(), 60_001, self()) == {:error, :ttl}
+    assert Suspender.suspend(ponger(), 99, self()) == {:error, :ttl}
+    assert Suspender.suspend(ponger(), 60_001, self()) == {:error, :ttl}
 
-    for _ <- 1..9, do: :ok = Suspender.suspend(pinger(), 60_000, self())
-    assert Suspender.suspend(pinger(), 60_000, self()) == {:error, :too_many}
+    for _ <- 1..9, do: :ok = Suspender.suspend(ponger(), 60_000, self())
+    assert Suspender.suspend(ponger(), 60_000, self()) == {:error, :too_many}
 
     for {suspended, _deadline} <- Suspender.suspended(), do: Suspender.resume(suspended)
   end
 
   test "a Suspender crash resumes everything it suspended" do
-    pid = pinger()
+    pid = ponger()
     :ok = Suspender.suspend(pid, 60_000, self())
     suspender = Process.whereis(Suspender)
     ref = Process.monitor(suspender)

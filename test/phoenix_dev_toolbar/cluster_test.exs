@@ -3,15 +3,12 @@ defmodule PhoenixDevToolbar.ClusterTest do
   # second node would need distribution in the test VM.
   use ExUnit.Case, async: false
 
-  import Phoenix.ConnTest
   import Phoenix.LiveViewTest
   import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.ClusterInfo
   alias PhoenixDevToolbar.Plugins.Cluster
   alias PhoenixDevToolbar.Store
-
-  @endpoint DemoWeb.Endpoint
 
   test "this node is read like any other: processes, memory, OTP, uptime" do
     assert %{alive?: false, node: node, nodes: [row], more: 0} = ClusterInfo.read(1000)
@@ -41,7 +38,7 @@ defmodule PhoenixDevToolbar.ClusterTest do
 
     test "shows this node, and says it is not distributed" do
       {_host, sid} = visit("/demo")
-      {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+      panel = open_panel(sid)
       panel |> element("#pdt-tab-cluster") |> render_click()
       render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
       _ = render_async(panel)

@@ -8,21 +8,6 @@ defmodule PhoenixDevToolbar.TracerTest do
 
   @moduletag :trace_sessions
 
-  # Answers pings, so it both receives and sends.
-  defp ponger do
-    pid = spawn(fn -> pong() end)
-    on_exit(fn -> Process.exit(pid, :kill) end)
-    pid
-  end
-
-  defp pong do
-    receive do
-      {:ping, from, payload} -> send(from, {:pong, payload})
-    end
-
-    pong()
-  end
-
   # The Tracer has handled every trace message sent before this call. A DOWN
   # comes from another sender: the Tracer may get it after a later call, so
   # the tests that wait on one sync with it first.

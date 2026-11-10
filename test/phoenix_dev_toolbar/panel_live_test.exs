@@ -5,7 +5,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
   import PhoenixDevToolbar.ProcessHelpers
-  import PhoenixDevToolbar.PageHelpers
+  import PhoenixDevToolbar.EnvHelpers
   import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Event
@@ -23,8 +23,6 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     request = Store.new_session(Session.new(:request, path: "/users"))
     %{conn: build_conn(), request: request.sid, transport: transport}
   end
-
-  defp ms(n), do: System.convert_time_unit(n, :millisecond, :native)
 
   defp record(sid, plugin, kind, data, duration_ms) do
     :ok = Store.insert(sid, Event.new(plugin, kind, data, duration: ms(duration_ms)))
@@ -66,22 +64,13 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     )
   end
 
-  defp open(conn, sid) do
-    {:ok, view, _html} = live(conn, "/__pdt/panel?sid=#{sid}")
-    view
-  end
+  defp open(conn, sid), do: open_panel(sid, conn: conn)
 
   # What a browser sends when it loads a page.
   defp page_headers(conn) do
     conn
     |> Plug.Conn.put_req_header("accept", "text/html")
     |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
-  end
-
-  # Delivers a pending update now instead of waiting for the 100 ms throttle.
-  defp flush(view) do
-    send(view.pid, :pdt_flush)
-    _ = render(view)
   end
 
   test "shows the request and its LiveView's queries with a summary",
@@ -301,13 +290,10 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
 
   describe "end to end with a real host LiveView" do
     setup do
-      Application.put_env(:phoenix_dev_toolbar, :repos, [DemoWeb.FakeRepo])
+      # Registered before the env change: runs after it is restored.
+      on_exit(&attach_plugins/0)
+      put_app_env(:repos, [DemoWeb.FakeRepo])
       attach_plugins()
-
-      on_exit(fn ->
-        Application.put_env(:phoenix_dev_toolbar, :repos, [DemoWeb.SQLiteRepo])
-        attach_plugins()
-      end)
     end
 
     test "follows the page from dead render through live events and navigation",

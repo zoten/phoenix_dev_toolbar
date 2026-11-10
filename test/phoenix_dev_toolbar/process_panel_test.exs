@@ -3,6 +3,7 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
   # DemoWeb.Endpoint, read only while the tab is shown and the panel visible.
   use ExUnit.Case, async: false
 
+  import PhoenixDevToolbar.EnvHelpers
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
   import PhoenixDevToolbar.PageHelpers
@@ -21,7 +22,7 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
   end
 
   defp open(sid) do
-    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    panel = open_panel(sid)
     panel |> element("#pdt-tab-process") |> render_click()
     panel
   end
@@ -54,15 +55,7 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
   end
 
   test "with actions unset, the tab offers none and says which option turns them on" do
-    previous = Application.fetch_env(:phoenix_dev_toolbar, :actions)
-    Application.delete_env(:phoenix_dev_toolbar, :actions)
-
-    on_exit(fn ->
-      case previous do
-        {:ok, value} -> Application.put_env(:phoenix_dev_toolbar, :actions, value)
-        :error -> Application.delete_env(:phoenix_dev_toolbar, :actions)
-      end
-    end)
+    delete_app_env(:actions)
 
     {_host, sid} = visit("/demo")
     panel = open(sid)
@@ -111,6 +104,9 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
   end
 
   test "GC now collects the selected process, at most once a second" do
+    clock = :atomics.new(1, signed: true)
+    put_app_env(:clock_ms, fn -> :atomics.get(clock, 1) end)
+
     {host, sid} = visit("/demo")
     panel = open(sid)
     visible(panel)
@@ -126,9 +122,15 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     # A second click within the second collects nothing, and says why.
     panel |> element("#pdt-process-gc") |> render_click()
     _ = render_async(panel)
-    refute_receive {:trace, _pid, :gc_major_start, _info}, 100
+    refute_received {:trace, _pid, :gc_major_start, _info}
     assert has_element?(panel, "#pdt-process-gc-note", "at most one collection a second")
     assert has_element?(panel, "#pdt-process-gc-result", ~r/freed|nothing to free/)
+
+    # A second later (the injected clock, no waiting) it collects again.
+    :atomics.put(clock, 1, 1000)
+    panel |> element("#pdt-process-gc") |> render_click()
+    _ = render_async(panel)
+    assert_receive {:trace, _pid, :gc_major_start, _info}
   end
 
   test "a dead target says so" do
@@ -176,25 +178,9 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     refute has_element?(panel, "#pdt-process-vitals")
   end
 
-  # Real timers: the relations tick runs every second here (its minimum).
-  defp eventually(fun, tries \\ 40) do
-    case fun.() do
-      true ->
-        true
-
-      false when tries > 0 ->
-        receive do
-        after
-          100 -> eventually(fun, tries - 1)
-        end
-
-      false ->
-        flunk("condition never met")
-    end
-  end
-
   test "after a crash, the rejoined LiveView is sampled again without a reshow" do
-    Collector.attach([{PhoenixDevToolbar.Plugins.Process, relations_ms: 1000}])
+    # The longest interval: no real tick races the one the test delivers.
+    Collector.attach([{PhoenixDevToolbar.Plugins.Process, relations_ms: 300_000}])
     on_exit(fn -> attach_plugins() end)
 
     {host, sid} = visit("/demo")
@@ -213,8 +199,10 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     on_exit(fn -> send(rejoined, :stop) end)
     Store.claim(live_sid, rejoined, self())
 
-    eventually(fn -> has_element?(panel, "#pdt-process-target-label", inspect(rejoined)) end)
-    eventually(fn -> has_element?(panel, "#pdt-process-vitals") end)
+    _ = tick_now(panel, Panels.Process, "pdt-panel-process", :relations)
+
+    assert has_element?(panel, "#pdt-process-target-label", inspect(rejoined))
+    assert has_element?(panel, "#pdt-process-vitals")
   end
 
   test "a nested LiveView shows up even when the panel was open before it connected" do

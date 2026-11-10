@@ -3,14 +3,13 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
   # through the panel served by DemoWeb.Endpoint.
   use ExUnit.Case, async: false
 
+  import PhoenixDevToolbar.EnvHelpers
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
   import PhoenixDevToolbar.PageHelpers
   import PhoenixDevToolbar.ProcessHelpers
 
   alias PhoenixDevToolbar.Store
-
-  @endpoint DemoWeb.Endpoint
 
   setup do
     Store.reset()
@@ -20,7 +19,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
 
   defp open(conn \\ build_conn()) do
     {_host, sid} = visit("/demo")
-    {:ok, panel, _html} = live(conn, "/__pdt/panel?sid=#{sid}")
+    panel = open_panel(sid, conn: conn)
     panel |> element("#pdt-tab-system") |> render_click()
     render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
     panel
@@ -116,7 +115,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
     PhoenixDevToolbar.Collector.attach([PhoenixDevToolbar.Plugins.Process])
     on_exit(fn -> attach_plugins() end)
     {_host, sid} = visit("/demo")
-    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    panel = open_panel(sid)
     render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
 
     assert has_element?(panel, "#pdt-process-target-label code")
@@ -126,7 +125,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
 
   test "a process link in the Process tab opens it here" do
     {_host, sid} = visit("/demo")
-    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    panel = open_panel(sid)
     panel |> element("#pdt-tab-process") |> render_click()
     render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
 
@@ -309,19 +308,10 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
     # Unset is the default: off. An explicit false looks the same.
     for {name, setup} <- [{"unset", :delete}, {"false", false}] do
       test "actions #{name} shows no actions, and a hint naming the option" do
-        previous = Application.fetch_env(:phoenix_dev_toolbar, :actions)
-
         case unquote(setup) do
-          :delete -> Application.delete_env(:phoenix_dev_toolbar, :actions)
-          value -> Application.put_env(:phoenix_dev_toolbar, :actions, value)
+          :delete -> delete_app_env(:actions)
+          value -> put_app_env(:actions, value)
         end
-
-        on_exit(fn ->
-          case previous do
-            {:ok, value} -> Application.put_env(:phoenix_dev_toolbar, :actions, value)
-            :error -> Application.delete_env(:phoenix_dev_toolbar, :actions)
-          end
-        end)
 
         agent = start_supervised!({Agent, fn -> :ok end})
         panel = open()
@@ -431,8 +421,12 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
       refute has_element?(panel, "#pdt-disabled-system")
     end
 
-    test "one action a second" do
+    test "one action a second, and another once the window has passed" do
+      clock = :atomics.new(1, signed: true)
+      put_app_env(:clock_ms, fn -> :atomics.get(clock, 1) end)
+
       pid = idle_process()
+      ref = Process.monitor(pid)
       panel = open()
       search(panel, inspect(pid))
 
@@ -446,8 +440,17 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
       panel |> element("#pdt-system-confirm") |> render_click()
 
       assert has_element?(panel, "#pdt-system-action-note", "One action a second")
-      assert Process.alive?(pid)
-      PhoenixDevToolbar.Suspender.resume(pid)
+      refute_received {:DOWN, ^ref, :process, ^pid, _reason}
+
+      # A second later (the injected clock, no waiting) the same click acts.
+      :atomics.put(clock, 1, 1000)
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        panel |> element("#pdt-system-confirm") |> render_click()
+        assert_receive {:DOWN, ^ref, :process, ^pid, :killed}
+      end)
+
+      assert has_element?(panel, "#pdt-system-action-note", "Exit signal sent")
     end
   end
 end

@@ -2,6 +2,7 @@ defmodule PhoenixDevToolbar.ProcessActionsTest do
   # Changes the application env (`actions:`) and uses the app's Suspender.
   use ExUnit.Case, async: false
 
+  import PhoenixDevToolbar.EnvHelpers
   import ExUnit.CaptureLog
   import PhoenixDevToolbar.ProcessHelpers
 
@@ -10,15 +11,7 @@ defmodule PhoenixDevToolbar.ProcessActionsTest do
   @local %{panel: nil, client: {127, 0, 0, 1}}
 
   setup do
-    previous = Application.fetch_env(:phoenix_dev_toolbar, :actions)
-    Application.put_env(:phoenix_dev_toolbar, :actions, :loopback)
-
-    on_exit(fn ->
-      case previous do
-        {:ok, value} -> Application.put_env(:phoenix_dev_toolbar, :actions, value)
-        :error -> Application.delete_env(:phoenix_dev_toolbar, :actions)
-      end
-    end)
+    put_app_env(:actions, :loopback)
 
     {:ok, context: %{@local | panel: self()}}
   end
@@ -33,12 +26,12 @@ defmodule PhoenixDevToolbar.ProcessActionsTest do
     assert {:error, _message} = ProcessActions.peek(pid, remote)
     refute_received {:DOWN, ^ref, :process, ^pid, _reason}
 
-    Application.put_env(:phoenix_dev_toolbar, :actions, false)
+    put_app_env(:actions, false)
     assert {:error, "Actions are off" <> _rest} = ProcessActions.allowed(pid, context)
   end
 
   test "with actions unset nobody acts, and the message names the option", %{context: context} do
-    Application.delete_env(:phoenix_dev_toolbar, :actions)
+    delete_app_env(:actions)
     pid = idle_process()
     ref = Process.monitor(pid)
 

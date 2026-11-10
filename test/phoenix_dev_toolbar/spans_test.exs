@@ -6,9 +6,10 @@ defmodule PhoenixDevToolbar.SpansTest do
 
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
+  import PhoenixDevToolbar.EnvHelpers
+  import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Attribution
-  alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.ProcessHelpers
   alias PhoenixDevToolbar.Store
@@ -17,21 +18,17 @@ defmodule PhoenixDevToolbar.SpansTest do
 
   setup do
     Store.reset()
-    Application.put_env(:phoenix_dev_toolbar, :repos, [DemoWeb.FakeRepo])
-    Collector.attach(PhoenixDevToolbar.Application.plugins())
 
+    # Registered before the env change: runs after it is restored.
     on_exit(fn ->
-      Application.put_env(:phoenix_dev_toolbar, :repos, [DemoWeb.SQLiteRepo])
-      Collector.attach(PhoenixDevToolbar.Application.plugins())
+      attach_plugins()
       Store.reset()
     end)
 
-    conn =
-      build_conn()
-      |> Plug.Conn.put_req_header("accept", "text/html")
-      |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
-      |> get("/demo")
+    put_app_env(:repos, [DemoWeb.FakeRepo])
+    attach_plugins()
 
+    {conn, _sid} = load_page("/demo")
     {:ok, host, _html} = live(conn)
     {sid, _span} = Store.caller(host.pid)
     %{host: host, sid: sid}

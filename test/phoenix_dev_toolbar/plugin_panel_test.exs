@@ -3,15 +3,12 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
   # emits telemetry, the plugin collects it, the panel shows its tab and badge.
   use ExUnit.Case, async: false
 
-  import Phoenix.ConnTest
   import Phoenix.LiveViewTest
   import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Store
   alias PhoenixDevToolbar.TestPlugins.BadgeOnly
   alias PhoenixDevToolbar.TestPlugins.Tabbed
-
-  @endpoint DemoWeb.Endpoint
 
   setup do
     Store.reset()
@@ -32,14 +29,9 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
     |> then(fn [value] -> String.to_integer(value) end)
   end
 
-  defp flush(panel) do
-    send(panel.pid, :pdt_flush)
-    _ = render(panel)
-  end
-
   test "Panel.navigate/3 shows the target tab and hands it the params" do
     {_host, sid} = visit("/demo")
-    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    panel = open_panel(sid)
     assert has_element?(panel, "#tabbed[data-shown=false]")
 
     panel |> element("#tabbed-go-missing") |> render_click()
@@ -58,7 +50,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
 
   test "a plugin gets its own tab and badge, live, with its config" do
     {host, sid} = visit("/demo")
-    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    panel = open_panel(sid)
 
     assert has_element?(panel, "#pdt-tab-tabbed", "Tabbed")
     assert has_element?(panel, "#tabbed[data-prefix=echo][data-shown=false]")
@@ -86,7 +78,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
     attach_plugins([BadgeOnly, {Tabbed, []}])
     {host, sid} = visit("/demo")
     render_hook(host, "echo", %{"value" => "x"})
-    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    panel = open_panel(sid)
 
     ids =
       panel
@@ -109,7 +101,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
 
   test "live navigation resets the tab to the new page" do
     {host, sid} = visit("/demo")
-    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    panel = open_panel(sid)
 
     render_hook(host, "echo", %{"value" => "before"})
     flush(panel)
@@ -131,7 +123,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
     for n <- 1..5, do: render_hook(host, "echo", %{"value" => "#{n}"})
     _ = :sys.get_state(Store)
 
-    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    panel = open_panel(sid)
 
     assert has_element?(panel, "#pdt-trimmed-tabbed", "3 older events trimmed")
     refute has_element?(panel, "#pdt-trimmed-ecto")
@@ -142,7 +134,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
   test "a long lived page keeps the panel's seen seqs bounded per sid" do
     Store.put_limits(events_per_second: 10_000)
     {host, sid} = visit("/demo")
-    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+    panel = open_panel(sid)
 
     for batch <- 1..20 do
       for n <- 1..10, do: render_hook(host, "echo", %{"value" => "#{batch}-#{n}"})
