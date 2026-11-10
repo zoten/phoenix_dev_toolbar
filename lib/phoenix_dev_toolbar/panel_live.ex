@@ -29,7 +29,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   # session can land out of order: each flush re-reads this many seqs below the
   # last one seen and skips the ones already shown.
   @reread_window 64
-  @sid_format ~r/^[A-Za-z0-9_-]{1,64}$/
+  @sid_format ~r/\A[A-Za-z0-9_-]{1,64}\z/
   # The tab the PdtPanel hook's client events go to (ADR 07).
   @client_tab "live_view"
 
