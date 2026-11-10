@@ -1,5 +1,7 @@
 # BEAM tools plan: process inspector, System tab, actions, cluster
 
+Superseded in part: see ADR 12 for the current Eval access rules.
+
 ## Context
 
 The Process tab (ADR 09) reads only the page's LiveView and its sids, and its one

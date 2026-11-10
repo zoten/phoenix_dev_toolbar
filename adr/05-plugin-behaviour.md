@@ -52,7 +52,8 @@ atom other than the reserved `:client` and the name a string):
   handed over in `Context.config`. A recorded event is stamped with the plugin's own id,
   whatever `Event.new/4` was given: a plugin cannot fill another one's tab, cap or summary. `Collector.plugins/0` lists the attached plugins
   with their config, in configuration order, for the panel.
-- **Context**: `sid`, `source` (`:self` or `:caller` for `$callers` children), `config`.
+- **Context**: `sid`, `source` (`:self` or `:caller` for `$callers` children), `config`,
+  `span` (the LiveView callback span the event happened in).
   **Event**: `plugin` (the plugin id), `kind`, `at`, `duration` (microseconds, from
   native units in `Event.new/4`), `data` (already bounded with
   `PhoenixDevToolbar.Truncate`, stored as is), `sid` and `seq` set on insert.

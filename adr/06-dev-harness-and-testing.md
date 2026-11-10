@@ -57,8 +57,8 @@ correctness and boundedness need tests, not just eyeballing.
   - JS: the loader's pure helpers (`assets/js/client_events.mjs`) have unit tests run by
     `node --test` (`mix test.js`, Node built-ins only, part of `mix precommit`, so
     contributors need Node 22+; CI runs it in the latest row). The wiring (listeners, `postMessage`, hooks) is checked by hand.
-  - Overhead benchmark (manual, `bench/`): handler cost for untracked processes stays
-    within a few hundred nanoseconds.
+  - Overhead benchmark (manual, `bench/`): handler cost for untracked processes, not
+    written yet (open limit below).
 - **Prod guarantee**: `fixtures/host_app` installs the package exactly as the README says
   (path dependency, `only: :dev`), with a third party plugin in `dev/` compiled in `:dev`
   only, as the plugin guide says. CI compiles it with `--warnings-as-errors` in

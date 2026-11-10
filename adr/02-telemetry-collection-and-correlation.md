@@ -167,8 +167,8 @@ application starts, and detached in `prep_stop/1`.
 
 ## Open limits
 
-- `handle_info/2` has no telemetry event: message tracing is an opt-in Phase 4
-  feature based on `:erlang.trace/3` with rate limiting.
+- `handle_info/2` has no telemetry event: messages are seen only through the System
+  tab's opt-in trace of one process on OTP 27+ ([ADR 11](./11-system-tab.md)).
 - Processes spawned without `$callers` (raw `spawn`, GenServers) are not attributed.
 - Components rendered within their LiveView's render are not timed apart, and on
   LiveView 1.1 component renders are never timed (no span).

@@ -54,8 +54,7 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   `pdt:state` (`open`, `dock` and `reserve`).
   Both sides check `event.origin` and `event.source`. The loader also forwards LiveView's
   own `phx:*` window events as `pdt:client` messages (passive listeners, sanitized, rate
-  limited: ADR 07). Phase 4 adds host socket RTT through
-  `window.liveSocket.getSocket().ping/1` when it exists, read only. Page
+  limited: ADR 07). Page
   correlation, including live navigation, happens server side (ADR 02), so the
   toolbar keeps working when the loader cannot reach `window.liveSocket`.
 - **Docks and page space**: the toolbar docks `bottom` (default), `top`, `left` or `right`,
@@ -93,7 +92,7 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   (`writing-mode: vertical-rl`, header sizes are logical properties), and an open panel
   under 560px wide puts the tabs on their own row.
 - **Panel JS**: the root layout loads, deferred and in order, `phoenix.js`, `live_view.js`
-  and `panel.js` (about 1 KB: no client bundled). `panel.js` takes `window.Phoenix` and
+  and `panel.js` (about 8.5 KB: no client bundled; `loader.js` is about 9.5 KB and `panel.css` about 17 KB). `panel.js` takes `window.Phoenix` and
   `window.LiveView`, connects the panel through its own socket (`<path>/live`, see Panel
   socket: WebSocket only, no CSRF param) and runs the `postMessage` side of the bridge. Its `PdtPanel` hook, on the empty `#pdt-bridge`
   element, reports visibility and forwards client events to `PanelLive` (ADR 07).
@@ -221,7 +220,11 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 - The panel's JS runs only in a real browser (checked by hand in `mix dev`); CI's
   LiveView 1.1 row covers the server side through `LiveViewTest` and checks that the
   host client files exist, but does not execute them.
-- Strict CSP without a nonce (or `frame-src` restrictions) blocks the toolbar silently.
+- A strict CSP needs the nonce (`:nonce_assign`): the loader copies the injected script's
+  nonce to its shadow `<style>`, so one nonce covers the script and the frame styling. The
+  panel iframe is its own document served with its own headers, so the host's `script-src`
+  and `style-src` do not apply to it. A `frame-src` or `child-src` that excludes the
+  toolbar's own origin blocks the frame silently.
 - No long poll fallback: a proxy that blocks WebSockets leaves the panel unconnected
   (the breaker's notice says so).
 - The panel socket mirrors Phoenix's WebSocket defaults by hand: a new Phoenix default
