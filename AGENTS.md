@@ -16,6 +16,7 @@ This is an open source Elixir library: `phoenix_dev_toolbar` (`PhoenixDevToolbar
 - After changing `assets/`, run `mix assets.build` and commit `priv/static` (CI fails on stale bundles)
 - `mix precommit` is the quality gate (see Project guidelines)
 - `agent-tools/ci-min.sh` replays the minimum CI row (Elixir 1.17, OTP 26, LiveView `~> 1.1.0`) in Docker on a copy of the working tree. `mix precommit` only runs on the local toolchain: run it before pushing changes to tests, LiveView internals or OTP-version-dependent code (the Tracer)
+- Releasing (the owner runs it): `mix bump [--version patch|minor|major]` runs `mix precommit` and `agent-tools/ci-min.sh`, sets the version (an untagged version, like the first 0.0.1, is released as is), moves the CHANGELOG `[Unreleased]` entries into the dated release section, commits and tags `v<version>` without pushing; `./publish.sh` pushes, waits for CI and runs `mix hex.publish` (`--dry-run` first). The task lives in `tooling/`, compiled in dev and test only and never shipped: a `Mix.Tasks.*` module in `lib/` would land in every host app and clash with its own tasks
 - You can create your own tooling to optimize your workflows (put scripts under `agent-tools/`). However, ask for review from me.
 
 ## Subagent workflow and token budget

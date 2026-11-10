@@ -40,9 +40,11 @@ defmodule PhoenixDevToolbar.MixProject do
     ]
   end
 
-  # The example plugins are compiled in tests (and loaded by dev.exs), never
-  # shipped: the package only lists lib/.
-  defp elixirc_paths(:test), do: ["lib", "test/support", "examples"]
+  # The example plugins are compiled in tests (and loaded by dev.exs), and the
+  # release tooling (`mix bump`) in dev and tests: never shipped, the package only
+  # lists lib/. Host apps compile this dependency in :prod, so lib/ alone.
+  defp elixirc_paths(:test), do: ["lib", "test/support", "examples", "tooling"]
+  defp elixirc_paths(:dev), do: ["lib", "tooling"]
   defp elixirc_paths(_), do: ["lib"]
 
   defp deps do
@@ -118,9 +120,10 @@ defmodule PhoenixDevToolbar.MixProject do
       source_ref: "v#{@version}",
       extras: ["README.md", "guides/writing-a-plugin.md", "CHANGELOG.md", "SECURITY.md"],
       groups_for_extras: [Guides: ["guides/writing-a-plugin.md"]],
-      # Examples are compiled in tests, where precommit builds the docs.
+      # Examples and the release tooling are compiled in dev and tests, where the
+      # docs are built: neither belongs in them.
       filter_modules: fn module, _meta ->
-        not String.starts_with?(inspect(module), "PdtExamples")
+        not String.starts_with?(inspect(module), ["PdtExamples", "PdtTooling", "Mix.Tasks."])
       end,
       groups_for_modules: [
         Setup: [PhoenixDevToolbar, PhoenixDevToolbar.Plug],
