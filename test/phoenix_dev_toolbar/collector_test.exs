@@ -15,6 +15,7 @@ defmodule PhoenixDevToolbar.CollectorTest do
   alias PhoenixDevToolbar.TestPlugins.Configured
   alias PhoenixDevToolbar.TestPlugins.Echo
   alias PhoenixDevToolbar.TestPlugins.Raising
+  alias PhoenixDevToolbar.TestPlugins.Spy
 
   @event [:pdt_test, :echo]
 
@@ -45,6 +46,50 @@ defmodule PhoenixDevToolbar.CollectorTest do
     in_process(fn -> emit(%{value: 1}) end)
 
     assert Store.events(sid) == []
+  end
+
+  test "an untracked process never reaches a plugin's collect/3", %{sid: sid} do
+    Collector.attach([{Spy, pid: self()}])
+
+    in_process(fn -> emit(%{value: 1}) end)
+    refute_received {:spy_collected, _event, _source}
+
+    tracked(sid, fn -> emit(%{value: 2}) end)
+    assert_received {:spy_collected, @event, :self}
+  end
+
+  describe "the handler's own failure path" do
+    # The failure log is once per error class, kept in :persistent_term.
+    setup do
+      key = {Collector, :logged, :error, FunctionClauseError}
+      :persistent_term.erase(key)
+      on_exit(fn -> :persistent_term.erase(key) end)
+    end
+
+    test "survives the Store being down and stays attached", %{sid: sid} do
+      Collector.attach([Echo])
+      Attribution.track(sid)
+
+      :ok = Supervisor.terminate_child(PhoenixDevToolbar.Supervisor, Store)
+      on_exit(fn -> Supervisor.restart_child(PhoenixDevToolbar.Supervisor, Store) end)
+
+      assert emit(%{value: 1}) == :ok
+      assert [%{id: {Collector, @event}}] = :telemetry.list_handlers(@event)
+    end
+
+    test "malformed mount metadata is logged once and the handler stays attached" do
+      event = [:phoenix, :live_view, :mount, :start]
+      Collector.attach([Echo])
+
+      log =
+        capture_log(fn ->
+          assert :telemetry.execute(event, %{}, %{socket: :nope}) == :ok
+          assert :telemetry.execute(event, %{}, %{socket: :nope}) == :ok
+        end)
+
+      assert [_] = Regex.scan(~r/collector raised/, log)
+      assert Enum.any?(:telemetry.list_handlers(event), &match?(%{id: {Collector, ^event}}, &1))
+    end
   end
 
   test "records events from tracked processes and notifies subscribers", %{sid: sid} do

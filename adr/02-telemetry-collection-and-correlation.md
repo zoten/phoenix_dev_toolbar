@@ -53,7 +53,8 @@ host's hot path).
 1. `Process.get(:pdt_sid)`: tracked request or LiveView process.
 2. `Process.get(:"$callers")`: look up the callers in a `pid -> {sid, span}` ETS index,
    so `Task.async` and `Task.Supervisor` children are attributed to their page.
-3. Otherwise return immediately. This fast path is the common case and must stay O(1).
+3. Otherwise return immediately. This fast path is the common case: no GenServer call, no
+   allocation beyond the lookups above.
 
 **Callback spans**: a tracked process starts a new span (an
 `:erlang.unique_integer/1`, unique across processes since nested LiveViews share their
@@ -152,7 +153,9 @@ application starts, and detached in `prep_stop/1`.
 
 ## Consequences
 
-- Untracked processes (background jobs, other users' pages) pay one `Process.get/1`.
+- Untracked processes (background jobs, other users' pages) pay two `Process.get/1` and one
+  ETS lookup per `$callers` pid (none without callers); only the LiveView mount `:start` event
+  always reaches `Tracker`, which must stay cheap for them too.
 - We rely on public telemetry contracts, so LiveView upgrades rarely break us.
 - Reading `__changed__` keys, `live_temp[:push_events]` names, `socket.parent_pid` and the
   `:"$process_label"` of LiveView processes relies on LiveView internals: all are isolated
