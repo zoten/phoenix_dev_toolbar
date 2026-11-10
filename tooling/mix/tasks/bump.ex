@@ -109,9 +109,24 @@ defmodule Mix.Tasks.Bump do
   defp gate!(name, true, [command | args]) do
     Mix.shell().info("Running #{name}: #{Enum.join([command | args], " ")}")
 
-    case System.cmd(command, args, into: IO.stream(), stderr_to_stdout: true) do
+    case System.cmd(executable!(command), args, into: IO.stream(), stderr_to_stdout: true) do
       {_stream, 0} -> :ok
       {_stream, status} -> Mix.raise("#{name} failed (exit #{status}): fix it before releasing")
+    end
+  end
+
+  # System.cmd/3 looks a bare name up in PATH but does not resolve a relative path
+  # (agent-tools/ci-min.sh): that one is expanded against the project root.
+  defp executable!(command) do
+    path =
+      case String.contains?(command, "/") do
+        true -> Path.expand(command, File.cwd!())
+        false -> System.find_executable(command)
+      end
+
+    case path != nil and File.regular?(path) do
+      true -> path
+      false -> Mix.raise("#{command} not found")
     end
   end
 
