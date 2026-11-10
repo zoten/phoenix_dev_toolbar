@@ -28,6 +28,28 @@ defmodule PhoenixDevToolbar.Config do
   @spec reserve_space?() :: boolean()
   def reserve_space?, do: Application.get_env(:phoenix_dev_toolbar, :reserve_space, true) != false
 
+  @doc """
+  Whether the MCP endpoint is served: `mcp:`, on unless set to `false`. A value that
+  is not a boolean counts as on (`warn_mcp/0` logs it at boot).
+  """
+  @spec mcp?() :: boolean()
+  def mcp?, do: Application.get_env(:phoenix_dev_toolbar, :mcp, true) != false
+
+  @doc "Logs, at boot, an `mcp:` value that is not a boolean."
+  @spec warn_mcp() :: :ok
+  def warn_mcp do
+    case Application.get_env(:phoenix_dev_toolbar, :mcp, true) do
+      value when is_boolean(value) ->
+        :ok
+
+      invalid ->
+        Logger.warning(
+          "[phoenix_dev_toolbar] invalid mcp: #{inspect(invalid, limit: 5)}, " <>
+            "expected true or false. Using true."
+        )
+    end
+  end
+
   @doc "The configured plugins, expanded and validated, in order."
   @spec plugins() :: [entry()]
   def plugins, do: :phoenix_dev_toolbar |> Application.get_env(:plugins, [:defaults]) |> expand()

@@ -53,8 +53,9 @@ Store, built for IEx and agents:
 
 - Agents and IEx users can verify a change against real data ("the N+1 on
   `/posts` is gone, 23 queries became 3") without a browser in the loop.
-- The Markdown export and an MCP endpoint (roadmap) can render or serve these
-  maps instead of reading the Store themselves.
+- The Markdown export (roadmap) can render these maps instead of reading the
+  Store itself.
+- MCP clients read the same maps through the toolbar's MCP endpoint (ADR 15).
 - Agents that drive a browser read the same values off the panel's `data-pdt-*`
   attributes, named after these keys (ADR 14).
 - The API is a contract: changing an event's `data` keys in a built-in plugin
@@ -65,7 +66,8 @@ Store, built for IEx and agents:
 ## Open limits
 
 - Reaching the running node is up to the caller: a fresh `mix run` starts another
-  VM with an empty Store. IEx in the dev server, a remote shell or Tidewave work.
+  VM with an empty Store. IEx in the dev server, a remote shell, Tidewave or the
+  MCP endpoint (ADR 15) work.
 - Plugin events other than the built-ins (`:ecto`, `:request`, `:live_view`)
   have no Report shape.
 - Assigns snapshots, client `phx:*` events and the component tree are not exposed.

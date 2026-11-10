@@ -61,6 +61,8 @@ Summary badges keep their stable ids (`#pdt-badge-<id>`).
 - A browser-driving agent loads the host page, opens `<path>/panel?path=/posts`
   and reads numbers with `querySelectorAll('[data-pdt-row="query"]')`, without
   parsing formatted text or knowing a sid.
+- The MCP tools (ADR 15) pick pages with the same resolution
+  (`PhoenixDevToolbar.PageLookup`) and return the standalone `panel_url`.
 - A developer can open the panel in its own tab, next to the page, for a large
   view of one page.
 - The panel's markup gains a small public surface: a refactor of a row must keep

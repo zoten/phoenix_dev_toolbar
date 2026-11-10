@@ -45,14 +45,26 @@ defmodule PhoenixDevToolbar.Plug do
   Rows carry stable `data-pdt-*` attributes with raw values (microseconds,
   counts, sids), listed in [ADR 14](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/14-standalone-panel-and-row-attributes.md).
 
+  ## MCP server
+
+  `<path>/mcp` is an MCP server (Streamable HTTP, MCP 2025-03-26 to 2026-07-28)
+  with read-only tools over `PhoenixDevToolbar.Report`: `list_pages`,
+  `page_summary`, `page_queries`, `page_callbacks`, `page_n_plus_one` and
+  `page_errors`. It answers only clients on this machine: a loopback peer, no
+  proxy headers, an allowed `Host` and no foreign `Origin`. It is on with the
+  toolbar; `config :phoenix_dev_toolbar, mcp: false` turns it off. Client setup
+  is in the README, the protocol details in
+  [ADR 15](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/15-mcp-endpoint.md).
+
   ## Access rules
 
-  The panel, its socket and the export answer only a request whose `Host` cannot
+  The panel, its socket, the export and the MCP endpoint answer only a request whose `Host` cannot
   be rebound: an IP address, `localhost`, your endpoint's `url: [host: ...]` or a
   name listed in `config :phoenix_dev_toolbar, allowed_hosts: [...]`. The socket
   also refuses a missing `Origin`, or one that differs from the host the request
   was sent to, unless it is listed in `allowed_origins: [...]` (for a proxy or
-  tunnel that rewrites the `Host` header).
+  tunnel that rewrites the `Host` header). The MCP endpoint adds its own loopback
+  and `Origin` rules, see the "MCP server" section.
 
   The plug does nothing when the toolbar is disabled
   (`config :phoenix_dev_toolbar, enabled: false`).
@@ -68,9 +80,10 @@ defmodule PhoenixDevToolbar.Plug do
   alias PhoenixDevToolbar.EctoExport
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.HostCheck
+  alias PhoenixDevToolbar.Mcp
   alias PhoenixDevToolbar.Notify
+  alias PhoenixDevToolbar.PageLookup
   alias PhoenixDevToolbar.PanelSocket
-  alias PhoenixDevToolbar.Report
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
   alias Plug.Conn
@@ -148,6 +161,13 @@ defmodule PhoenixDevToolbar.Plug do
       # The panel's own LiveView socket (ADR 04): no host socket, no host token.
       {:ok, ["live", "websocket"]} ->
         guarded(conn, nil, &(&1 |> untracked() |> PanelSocket.upgrade()))
+
+      # The MCP endpoint (ADR 15): its own guards, plain text refusals.
+      {:ok, ["mcp"]} ->
+        conn
+        |> Conn.register_before_send(&strip_cors/1)
+        |> untracked()
+        |> Mcp.Endpoint.call(opts.path)
 
       # Anything else under our path is not ours to answer: never tracked.
       {:ok, _rest} ->
@@ -261,33 +281,10 @@ defmodule PhoenixDevToolbar.Plug do
   # (ADR 14): `?path=` picks the newest page at that exact path, nothing at all
   # the newest page. ETS reads only, resolved once per panel load.
   defp panel_sid(%{"sid" => sid}) when is_binary(sid), do: sid
-  defp panel_sid(%{"path" => path}) when is_binary(path), do: newest_page(path: path)
-  defp panel_sid(_params), do: newest_page([])
+  defp panel_sid(%{"path" => path}) when is_binary(path), do: lookup_sid(path: path)
+  defp panel_sid(_params), do: lookup_sid([])
 
-  defp newest_page(opts) do
-    case Report.latest(opts) do
-      %{kind: :live_view, sid: sid, parent: parent} when is_binary(parent) ->
-        request_parent(parent, sid)
-
-      %{sid: sid} ->
-        sid
-
-      nil ->
-        ""
-    end
-  end
-
-  # A connected mount shows as its request's page; a live navigated LiveView
-  # (its parent is a LiveView) is a page of its own, as in the iframe.
-  defp request_parent(parent, sid) do
-    case Store.session(parent) do
-      {:ok, %Session{kind: :request}} -> parent
-      _other -> sid
-    end
-  rescue
-    # The Store's tables are gone while it restarts.
-    ArgumentError -> sid
-  end
+  defp lookup_sid(opts), do: PageLookup.newest(opts) || ""
 
   # Already tracked: the plug is in the pipeline twice (endpoint and router).
   defp maybe_track(%Conn{private: %{phoenix_dev_toolbar: _}} = conn, _opts), do: conn

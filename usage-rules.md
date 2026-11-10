@@ -36,6 +36,24 @@ Report.sessions(path: ~r{^/posts}, limit: 5)
   looking for old sessions.
 - It is read-only. EXPLAIN and process actions are in the browser panel only.
 
+## Reading it over MCP
+
+When the project's MCP config has the `phoenix-dev-toolbar` server
+(`http://localhost:4000/__pdt/mcp`), prefer its tools to evaluating code:
+
+- `list_pages` (filter with `path` or `path_prefix`), then `page_summary` with
+  the page's `sid` or its `path`. Without either, tools read the newest page.
+- `page_queries`, `page_callbacks` (`sort: "slowest"`, `limit`),
+  `page_n_plus_one`, `page_errors` for the details.
+- A "No page captured" error means the page was not loaded in the last 10
+  minutes, or not as an HTML document: load it again, then retry.
+- Results carry `panel_url`: give it to the user to see the page in the panel.
+- When a call fails: connection refused means the server is not running or the
+  port is wrong; 403 "MCP is loopback only" means the dev server runs in a
+  container or behind a proxy; 403 "Host not allowed" means the host must be
+  added to `allowed_hosts:`; a 404 HTML page means the plug's `:path` is not
+  `/__pdt` or the toolbar is disabled; 404 "MCP is off" means `mcp: false`.
+
 ## Reading it in a browser
 
 When you drive a browser instead of evaluating code in the app:

@@ -76,8 +76,8 @@ defmodule PhoenixDevToolbar.HostCheckTest do
               do: HostCheck.log_refused(host)
         end)
 
-      assert length(Regex.scan(~r/refused the panel for host "a\.example"/, log)) == 1
-      assert length(Regex.scan(~r/refused the panel for host "b\.example"/, log)) == 1
+      assert length(Regex.scan(~r/refused a toolbar request for host "a\.example"/, log)) == 1
+      assert length(Regex.scan(~r/refused a toolbar request for host "b\.example"/, log)) == 1
     end
 
     test "names at most 10 distinct hosts" do
@@ -86,7 +86,7 @@ defmodule PhoenixDevToolbar.HostCheckTest do
           for n <- 1..15, do: HostCheck.log_refused("h#{n}.example")
         end)
 
-      assert length(Regex.scan(~r/refused the panel for host/, log)) == 10
+      assert length(Regex.scan(~r/refused a toolbar request for host/, log)) == 10
       refute log =~ "h11.example"
     end
   end

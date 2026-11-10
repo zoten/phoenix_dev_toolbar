@@ -1,6 +1,6 @@
 ---
 name: phoenix-dev-toolbar-report
-description: "Use when verifying how a Phoenix page behaves at runtime with phoenix_dev_toolbar: counting queries, finding or confirming the fix of an N+1, timing LiveView callbacks, or checking a page for errors after a code change. Reads PhoenixDevToolbar.Report inside the running dev server."
+description: "Use when verifying how a Phoenix page behaves at runtime with phoenix_dev_toolbar: counting queries, finding or confirming the fix of an N+1, timing LiveView callbacks, or checking a page for errors after a code change. Reads PhoenixDevToolbar.Report inside the running dev server, or through the toolbar MCP tools."
 ---
 
 # Verify a page with PhoenixDevToolbar.Report
@@ -19,6 +19,10 @@ assumptions. Full API: the `PhoenixDevToolbar.Report` docs.
 
 The data lives in the dev server's VM (`mix phx.server` or `mix dev`, in dev).
 
+- With the `phoenix-dev-toolbar` MCP server configured: call its tools
+  instead of the Elixir below: `page_summary` (`path: "/posts"`) for step 3,
+  `page_n_plus_one`, `page_queries`, `page_callbacks` (`sort: "slowest"`) and
+  `page_errors` for the details. Same keys as `Report`. No VM access needed.
 - With Tidewave: run the code below through `project_eval`.
 - With only a browser tool: skip the Elixir below and read the standalone
   panel, `http://localhost:4000/__pdt/panel?path=/posts`, through its
@@ -28,7 +32,7 @@ The data lives in the dev server's VM (`mix phx.server` or `mix dev`, in dev).
   ask the user to run it in the IEx session that started the server.
 - Never `mix run` or a fresh `iex -S mix`: another VM, nothing captured.
 
-Check first: `PhoenixDevToolbar.enabled?()` must be `true`.
+Check first: for the Elixir paths, `PhoenixDevToolbar.enabled?()` must be `true`. For MCP, a `ping` or a `list_pages` call that works is the check.
 
 ## 2. Trigger the page
 
@@ -56,7 +60,8 @@ Check, in this order:
   `queries.slowest`, `callbacks.slowest`.
 
 `latest/1` can pick up a page the user opened in another tab. When unsure, use
-`Report.sessions(path: "/posts", limit: 5)` and keep the session whose
+`Report.sessions(path: "/posts", limit: 5)` (over MCP, `list_pages` with
+`path: "/posts"`) and keep the session whose
 `started_at` follows your trigger.
 
 ## 4. Change the code, trigger again, compare

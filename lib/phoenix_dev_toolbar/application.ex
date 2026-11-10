@@ -125,6 +125,7 @@ defmodule PhoenixDevToolbar.Application do
 
   def maybe_attach(true) do
     ClientPolicy.warn_config()
+    Config.warn_mcp()
     Collector.attach(plugins())
   end
 end

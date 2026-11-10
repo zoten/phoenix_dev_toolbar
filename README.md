@@ -86,6 +86,8 @@ config :phoenix_dev_toolbar,
   # Behind a proxy or tunnel that rewrites the Host header, the page's origins
   # (scheme, host and port, matched exactly) the panel socket accepts
   # allowed_origins: ["https://abc.tunnel.example"],
+  # The MCP endpoint for coding agents at <path>/mcp (loopback only); false turns it off
+  # mcp: true,
   # The toolbar makes room so the page scrolls clear of it; false lets it overlap
   # (the dock menu's toggle overrides this per browser)
   reserve_space: true,
@@ -146,6 +148,49 @@ Report.latest(path: "/posts") |> Report.n_plus_one()
 It sees what the panel sees, for as long as the toolbar keeps it (10 minutes by default). A separate `mix run` starts another VM with nothing captured.
 
 Agents that drive a browser can open the panel in a tab of its own: `/__pdt/panel?path=/posts` shows the newest `/posts` page, `/__pdt/panel` the newest page. Its rows carry `data-pdt-*` attributes with raw values (microseconds, counts, sids), listed in the `PhoenixDevToolbar.Plug` docs.
+
+### MCP server
+
+The toolbar is also an MCP server, at `http://localhost:4000/__pdt/mcp` while your dev server runs. Its read-only tools (`list_pages`, `page_summary`, `page_queries`, `page_callbacks`, `page_n_plus_one`, `page_errors`) return the same data as `Report`. It is on whenever the toolbar is, answers only clients on this machine (loopback, no proxy), and `config :phoenix_dev_toolbar, mcp: false` turns it off.
+
+Check it with a ping, which answers a JSON result:
+
+```sh
+curl -s -X POST -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"ping"}' http://localhost:4000/__pdt/mcp
+```
+
+The tools answer "No page captured" until the page was loaded (browser, or `curl` with `Accept: text/html`) in the last 10 minutes.
+
+Point your agent at it (change the port, or `/__pdt` if you set the plug's `:path`):
+
+```sh
+# Claude Code: writes .mcp.json, shared with the project
+claude mcp add --transport http --scope project phoenix-dev-toolbar http://localhost:4000/__pdt/mcp
+
+# Codex (recent releases): writes ~/.codex/config.toml
+codex mcp add phoenix-dev-toolbar --url http://localhost:4000/__pdt/mcp
+```
+
+Or by hand:
+
+```jsonc
+// .mcp.json (Claude Code and other clients that read it)
+{"mcpServers": {"phoenix-dev-toolbar": {"type": "http", "url": "http://localhost:4000/__pdt/mcp"}}}
+
+// .cursor/mcp.json (Cursor)
+{"mcpServers": {"phoenix-dev-toolbar": {"url": "http://localhost:4000/__pdt/mcp"}}}
+
+// .vscode/mcp.json (VS Code)
+{"servers": {"phoenix-dev-toolbar": {"type": "http", "url": "http://localhost:4000/__pdt/mcp"}}}
+```
+
+```toml
+# ~/.codex/config.toml, or .codex/config.toml in a trusted project (Codex)
+[mcp_servers.phoenix-dev-toolbar]
+url = "http://localhost:4000/__pdt/mcp"
+```
+
+Claude Code asks once to approve a server from the project's `.mcp.json`; `/mcp` shows whether it is connected. Older Codex releases also need `experimental_use_rmcp_client = true` for HTTP servers. Start the dev server before the agent, or reconnect the server from the agent once it runs. A dev server inside a container sees your agent as a non-loopback client and refuses it.
 
 The package ships [usage rules](https://hexdocs.pm/usage_rules) and a skill that teaches coding agents this check-before-and-after routine. With `usage_rules` in your project:
 

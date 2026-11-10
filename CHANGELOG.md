@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shipped `usage-rules.md` and the `phoenix-dev-toolbar-report` agent skill (ADR 13)
 - Standalone panel URL: `<path>/panel?path=...` or the newest page, standalone mode (ADR 14)
 - Documented `data-pdt-*` row attributes with raw values, for browser-driving agents (ADR 14)
+- Loopback-only MCP endpoint at `<path>/mcp`, read-only Report tools, `mcp: false` (ADR 15)
+- MCP client setup for Claude Code, Codex, Cursor and VS Code in README and usage rules (ADR 15)
 - Panel sid check anchored with `\A...\z`: a trailing newline no longer passes (ADR 14)
 
 ## [0.0.1] - 2026-11-10

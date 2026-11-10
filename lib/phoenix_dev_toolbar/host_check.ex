@@ -39,7 +39,7 @@ defmodule PhoenixDevToolbar.HostCheck do
         :persistent_term.put(@logged, [host | logged])
 
         Logger.warning(
-          "[phoenix_dev_toolbar] refused the panel for host #{inspect(host)}: " <>
+          "[phoenix_dev_toolbar] refused a toolbar request for host #{inspect(host)}: " <>
             "add it to `allowed_hosts:` in the toolbar config if it is yours (DNS rebinding guard)"
         )
     end
