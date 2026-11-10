@@ -66,6 +66,18 @@ defmodule PhoenixDevToolbar.ApplicationTest do
              %{"api_key" => "[REDACTED]", "password" => "[REDACTED]"}
   end
 
+  test "settle_allowed_origins stores the valid entries and names each dropped one" do
+    put_app_env(:allowed_origins, ["https://abc.tunnel.example", "abc.tunnel.example", 5])
+
+    log = capture_log(fn -> assert ToolbarApp.settle_allowed_origins(true) == :ok end)
+
+    assert Application.fetch_env!(:phoenix_dev_toolbar, :allowed_origins) ==
+             ["https://abc.tunnel.example"]
+
+    assert log =~ ~s("abc.tunnel.example")
+    assert log =~ "5"
+  end
+
   test "disabled starts no children, enabled starts the stores" do
     assert ToolbarApp.children(false) == []
     assert PhoenixDevToolbar.Store in ToolbarApp.children(true)

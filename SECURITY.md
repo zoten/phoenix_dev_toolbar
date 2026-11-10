@@ -21,8 +21,10 @@ They run for whoever can open the panel, so each has a safe default:
   default. `actions: :loopback` runs them for a browser on the same machine only;
   `actions: :any` opens them to any browser that reaches the dev server (Docker, LAN).
 - **Panel socket origin**: the panel's websocket accepts only an `Origin` that is the
-  page's own host (and port), whatever the host's `check_origin` says. The panel,
-  its socket and the export also answer only for a Host that cannot be DNS rebound
+  page's own host (and port), or one listed in `allowed_origins:`, whatever the host's
+  `check_origin` says. List only origins you control and remove them when the tunnel
+  is gone. The panel, its socket and the export also answer only for a
+  Host that cannot be DNS rebound
   ([ADR 04](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/04-ui-delivery.md)).
 - **The Eval plugin** ([ADR 12](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/12-cluster-and-eval-plugins.md)) is not
   installed by default. Once added it is read only: a fixed list of read queries,

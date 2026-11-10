@@ -146,7 +146,13 @@ interfere with the host's LiveSocket, DOM patching or CSP.
     (case-insensitive), else a 403 with one log line. The port must match the `Host`
     header's port, or be a default port (80, 443) when `Host` names none. The scheme
     is not compared with the request's, because a TLS terminating proxy or tunnel
-    changes it. A missing `Origin` is refused. `access-control-*` response headers
+    changes it. A missing `Origin` is refused. A proxy or tunnel that rewrites the
+    `Host` header breaks the match, so an `Origin` listed in `allowed_origins:`
+    (`"https://abc.tunnel.example"`) passes whatever the `Host` says: matched exactly
+    on scheme, host (case-insensitive) and port (default ports filled in), no
+    wildcards, since each entry widens who may open the socket. Entries are checked
+    once at boot: one an `Origin` header cannot carry (no scheme, a path, a query,
+    user info, a `*`) is logged and dropped. The Host guard below still applies to the rewritten `Host`. `access-control-*` response headers
     set by the host are removed from the panel and export responses.
 - **Reload breaker** (`assets/js/reloads.mjs`, the safety net for any join failure,
   present or future): each panel load is recorded per sid in `sessionStorage`. The 4th
@@ -240,9 +246,9 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 - A Host without a port accepts an Origin on port 80 or 443, and the scheme is not
   compared, so `http://localhost` and `https://localhost` are not told apart; the signed
   panel session token (unreadable cross-origin, CORS headers stripped) remains the barrier.
-- A proxy or tunnel that rewrites the Host header (so the browser's Origin host differs
-  from the Host the server sees) cannot connect the panel; there is no `allowed_origins`
-  option yet.
+- An `allowed_origins:` entry outlives the tunnel it named: a free tunnel name handed to
+  someone else later passes the origin rule against `localhost`, and the panel token
+  (unreadable cross-origin) is then the only barrier. The docs say to remove stale entries.
 - A host plug that adds `access-control-*` headers from its own `register_before_send`,
   registered earlier than the toolbar plug, runs after the toolbar's stripping and can
   re-add them.

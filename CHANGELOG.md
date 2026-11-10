@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - DOM-level JS tests for `loader.js` and `panel.js` wiring and postMessage origin gate (ADR 06)
 - EXPLAIN tests on Postgres, a Postgres service in CI (ADR 08)
+- `allowed_origins:` for proxies and tunnels that rewrite the Host header (ADR 04)
 
 ## [0.0.1] - 2026-11-10
 

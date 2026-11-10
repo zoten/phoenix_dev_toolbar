@@ -6,6 +6,7 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
 
   import ExUnit.CaptureLog
   import Phoenix.ConnTest
+  import PhoenixDevToolbar.EnvHelpers
   import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Store
@@ -376,6 +377,37 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
 
         assert upgrade_status(endpoint, ["http://www.example.com", "http://evil.example"]) == 403
       end)
+    end
+
+    test "allowed_origins: a listed origin passes whatever Host a proxy sent" do
+      start_supervised!(PhoenixDevToolbar.OriginEndpoint)
+      endpoint = PhoenixDevToolbar.OriginEndpoint
+      put_app_env(:allowed_origins, ["https://Abc.Tunnel.example", "http://box.lan:8080"])
+
+      assert upgrade_status(endpoint, "https://abc.tunnel.example", "localhost:4000") == 400
+      assert upgrade_status(endpoint, "https://abc.tunnel.example:443", "localhost:4000") == 400
+      assert upgrade_status(endpoint, "http://box.lan:8080", "localhost:4000") == 400
+    end
+
+    test "allowed_origins: scheme, host and port must all match an entry" do
+      start_supervised!(PhoenixDevToolbar.OriginEndpoint)
+      endpoint = PhoenixDevToolbar.OriginEndpoint
+      put_app_env(:allowed_origins, ["https://abc.tunnel.example", :not_a_string, "not a url"])
+
+      log =
+        capture_log(fn ->
+          for origin <- [
+                "http://abc.tunnel.example",
+                "https://abc.tunnel.example:8443",
+                "https://other.tunnel.example",
+                "https://x.abc.tunnel.example",
+                "not a url"
+              ] do
+            assert upgrade_status(endpoint, origin, "localhost:4000") == 403, origin
+          end
+        end)
+
+      assert log =~ "allowed_origins:"
     end
   end
 

@@ -82,6 +82,62 @@ defmodule PhoenixDevToolbar.Config do
     valid
   end
 
+  @doc """
+  Keeps the `allowed_origins:` entries an `Origin` header can match (`origin/1`),
+  one warning per dropped entry: a typo would otherwise only show as a refused
+  socket.
+  """
+  @spec allowed_origins(term()) :: [String.t()]
+  def allowed_origins(configured) do
+    configured
+    |> List.wrap()
+    |> Enum.filter(fn entry ->
+      case origin(entry) do
+        {:ok, _origin} ->
+          true
+
+        :error ->
+          _ =
+            warn(
+              "ignoring `allowed_origins` entry #{inspect(entry, limit: 5)}: expected " <>
+                "scheme://host[:port] as the browser shows it (http or https, no paths, " <>
+                "no wildcards)"
+            )
+
+          false
+      end
+    end)
+  end
+
+  @doc """
+  An origin as `{scheme, host, port}`, the host downcased and a default port
+  filled in, so `https://a` and `https://a:443` are the same, as for the
+  browser. Only what an `Origin` header can carry: http or https, a host, no
+  user info, path (a bare `/` aside), query or fragment, no `*`.
+  """
+  @spec origin(term()) :: {:ok, {String.t(), String.t(), :inet.port_number()}} | :error
+  def origin(origin) when is_binary(origin) do
+    case URI.parse(origin) do
+      %URI{scheme: scheme, host: host, port: port, path: path, userinfo: nil, query: nil}
+      when scheme in ["http", "https"] and is_binary(host) and host != "" and
+             path in [nil, "/"] ->
+        bare_origin(origin, {scheme, String.downcase(host), port})
+
+      _other ->
+        :error
+    end
+  end
+
+  def origin(_origin), do: :error
+
+  # URI drops an empty fragment ("#"): refuse any.
+  defp bare_origin(origin, {_scheme, host, _port} = parsed) do
+    case String.contains?(origin, "#") or String.contains?(host, "*") do
+      true -> :error
+      false -> {:ok, parsed}
+    end
+  end
+
   defp maybe_warn_redact([]), do: :ok
 
   defp maybe_warn_redact(dropped) do

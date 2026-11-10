@@ -83,6 +83,9 @@ config :phoenix_dev_toolbar,
   # The panel answers IP addresses, localhost, and your endpoint's url host; list
   # other names you use for the dev server (a DNS rebinding guard)
   # allowed_hosts: ["myapp.test"],
+  # Behind a proxy or tunnel that rewrites the Host header, the page's origins
+  # (scheme, host and port, matched exactly) the panel socket accepts
+  # allowed_origins: ["https://abc.tunnel.example"],
   # The toolbar makes room so the page scrolls clear of it; false lets it overlap
   # (the dock menu's toggle overrides this per browser)
   reserve_space: true,
@@ -154,7 +157,7 @@ A `frame-src` or `child-src` that excludes your own origin still blocks the pane
 
 **The panel answers 403.** The host name you use is not allowed (a DNS rebinding guard). The panel answers IP addresses, `localhost` and your endpoint's url host; add other names with `allowed_hosts: ["myapp.test"]`.
 
-**The panel never connects behind a proxy or tunnel.** If the proxy rewrites the `Host` header, the browser's origin no longer matches what the server sees and the socket is refused. There is no `allowed_origins` option yet.
+**The panel does not connect behind a proxy or tunnel.** If the proxy rewrites the `Host` header, the browser's origin no longer matches what the server sees and the socket is refused (the log names both). List the page's origin, exactly as the browser shows it: `allowed_origins: ["https://abc.tunnel.example"]` (no paths or wildcards; an entry that cannot match is logged at boot and ignored). Remove it when the tunnel is gone: a free tunnel name may later belong to someone else. A proxy that keeps the `Host` header needs the name in `allowed_hosts` instead.
 
 **Docker or LAN access.** Add the host name to `allowed_hosts`. Process actions are off by default; `actions: :loopback` allows them for a browser on this machine and `actions: :any` for Docker or the LAN (anyone who can reach the server can then use them). Eval is limited to this machine unless `clients: :any`.
 

@@ -14,6 +14,7 @@ defmodule PhoenixDevToolbar.Application do
     :ok = settle_enabled(Application.fetch_env(:phoenix_dev_toolbar, :enabled), mix_env())
     enabled? = PhoenixDevToolbar.enabled?()
     settle_redact(enabled?)
+    settle_allowed_origins(enabled?)
 
     with {:ok, pid} <-
            Supervisor.start_link(children(enabled?),
@@ -72,6 +73,25 @@ defmodule PhoenixDevToolbar.Application do
     case Application.fetch_env(:phoenix_dev_toolbar, :redact) do
       {:ok, configured} ->
         Application.put_env(:phoenix_dev_toolbar, :redact, Config.redact(configured))
+
+      :error ->
+        :ok
+    end
+  end
+
+  @doc false
+  # Validates `allowed_origins:` once at boot: a typo is logged, not only refused.
+  @spec settle_allowed_origins(boolean()) :: :ok
+  def settle_allowed_origins(false), do: :ok
+
+  def settle_allowed_origins(true) do
+    case Application.fetch_env(:phoenix_dev_toolbar, :allowed_origins) do
+      {:ok, configured} ->
+        Application.put_env(
+          :phoenix_dev_toolbar,
+          :allowed_origins,
+          Config.allowed_origins(configured)
+        )
 
       :error ->
         :ok

@@ -408,6 +408,6 @@ if (tripped(recordLoad())) {
 } else {
   liveSocket.connect()
   setTimeout(() => {
-    if (!joinedOnce) showStalled("It has not connected yet: its WebSocket may be blocked.")
+    if (!joinedOnce) showStalled("It has not connected yet: its WebSocket may be blocked or refused (the server log says why).")
   }, JOIN_MS)
 }

@@ -133,4 +133,42 @@ defmodule PhoenixDevToolbar.ConfigTest do
       assert log =~ "keyword list"
     end
   end
+
+  describe "allowed_origins/1" do
+    test "keeps origins the browser can send, defaults ports filled in" do
+      assert Config.allowed_origins(["https://Abc.Tunnel.example", "http://box.lan:8080/"]) ==
+               ["https://Abc.Tunnel.example", "http://box.lan:8080/"]
+
+      assert Config.origin("https://Abc.Tunnel.example") ==
+               {:ok, {"https", "abc.tunnel.example", 443}}
+
+      assert Config.origin("http://box.lan:8080/") == {:ok, {"http", "box.lan", 8080}}
+    end
+
+    test "drops what can never match an Origin header, one warning per entry" do
+      dropped = [
+        "abc.tunnel.example",
+        "abc.tunnel.example:443",
+        "https://*.tunnel.example",
+        "https://abc.tunnel.example/app",
+        "https://abc.tunnel.example?x=1",
+        "https://user@abc.tunnel.example",
+        "ftp://abc.tunnel.example",
+        "",
+        :atom
+      ]
+
+      log = capture_log(fn -> assert Config.allowed_origins(dropped) == [] end)
+
+      for entry <- dropped, do: assert(log =~ inspect(entry), inspect(entry))
+      assert log =~ "wildcards"
+    end
+
+    test "a single origin is wrapped, nothing configured is an empty list" do
+      assert Config.allowed_origins("https://abc.tunnel.example") ==
+               ["https://abc.tunnel.example"]
+
+      assert Config.allowed_origins(nil) == []
+    end
+  end
 end

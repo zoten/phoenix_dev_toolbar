@@ -36,7 +36,8 @@ defmodule PhoenixDevToolbar.Plug do
   be rebound: an IP address, `localhost`, your endpoint's `url: [host: ...]` or a
   name listed in `config :phoenix_dev_toolbar, allowed_hosts: [...]`. The socket
   also refuses a missing `Origin`, or one that differs from the host the request
-  was sent to.
+  was sent to, unless it is listed in `allowed_origins: [...]` (for a proxy or
+  tunnel that rewrites the `Host` header).
 
   The plug does nothing when the toolbar is disabled
   (`config :phoenix_dev_toolbar, enabled: false`).
