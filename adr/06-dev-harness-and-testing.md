@@ -17,7 +17,8 @@ correctness and boundedness need tests, not just eyeballing.
   generated endpoint), a router without any toolbar routes, and an `ecto_sqlite3` repo
   (`tmp/dev.sqlite3`, recreated and seeded on every boot, with `stacktrace: true`), so no
   database server is required. `mix dev` runs it on `PORT`
-  (default 4000). Every page exercises a panel: Users (dead render and connected mount
+  (default 4000) and `IP` (default 127.0.0.1; a LAN address checks the MCP
+  client rules of ADR 15). Every page exercises a panel: Users (dead render and connected mount
   queries), Posts (an N+1 with a live patch to a preloaded version), Events (queries in
   `handle_event/3`, a slow handler, a failing query), Task.async (`Task.async_stream`
   queries attributed through `$callers`), Components (LiveComponents with events and

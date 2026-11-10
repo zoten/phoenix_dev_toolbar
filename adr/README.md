@@ -32,7 +32,7 @@ Next free number: **16**.
 |---|---|---|
 | 13 | [Report Read API](./13-report-read-api.md) | Implemented (2026-11-10) |
 | 14 | [Standalone Panel and Row Attributes](./14-standalone-panel-and-row-attributes.md) | Implemented (2026-11-10) |
-| 15 | [Loopback-only MCP Endpoint](./15-mcp-endpoint.md) | Implemented (2026-11-11) |
+| 15 | [MCP Endpoint](./15-mcp-endpoint.md) | Implemented (2026-11-11) |
 
 ## Storage
 

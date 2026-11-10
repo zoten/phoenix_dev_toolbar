@@ -86,8 +86,9 @@ config :phoenix_dev_toolbar,
   # Behind a proxy or tunnel that rewrites the Host header, the page's origins
   # (scheme, host and port, matched exactly) the panel socket accepts
   # allowed_origins: ["https://abc.tunnel.example"],
-  # The MCP endpoint for coding agents at <path>/mcp (loopback only); false turns it off
-  # mcp: true,
+  # The MCP endpoint for coding agents at <path>/mcp, for this machine only;
+  # false turns it off, clients: adds IPs or CIDR ranges, or :any
+  # mcp: [clients: ["192.168.1.0/24"]],
   # The toolbar makes room so the page scrolls clear of it; false lets it overlap
   # (the dock menu's toggle overrides this per browser)
   reserve_space: true,
@@ -151,7 +152,7 @@ Agents that drive a browser can open the panel in a tab of its own: `/__pdt/pane
 
 ### MCP server
 
-The toolbar is also an MCP server, at `http://localhost:4000/__pdt/mcp` while your dev server runs. Its read-only tools (`list_pages`, `page_summary`, `page_queries`, `page_callbacks`, `page_n_plus_one`, `page_errors`) return the same data as `Report`. It is on whenever the toolbar is, answers only clients on this machine (loopback, no proxy), and `config :phoenix_dev_toolbar, mcp: false` turns it off.
+The toolbar is also an MCP server, at `http://localhost:4000/__pdt/mcp` while your dev server runs. Its read-only tools (`list_pages`, `page_summary`, `page_queries`, `page_callbacks`, `page_n_plus_one`, `page_errors`) return the same data as `Report`. It is on whenever the toolbar is, answers only clients on this machine (no proxy), and `config :phoenix_dev_toolbar, mcp: false` turns it off.
 
 Check it with a ping, which answers a JSON result:
 
@@ -190,7 +191,16 @@ Or by hand:
 url = "http://localhost:4000/__pdt/mcp"
 ```
 
-Claude Code asks once to approve a server from the project's `.mcp.json`; `/mcp` shows whether it is connected. Older Codex releases also need `experimental_use_rmcp_client = true` for HTTP servers. Start the dev server before the agent, or reconnect the server from the agent once it runs. A dev server inside a container sees your agent as a non-loopback client and refuses it.
+Claude Code asks once to approve a server from the project's `.mcp.json`; `/mcp` shows whether it is connected. Older Codex releases also need `experimental_use_rmcp_client = true` for HTTP servers. Start the dev server before the agent, or reconnect the server from the agent once it runs.
+
+If the dev server listens on a LAN address (so phones can reach it), use that address in the URL (`http://192.168.1.20:4000/__pdt/mcp`): the agent on the same machine is still accepted. Agents elsewhere (a container, a VM, another device) need their addresses allowed:
+
+```elixir
+# config/dev.exs
+config :phoenix_dev_toolbar, mcp: [clients: ["192.168.1.0/24", "172.17.0.0/16"]]
+```
+
+`clients: :any` accepts everyone who reaches the server, proxies included: anyone on the network can then read what the toolbar captured. Anything on this machine that relays to the dev server (an SSH forward, socat, a local proxy without `X-Forwarded-*` headers, a VM or container with user-mode NAT) counts as this machine, as it already does for loopback.
 
 The package ships [usage rules](https://hexdocs.pm/usage_rules) and a skill that teaches coding agents this check-before-and-after routine. With `usage_rules` in your project:
 

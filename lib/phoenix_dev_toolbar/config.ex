@@ -7,6 +7,7 @@ defmodule PhoenixDevToolbar.Config do
 
   require Logger
 
+  alias PhoenixDevToolbar.ClientMatch
   alias PhoenixDevToolbar.Plugin
   alias PhoenixDevToolbar.Plugins
 
@@ -28,24 +29,78 @@ defmodule PhoenixDevToolbar.Config do
   @spec reserve_space?() :: boolean()
   def reserve_space?, do: Application.get_env(:phoenix_dev_toolbar, :reserve_space, true) != false
 
+  @type mcp_mode :: :off | :local | {:list, [ClientMatch.entry()]} | :any
+
   @doc """
-  Whether the MCP endpoint is served: `mcp:`, on unless set to `false`. A value that
-  is not a boolean counts as on (`warn_mcp/0` logs it at boot).
+  Whether the MCP endpoint is served: `mcp:`, on unless set to `false`.
   """
   @spec mcp?() :: boolean()
-  def mcp?, do: Application.get_env(:phoenix_dev_toolbar, :mcp, true) != false
+  def mcp?, do: mcp() != :off
 
-  @doc "Logs, at boot, an `mcp:` value that is not a boolean."
+  @doc """
+  Who may reach MCP (ADR 15): `false` is `:off`; `true`, unset, `[clients: :local]`
+  and anything invalid are `:local`; `[clients: :any]` is `:any`; `[clients: list]`
+  is `{:list, entries}` with the valid entries parsed. Never logs (`warn_mcp/0` does).
+  """
+  @spec mcp() :: mcp_mode()
+  def mcp, do: :phoenix_dev_toolbar |> Application.get_env(:mcp, true) |> mcp_mode()
+
+  defp mcp_mode(false), do: :off
+  defp mcp_mode(clients: :any), do: :any
+
+  defp mcp_mode(clients: list) when is_list(list) do
+    case proper_list?(list) do
+      true -> {:list, parsed_clients(list)}
+      false -> :local
+    end
+  end
+
+  defp mcp_mode(_local_or_invalid), do: :local
+
+  defp parsed_clients(list),
+    do: for(entry <- list, {:ok, parsed} <- [ClientMatch.parse(entry)], do: parsed)
+
+  @doc "Logs, at boot, an invalid `mcp:` shape, invalid `clients:` entries and `clients: :any`."
   @spec warn_mcp() :: :ok
-  def warn_mcp do
-    case Application.get_env(:phoenix_dev_toolbar, :mcp, true) do
-      value when is_boolean(value) ->
+  def warn_mcp, do: :phoenix_dev_toolbar |> Application.get_env(:mcp, true) |> warn_mcp_value()
+
+  defp warn_mcp_value(value) when is_boolean(value), do: :ok
+  defp warn_mcp_value(clients: :local), do: :ok
+
+  defp warn_mcp_value(clients: :any) do
+    Logger.warning(
+      "[phoenix_dev_toolbar] mcp: [clients: :any]: anyone who reaches this dev server " <>
+        "can read the captured data over MCP"
+    )
+  end
+
+  defp warn_mcp_value(clients: list) when is_list(list) do
+    case proper_list?(list) do
+      true -> warn_invalid_clients(list)
+      false -> warn_mcp_value(:improper_list)
+    end
+  end
+
+  defp warn_mcp_value(invalid) do
+    Logger.warning(
+      "[phoenix_dev_toolbar] invalid mcp: #{inspect(invalid, limit: 5)}, " <>
+        "expected true, false, [clients: :local], [clients: :any] or [clients: [\"10.0.0.0/8\"]]. " <>
+        "Using true."
+    )
+  end
+
+  defp proper_list?([]), do: true
+  defp proper_list?([_head | tail]), do: proper_list?(tail)
+  defp proper_list?(_improper), do: false
+
+  defp warn_invalid_clients(list) do
+    case Enum.reject(list, &match?({:ok, _parsed}, ClientMatch.parse(&1))) do
+      [] ->
         :ok
 
       invalid ->
         Logger.warning(
-          "[phoenix_dev_toolbar] invalid mcp: #{inspect(invalid, limit: 5)}, " <>
-            "expected true or false. Using true."
+          "[phoenix_dev_toolbar] invalid mcp clients ignored: #{inspect(invalid, limit: 5, printable_limit: 80)}"
         )
     end
   end

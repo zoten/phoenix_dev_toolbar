@@ -50,10 +50,18 @@ defmodule PhoenixDevToolbar.Plug do
   `<path>/mcp` is an MCP server (Streamable HTTP, MCP 2025-03-26 to 2026-07-28)
   with read-only tools over `PhoenixDevToolbar.Report`: `list_pages`,
   `page_summary`, `page_queries`, `page_callbacks`, `page_n_plus_one` and
-  `page_errors`. It answers only clients on this machine: a loopback peer, no
-  proxy headers, an allowed `Host` and no foreign `Origin`. It is on with the
-  toolbar; `config :phoenix_dev_toolbar, mcp: false` turns it off. Client setup
-  is in the README, the protocol details in
+  `page_errors`. By default it answers only clients on this machine (a loopback
+  peer or one of the machine's own addresses, no proxy headers), with an allowed
+  `Host` and no foreign `Origin`. It is on with the toolbar:
+
+      config :phoenix_dev_toolbar, mcp: false                              # off
+      config :phoenix_dev_toolbar, mcp: [clients: ["192.168.1.0/24"]]     # also these
+      config :phoenix_dev_toolbar, mcp: [clients: :any]                   # anyone
+
+  Anything on this machine that relays to the dev server (an SSH forward, socat,
+  a local proxy without `X-Forwarded-*` headers, a VM or container with
+  user-mode NAT) counts as this machine. Client setup is in the README, the
+  protocol details in
   [ADR 15](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/15-mcp-endpoint.md).
 
   ## Access rules
@@ -63,7 +71,7 @@ defmodule PhoenixDevToolbar.Plug do
   name listed in `config :phoenix_dev_toolbar, allowed_hosts: [...]`. The socket
   also refuses a missing `Origin`, or one that differs from the host the request
   was sent to, unless it is listed in `allowed_origins: [...]` (for a proxy or
-  tunnel that rewrites the `Host` header). The MCP endpoint adds its own loopback
+  tunnel that rewrites the `Host` header). The MCP endpoint adds its own client
   and `Origin` rules, see the "MCP server" section.
 
   The plug does nothing when the toolbar is disabled

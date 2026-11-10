@@ -2,17 +2,19 @@
 #
 #     mix dev              # http://localhost:4000
 #     PORT=4001 mix dev
+#     IP=192.168.1.20 mix dev   # bind a LAN address, as for phones (ADR 15)
 #
 # Every page exercises a toolbar panel. The SQLite database lives in
 # tmp/dev.sqlite3 and is recreated on every boot.
 
 port = String.to_integer(System.get_env("PORT", "4000"))
+{:ok, ip} = "IP" |> System.get_env("127.0.0.1") |> String.to_charlist() |> :inet.parse_address()
 database = Path.expand("tmp/dev.sqlite3", __DIR__)
 
 Application.put_env(:phoenix_dev_toolbar, Demo.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,
-  http: [ip: {127, 0, 0, 1}, port: port],
+  http: [ip: ip, port: port],
   server: true,
   secret_key_base: String.duplicate("pdt-dev-harness-secret-", 4),
   live_view: [signing_salt: "pdt-dev-lv-salt"],

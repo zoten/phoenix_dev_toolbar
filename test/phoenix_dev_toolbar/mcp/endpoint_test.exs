@@ -52,11 +52,75 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
       assert conn.resp_body =~ "allowed_hosts"
     end
 
-    test "403 for a non loopback peer" do
-      conn = %{conn(:post, "/__pdt/mcp", "{}") | host: "localhost", remote_ip: {192, 168, 1, 5}}
+    defp from(ip, headers \\ []) do
+      conn = %{conn(:post, "/__pdt/mcp", Json.encode!(rpc("ping"))) | host: "localhost"}
+      conn = %{conn | remote_ip: ip}
+      conn = put_req_header(conn, "content-type", "application/json")
+
+      headers
+      |> Enum.reduce(conn, fn {name, value}, acc -> put_req_header(acc, name, value) end)
+      |> ToolbarPlug.call(@opts)
+    end
+
+    test "403 for a foreign peer by default, naming the option" do
+      conn = from({203, 0, 113, 9})
+      assert conn.status == 403
+      assert conn.resp_body =~ "mcp: [clients: [...]]"
+    end
+
+    defp from_own(ip, headers \\ []) do
+      conn = %{conn(:post, "/__pdt/mcp", Json.encode!(rpc("ping"))) | host: "localhost"}
+      conn = %{conn | remote_ip: ip}
+      conn = put_req_header(conn, "content-type", "application/json")
+
+      headers
+      |> Enum.reduce(conn, fn {name, value}, acc -> put_req_header(acc, name, value) end)
+      |> PhoenixDevToolbar.Mcp.Endpoint.call("/__pdt", fn -> [{192, 168, 7, 7}] end)
+    end
+
+    test "a peer on one of this machine's own addresses is accepted, others refused" do
+      assert from_own({192, 168, 7, 7}).status == 200
+      assert from_own({192, 168, 7, 8}).status == 403
+    end
+
+    test "an own-address peer with a proxy header is refused in :local" do
+      assert from_own({192, 168, 7, 7}, [{"x-forwarded-for", "1.2.3.4"}]).status == 403
+    end
+
+    test "the Origin guard applies under clients: :any and under a list" do
+      put_app_env(:mcp, clients: :any)
+      assert from({203, 0, 113, 9}, [{"origin", "http://evil.example"}]).status == 403
+
+      put_app_env(:mcp, clients: ["203.0.113.0/24"])
+      assert from({203, 0, 113, 9}, [{"origin", "http://evil.example"}]).status == 403
+      assert from({203, 0, 113, 9}).status == 200
+    end
+
+    test "a clients list admits matching peers only, and still refuses proxy headers" do
+      put_app_env(:mcp, clients: ["203.0.113.0/24", "fd00::/8"])
+      assert from({203, 0, 113, 9}).status == 200
+      assert from({0xFD00, 0, 0, 0, 0, 0, 0, 1}).status == 200
+      assert from({203, 0, 114, 9}).status == 403
+      assert from({203, 0, 113, 9}, [{"x-forwarded-for", "1.2.3.4"}]).status == 403
+    end
+
+    test "clients: :any accepts any peer and proxy headers" do
+      put_app_env(:mcp, clients: :any)
+      assert from({203, 0, 113, 9}).status == 200
+      assert from({203, 0, 113, 9}, [{"x-forwarded-for", "1.2.3.4"}]).status == 200
+    end
+
+    test "clients: :any still applies the Host guard" do
+      put_app_env(:mcp, clients: :any)
+
+      conn = %{
+        conn(:post, "/__pdt/mcp", "{}")
+        | host: "evil.example",
+          remote_ip: {203, 0, 113, 9}
+      }
+
       conn = conn |> put_req_header("content-type", "application/json") |> ToolbarPlug.call(@opts)
       assert conn.status == 403
-      assert conn.resp_body =~ "loopback"
     end
 
     test "403 behind a proxy header" do

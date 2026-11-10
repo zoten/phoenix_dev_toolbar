@@ -49,8 +49,9 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
   minutes, or not as an HTML document: load it again, then retry.
 - Results carry `panel_url`: give it to the user to see the page in the panel.
 - When a call fails: connection refused means the server is not running or the
-  port is wrong; 403 "MCP is loopback only" means the dev server runs in a
-  container or behind a proxy; 403 "Host not allowed" means the host must be
+  port is wrong; 403 "MCP is limited to this machine" means the agent
+  is in a container, a VM, on another device or behind a proxy (the user can
+  allow it with `mcp: [clients: [...]]`); 403 "Host not allowed" means the host must be
   added to `allowed_hosts:`; a 404 HTML page means the plug's `:path` is not
   `/__pdt` or the toolbar is disabled; 404 "MCP is off" means `mcp: false`.
 

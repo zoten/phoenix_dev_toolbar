@@ -3,8 +3,9 @@ defmodule PhoenixDevToolbar.Mcp.Endpoint do
   # The HTTP side of the MCP endpoint (ADR 15), served by the plug at
   # `<path>/mcp`. Guards run in order and each refusal is a short text/plain
   # body naming the fix. Runs in the host's request process: nothing here may
-  # raise out of `call/2`.
+  # raise out of `call/3`.
 
+  alias PhoenixDevToolbar.ClientMatch
   alias PhoenixDevToolbar.ClientPolicy
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Config
@@ -17,18 +18,19 @@ defmodule PhoenixDevToolbar.Mcp.Endpoint do
 
   @max_body 1_000_000
   @internal_error ~s({"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Internal error"}})
+  @client_refusal "MCP is limited to this machine: allow other clients with `mcp: [clients: [...]]` in the toolbar config."
   @headers ["mcp-protocol-version", "mcp-method", "mcp-name"]
 
   @doc "Answers the request: the conn comes back halted with the response sent."
-  @spec call(Conn.t(), String.t()) :: Conn.t()
-  def call(%Conn{} = conn, base_path) do
-    case guard(conn) do
+  @spec call(Conn.t(), String.t(), (-> [:inet.ip_address()])) :: Conn.t()
+  def call(%Conn{} = conn, base_path, own_addresses \\ &ClientMatch.own_addresses/0) do
+    case guard(conn, own_addresses) do
       {:refuse, status, message} -> text(conn, status, message)
       :ok -> conn |> read_message() |> respond(base_path)
     end
   end
 
-  defp guard(conn) do
+  defp guard(conn, own_addresses) do
     cond do
       not Config.mcp?() ->
         {:refuse, 404, "MCP is off. Remove `mcp: false` from the toolbar config to enable it."}
@@ -37,8 +39,8 @@ defmodule PhoenixDevToolbar.Mcp.Endpoint do
         HostCheck.log_refused(conn.host)
         {:refuse, 403, "Host not allowed. Add it to `allowed_hosts:` in the toolbar config."}
 
-      not ClientPolicy.loopback?(conn.remote_ip) or OriginCheck.proxied?(conn) ->
-        {:refuse, 403, "MCP is loopback only: reach the dev server directly from this machine."}
+      not client_allowed?(conn, Config.mcp(), own_addresses) ->
+        {:refuse, 403, @client_refusal}
 
       not origin_ok?(conn) ->
         {:refuse, 403,
@@ -54,6 +56,20 @@ defmodule PhoenixDevToolbar.Mcp.Endpoint do
         :ok
     end
   end
+
+  defp client_allowed?(_conn, :any, _own_addresses), do: true
+
+  defp client_allowed?(conn, mode, own_addresses) do
+    not OriginCheck.proxied?(conn) and peer_allowed?(conn.remote_ip, mode, own_addresses)
+  end
+
+  defp peer_allowed?(peer, mode, own_addresses) do
+    ClientPolicy.loopback?(peer) or listed?(peer, mode) or
+      ClientMatch.local?(peer, own_addresses.())
+  end
+
+  defp listed?(peer, {:list, entries}), do: ClientMatch.matches?(peer, entries)
+  defp listed?(_peer, _mode), do: false
 
   defp origin_ok?(conn) do
     case Conn.get_req_header(conn, "origin") do

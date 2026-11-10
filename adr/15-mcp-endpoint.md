@@ -1,4 +1,4 @@
-# ADR 15: Loopback-only MCP Endpoint
+# ADR 15: MCP Endpoint
 
 **Status:** Implemented (2026-11-11)  
 **Area:** integration  
@@ -19,12 +19,33 @@ with one line of client configuration.
 `config :phoenix_dev_toolbar, mcp: false` turns it off (404). No router, no new
 dependency: JSON goes through `Phoenix.json_library/0`.
 
+**Clients.** `mcp:` says which peers may call it:
+
+- `true` (default), or `[clients: :local]`: this machine only. A loopback peer,
+  or a peer whose address is one of this machine's own interface addresses
+  (`:inet.getifaddrs/0`, read only for a peer that is neither loopback nor
+  listed): a dev
+  server bound to its LAN address, so phones can reach it, is called by an
+  agent on the same laptop through that address. Another device cannot complete
+  a TCP handshake with our own address, so this widens nothing beyond the machine.
+- `[clients: ["192.168.1.0/24", "10.0.0.7", "fd00::/8"]]`: this machine plus
+  these IPv4 and IPv6 addresses and CIDR ranges (an agent in a container or a
+  VM, another device). An invalid entry logs one boot warning and is ignored.
+- `[clients: :any]`: any peer, proxy headers included, with a boot warning:
+  anyone who reaches the dev server can read the captured data.
+- Any other value logs a boot warning and counts as `true`.
+
+IPv4-mapped IPv6 peers compare as IPv4. Entries are parsed with
+`:inet.parse_strict_address/1` and a prefix of 1 to 3 digits, never into atoms;
+a malformed `mcp:` value or entry is warned at boot and never raises.
+
 **Who.** A request is answered only when, in this order:
 
 - the Host cannot be rebound (`HostCheck`, as the panel), else 403;
-- the peer is a loopback address and the request carries no proxy header
-  (`x-forwarded-for`, `x-forwarded-host`, `x-forwarded-proto`, `x-real-ip`,
-  `forwarded`), else 403;
+- the peer is allowed by `mcp:` (see Clients) and, unless `clients: :any`, the
+  request carries no proxy header (`x-forwarded-for`, `x-forwarded-host`,
+  `x-forwarded-proto`, `x-real-ip`, `forwarded`: the peer would be the proxy),
+  else 403 naming the `clients:` option;
 - an `Origin`, when present, is the request's own origin or listed in
   `allowed_origins:`, else 403. CLI clients send none; a web page in the
   developer's browser sends its own, and a JSON `POST` from it needs a CORS
@@ -85,16 +106,24 @@ not a breaking change, renaming or removing is (a CHANGELOG line).
 
 - Any MCP client measures a page before and after a change with one config line:
   no Tidewave, no remote shell, no browser automation.
-- It shows what the panel shows, to fewer clients (loopback only, no proxies).
+- It shows what the panel shows, to fewer clients by default (this machine, no
+  proxies); `clients:` opens it deliberately.
   EXPLAIN, process actions and eval stay in the panel, behind their own policies.
 - New MCP revisions may need a version added; an unknown one is refused with the
   supported list, so clients fall back.
 
 ## Open limits
 
-- A dev server in a container, a VM, behind a proxy or bound to a Unix socket
-  sees a non-loopback or proxied peer and refuses every request: there is no
-  opt-in for it yet.
+- A dev server bound to a Unix socket has no peer address to match: only
+  `clients: :any` lets its clients in.
+- Anything on this machine that relays to the dev server counts as this machine,
+  as it does for loopback: an SSH forward, socat, a local proxy without
+  forwarded headers, a VM or container with user-mode NAT (VirtualBox NAT,
+  QEMU slirp, podman pasta, host networking).
+- A mapped IPv6 range (`::ffff:10.0.0.0/104`) is not accepted as an entry; use
+  the IPv4 range. A zone suffix (`fe80::1%eth0`) is dropped.
+- Behind a proxy, only `clients: :any` works: the toolbar does not trust
+  forwarded addresses.
 - A client that disconnects while its body is read makes `Plug.Conn.read_body/2`
   raise in the request process, as the host's own `Plug.Parsers` would.
 - An `initialize` asking for a version older than 2025-03-26 is answered
