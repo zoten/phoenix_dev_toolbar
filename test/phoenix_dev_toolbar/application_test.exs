@@ -32,15 +32,38 @@ defmodule PhoenixDevToolbar.ApplicationTest do
     assert PhoenixDevToolbar.enabled?()
   end
 
-  test "unset anywhere else disables the toolbar and says why" do
-    for env <- [nil, :prod, :test] do
+  test "unset outside Mix disables the toolbar and says so" do
+    log = capture_log(fn -> assert ToolbarApp.settle_enabled(:error, nil) == :ok end)
+
+    refute PhoenixDevToolbar.enabled?()
+    assert log =~ "running outside Mix"
+    assert log =~ "only: :dev"
+  end
+
+  test "unset under another Mix env disables the toolbar and names the env" do
+    for env <- [:prod, :test] do
       delete_app_env(:enabled)
 
       log = capture_log(fn -> assert ToolbarApp.settle_enabled(:error, env) == :ok end)
 
       refute PhoenixDevToolbar.enabled?(), "expected disabled for #{inspect(env)}"
-      assert log =~ "only: :dev"
+      assert log =~ "Mix env is #{inspect(env)}"
+      assert log =~ "enabled: false"
+      assert log =~ "enabled: true"
+      refute log =~ "outside Mix"
     end
+  end
+
+  test "settle_redact stores the cleaned list and warns once" do
+    put_app_env(:redact, ["api_key", ~r/x/, 5])
+
+    log = capture_log(fn -> assert ToolbarApp.settle_redact(true) == :ok end)
+
+    assert Application.fetch_env!(:phoenix_dev_toolbar, :redact) == ["api_key"]
+    assert length(String.split(log, "ignoring `redact`")) == 2
+
+    assert PhoenixDevToolbar.Truncate.redact(%{"api_key" => "a", "password" => "b"}) ==
+             %{"api_key" => "[REDACTED]", "password" => "[REDACTED]"}
   end
 
   test "disabled starts no children, enabled starts the stores" do

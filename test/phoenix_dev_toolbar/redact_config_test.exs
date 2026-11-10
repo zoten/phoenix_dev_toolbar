@@ -4,6 +4,9 @@ defmodule PhoenixDevToolbar.RedactConfigTest do
 
   import PhoenixDevToolbar.EnvHelpers
 
+  import ExUnit.CaptureLog
+
+  alias PhoenixDevToolbar.Config
   alias PhoenixDevToolbar.Truncate
 
   test "configured keys are added to the defaults" do
@@ -26,5 +29,16 @@ defmodule PhoenixDevToolbar.RedactConfigTest do
 
     refute inspect(changes.values) =~ ~s("a")
     refute inspect(changes.values) =~ ~s("b")
+  end
+
+  test "invalid redact entries are dropped with one warning" do
+    log =
+      capture_log(fn ->
+        assert Config.redact(["api_key", ~r/x/, :ssn, 5, {:a, 1}]) == ["api_key", :ssn]
+      end)
+
+    assert length(String.split(log, "ignoring `redact`")) == 2
+    assert Config.redact(["api_key"]) == ["api_key"]
+    assert Config.redact("api_key") == ["api_key"]
   end
 end

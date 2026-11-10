@@ -7,7 +7,7 @@ defmodule PhoenixDevToolbar.Truncate do
   redact: [...]`, by default keys containing "password", "token" or "secret").
   """
 
-  @inspect_opts [limit: 50, printable_limit: 1024]
+  @inspect_opts [limit: 50, printable_limit: 1024, charlists: :as_lists]
   @sql_limit 8192
   @string_limit 2048
   @frames 10
@@ -24,7 +24,7 @@ defmodule PhoenixDevToolbar.Truncate do
   # Assigns diff of one callback (ADR 03): about 4 KB at most.
   @change_keys 20
   @change_values 10
-  @change_inspect [limit: 20, printable_limit: 256]
+  @change_inspect [limit: 20, printable_limit: 256, charlists: :as_lists]
   @change_bytes 360
   # A preview walks at most @preview_nodes nodes and @preview_width items per
   # container, whatever the value's size: assigns can be huge (ADR 03).

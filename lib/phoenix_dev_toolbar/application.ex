@@ -13,6 +13,7 @@ defmodule PhoenixDevToolbar.Application do
   def start(_type, _args) do
     :ok = settle_enabled(Application.fetch_env(:phoenix_dev_toolbar, :enabled), mix_env())
     enabled? = PhoenixDevToolbar.enabled?()
+    settle_redact(enabled?)
 
     with {:ok, pid} <-
            Supervisor.start_link(children(enabled?),
@@ -43,14 +44,38 @@ defmodule PhoenixDevToolbar.Application do
   def settle_enabled({:ok, _explicit}, _mix_env), do: :ok
   def settle_enabled(:error, :dev), do: :ok
 
+  def settle_enabled(:error, nil) do
+    Application.put_env(:phoenix_dev_toolbar, :enabled, false)
+
+    Logger.warning(
+      "[phoenix_dev_toolbar] running outside Mix (a release?): the toolbar is disabled. " <>
+        "Declare the dependency with `only: :dev`, or set `enabled: true` to force it."
+    )
+  end
+
   def settle_enabled(:error, mix_env) do
     Application.put_env(:phoenix_dev_toolbar, :enabled, false)
 
     Logger.warning(
-      "[phoenix_dev_toolbar] running outside Mix (a release?) or with a Mix env that is not " <>
-        ":dev (#{inspect(mix_env)}): the toolbar is disabled. " <>
-        "Declare the dependency with `only: :dev`, or set `enabled: true` to force it."
+      "[phoenix_dev_toolbar] the Mix env is #{inspect(mix_env)}, not :dev: the toolbar is " <>
+        "disabled there. Set `config :phoenix_dev_toolbar, enabled: false` to silence this, " <>
+        "or `enabled: true` to turn it on."
     )
+  end
+
+  @doc false
+  # Validates `redact:` once at boot, so the hot path reads a clean list.
+  @spec settle_redact(boolean()) :: :ok
+  def settle_redact(false), do: :ok
+
+  def settle_redact(true) do
+    case Application.fetch_env(:phoenix_dev_toolbar, :redact) do
+      {:ok, configured} ->
+        Application.put_env(:phoenix_dev_toolbar, :redact, Config.redact(configured))
+
+      :error ->
+        :ok
+    end
   end
 
   # `Mix.env/0` only when Mix is loaded: a release has no Mix.

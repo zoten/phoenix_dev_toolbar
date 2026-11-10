@@ -478,5 +478,73 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
 
       assert has_element?(panel, "#pdt-system-action-note", "Exit signal sent")
     end
+
+    # The buttons are hidden with actions off, but the events are still
+    # reachable: the server refuses them by policy, one test per action so the
+    # one-a-second limiter never decides the outcome.
+    defp forged_target(pid) do
+      delete_app_env(:actions)
+      panel = open()
+      search(panel, inspect(pid))
+      refute has_element?(panel, "#pdt-system-kill")
+      {panel, with_target(panel, "#pdt-system")}
+    end
+
+    test "kill is refused" do
+      pid = idle_process()
+      ref = Process.monitor(pid)
+      {panel, target} = forged_target(pid)
+
+      render_click(target, "arm", %{"action" => "kill", "reason" => "kill"})
+      render_click(target, "confirm", %{})
+
+      refute has_element?(panel, "#pdt-system-confirm")
+      refute_received {:DOWN, ^ref, :process, ^pid, _reason}
+    end
+
+    test "suspend is refused" do
+      pid = ponger()
+      Process.register(pid, :"pdt_forged_target_#{System.unique_integer([:positive])}")
+      {panel, target} = forged_target(pid)
+
+      render_click(target, "arm", %{"action" => "suspend"})
+      render_click(target, "confirm", %{})
+
+      refute has_element?(panel, "#pdt-system-confirm")
+      assert PhoenixDevToolbar.Suspender.suspended() == %{}
+      send(pid, {:ping, self()})
+      assert_receive {:pong, ^pid}
+    end
+
+    test "reading the message queue is refused" do
+      pid = idle_process()
+      send(pid, :queued)
+      {panel, target} = forged_target(pid)
+
+      render_click(target, "peek", %{})
+
+      refute has_element?(panel, "#pdt-system-messages-list")
+    end
+
+    test "reading the state is refused" do
+      agent = start_supervised!({Agent, fn -> :hidden end})
+      {panel, target} = forged_target(agent)
+
+      render_click(target, "status", %{})
+      _ = render(panel)
+
+      refute has_element?(panel, "#pdt-system-state-value")
+    end
+
+    test "tracing is refused" do
+      pid = idle_process()
+      {panel, target} = forged_target(pid)
+
+      render_click(target, "trace", %{})
+
+      refute has_element?(panel, "#pdt-system-trace-list")
+      refute has_element?(panel, "#pdt-system-trace-status")
+      assert PhoenixDevToolbar.Tracer.status(panel.pid) == nil
+    end
   end
 end

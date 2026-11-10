@@ -3,6 +3,11 @@ import Config
 # Library repository config only: not shipped in the Hex package.
 
 if config_env() == :dev do
+  # The toolbar starts before dev.exs runs: an explicit empty list keeps its
+  # first attach from warning "no Ecto repos found". dev.exs sets the harness
+  # repo and attaches again.
+  config :phoenix_dev_toolbar, repos: []
+
   # `mix assets.build` writes the committed bundles in priv/static (ADR 04).
   assets = Path.expand("../assets", __DIR__)
   common = ~w(--bundle --minify --target=es2020 --format=iife)

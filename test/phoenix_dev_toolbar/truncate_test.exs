@@ -213,6 +213,11 @@ defmodule PhoenixDevToolbar.TruncateTest do
   end
 
   describe "structs with only scalar fields" do
+    test "integer lists show as lists, not charlists" do
+      assert Truncate.preview([7]) =~ "[7]"
+      assert Truncate.inspect_value([104, 105]) == "[104, 105]"
+    end
+
     test "preview redacts a sensitive field name" do
       preview = Truncate.preview([%TestCreds{secret_key: "sk_live", user: "ada"}], 2048)
 

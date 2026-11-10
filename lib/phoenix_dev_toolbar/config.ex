@@ -69,6 +69,26 @@ defmodule PhoenixDevToolbar.Config do
     defaults
   end
 
+  @doc """
+  Keeps the `redact:` entries that are binaries or atoms; anything else would
+  raise in `to_string/1` on the collect path. One warning for the dropped ones.
+  """
+  @spec redact(term()) :: [String.t() | atom()]
+  def redact(configured) do
+    {valid, dropped} =
+      configured |> List.wrap() |> Enum.split_with(&(is_binary(&1) or is_atom(&1)))
+
+    maybe_warn_redact(dropped)
+    valid
+  end
+
+  defp maybe_warn_redact([]), do: :ok
+
+  defp maybe_warn_redact(dropped) do
+    _ = warn("ignoring `redact` entries #{inspect(dropped, limit: 5)}: expected strings or atoms")
+    :ok
+  end
+
   defp put_limit({key, value} = override, acc) when is_map_key(acc, key) do
     case valid_limit?(key, value) do
       true -> Map.put(acc, key, value)
