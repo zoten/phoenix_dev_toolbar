@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- DOM-level JS tests for `loader.js` and `panel.js` wiring and postMessage origin gate (ADR 06)
+
 ## [0.0.1] - 2026-11-10
 
 First public release. A dev-only toolbar for Phoenix LiveView apps: a summary bar and panel

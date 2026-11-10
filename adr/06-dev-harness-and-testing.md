@@ -54,9 +54,14 @@ correctness and boundedness need tests, not just eyeballing.
     (`ProcessHelpers.wait_until/2`), never a fixed count of iterations. Shared helpers live in
     `test/support` (`PageHelpers.open_panel/2` and `flush/1`, `ProcessHelpers.ponger/0`,
     `EnvHelpers.put_app_env/2` restoring the env on exit).
-  - JS: the loader's pure helpers (`assets/js/client_events.mjs`) have unit tests run by
-    `node --test` (`mix test.js`, Node built-ins only, part of `mix precommit`, so
-    contributors need Node 22+; CI runs it in the latest row). The wiring (listeners, `postMessage`, hooks) is checked by hand.
+  - JS: tests run by `node --test` (`mix test.js`, Node built-ins only, part of
+    `mix precommit`, so contributors need Node 22+; CI runs it in the latest row). The
+    pure helpers (`assets/js/*.mjs`) have unit tests. The wiring of `loader.js` and
+    `panel.js` (mount, the `postMessage` bridge and its origin gate, state and docks,
+    client events, the hooks, the join timeout and reload breaker) is tested at DOM level:
+    the real source runs against a small fake DOM (`assets/js/test/support/fake_dom.mjs`,
+    compound selectors only, no layout), imported afresh per test, with `node:test` mock
+    timers and a fake `LiveSocket` whose hooks the test mounts. No npm dependency.
   - Overhead benchmark (manual, `bench/`): handler cost for untracked processes, not
     written yet (open limit below).
 - **Prod guarantee**: `fixtures/host_app` installs the package exactly as the README says
@@ -90,7 +95,8 @@ correctness and boundedness need tests, not just eyeballing.
 
 ## Open limits
 
-- No browser tests: the loader and panel wiring are checked by hand in `mix dev`. A JS
-  client behaviour (a hook push locking its element dropped stream resets) was only
-  visible in a real browser.
+- No browser tests: the DOM-level tests run against a fake DOM, so layout, CSS,
+  pointer drags, real iframes and LiveView's own client are still checked by hand in
+  `mix dev`. A JS client behaviour (a hook push locking its element dropped stream
+  resets) was only visible in a real browser.
 - The overhead benchmark (`bench/`) is not written yet.

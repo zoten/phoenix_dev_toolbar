@@ -131,6 +131,7 @@ This code runs inside other people's applications. These rules are not negotiabl
 ## Test guidelines
 
 - **Reuse shared test helpers before writing local ones**: check `test/support` first; a helper copied into a third file belongs in `test/support`
+- **JS changes get JS tests** ([ADR 06](./adr/06-dev-harness-and-testing.md)): pure helpers go in `assets/js/*.mjs` with unit tests; `loader.js`/`panel.js` wiring is tested at DOM level on the fake DOM in `assets/js/test/support/fake_dom.mjs` (extend it rather than adding npm dependencies). `mix test.js` runs them, Node built-ins only
 - Telemetry tests attach with a unique handler id per test and detach in `on_exit/1`; ETS assertions read through the public `Store` API, not the raw table
 
 - **Always** write tests when you implement a new feature or page
@@ -333,6 +334,8 @@ This code runs inside other people's applications. These rules are not negotiabl
 - **Always** give every `<form>`/`<.form>` that uses `phx-change` and/or `phx-submit` an explicit, unique `id` attribute. Without it, LiveView cannot perform form recovery after a crash/reconnect, and `Phoenix.LiveViewTest` emits a "missing id" warning on every render. For a form rendered once per item in a loop, interpolate a unique key into the id, e.g. `id={"save-notes-form-#{entry.id}"}`.
 
 ### LiveView JavaScript interop
+
+> In this library, hooks live in `assets/js/panel.js` and are registered on the panel's own `LiveSocket` (ADR 04). Never ask the host to change its `app.js` or register hooks, and do not use colocated hooks. The guidance below is the general Phoenix reference
 
 - Remember anytime you use `phx-hook="MyHook"` and that JS hook manages its own DOM, you **must** also set the `phx-update="ignore"` attribute
 - **Always** provide an unique DOM id alongside `phx-hook` otherwise a compiler error will be raised

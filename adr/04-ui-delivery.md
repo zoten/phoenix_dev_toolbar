@@ -217,8 +217,9 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 
 ## Open limits
 
-- The panel's JS runs only in a real browser (checked by hand in `mix dev`); CI's
-  LiveView 1.1 row covers the server side through `LiveViewTest` and checks that the
+- The loader and panel wiring is tested against a fake DOM (ADR 06), not a real
+  browser: rendering and the host's LiveView client are checked by hand in `mix dev`.
+  CI's LiveView 1.1 row covers the server side through `LiveViewTest` and checks that the
   host client files exist, but does not execute them.
 - A strict CSP needs the nonce (`:nonce_assign`): the loader copies the injected script's
   nonce to its shadow `<style>`, so one nonce covers the script and the frame styling. The
