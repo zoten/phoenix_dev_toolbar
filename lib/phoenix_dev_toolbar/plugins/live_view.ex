@@ -1,5 +1,16 @@
 defmodule PhoenixDevToolbar.Plugins.LiveView do
-  @moduledoc false
+  @moduledoc """
+  The LiveView tab ([ADR 07](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/07-live-view-panel.md)): a profiler of every
+  callback and render of the page's LiveViews and LiveComponents, the assigns and
+  how they change, an event log (server and browser) and the component tree. Part
+  of `:defaults`. It takes no options.
+
+      config :phoenix_dev_toolbar, plugins: [:defaults]
+
+  Leave it out with `{:exclude, PhoenixDevToolbar.Plugins.LiveView}`. Assigns are
+  bounded and redacted (see the `redact:` option of the application config).
+  """
+
   # Built-in LiveView collector (ADR 02): one `:callback` event per LiveView and
   # LiveComponent callback, one `:render` event per render.
   #

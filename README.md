@@ -71,12 +71,15 @@ config :phoenix_dev_toolbar,
     max_events: 500,           # per plugin and session, oldest trimmed first
     max_session_events: 2000,  # per session, all plugins together
     max_sessions: 50,          # sessions kept, oldest closed ones evicted first
-    events_per_second: 200     # per session, the rest are counted as dropped
+    events_per_second: 200,    # per session, the rest are counted as dropped
+    # ttl_ms: 600_000,         # a session is dropped this long after its last event
+    # sweep_ms: 30_000,        # how often expired sessions are looked for
+    # down_grace_ms: 60_000,   # a LiveView that went down keeps its events this long
   ]
 ```
 
-The options shown for the built-in Ecto, Process and System plugins are all they accept;
-Cluster and Eval document theirs in their module docs.
+Each built-in plugin documents its options in its module docs: `PhoenixDevToolbar.Plugins.Ecto`,
+`.Process`, `.System`, `.Cluster` and `.Eval`.
 
 Invalid `limits` values are logged at boot and keep their default.
 

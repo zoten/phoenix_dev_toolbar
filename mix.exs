@@ -112,13 +112,23 @@ defmodule PhoenixDevToolbar.MixProject do
     [
       main: "readme",
       source_ref: "v#{@version}",
-      extras: ["README.md", "guides/writing-a-plugin.md", "CHANGELOG.md"],
+      extras: ["README.md", "guides/writing-a-plugin.md", "CHANGELOG.md", "SECURITY.md"],
       groups_for_extras: [Guides: ["guides/writing-a-plugin.md"]],
       # Examples are compiled in tests, where precommit builds the docs.
       filter_modules: fn module, _meta ->
         not String.starts_with?(inspect(module), "PdtExamples")
       end,
       groups_for_modules: [
+        Setup: [PhoenixDevToolbar, PhoenixDevToolbar.Plug],
+        "Built-in plugins": [
+          PhoenixDevToolbar.Plugins.Ecto,
+          PhoenixDevToolbar.Plugins.Request,
+          PhoenixDevToolbar.Plugins.LiveView,
+          PhoenixDevToolbar.Plugins.Process,
+          PhoenixDevToolbar.Plugins.System,
+          PhoenixDevToolbar.Plugins.Cluster,
+          PhoenixDevToolbar.Plugins.Eval
+        ],
         "Plugin API": [
           PhoenixDevToolbar.Plugin,
           PhoenixDevToolbar.Panel,

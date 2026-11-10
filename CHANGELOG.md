@@ -91,3 +91,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Collector failure path tests; hot path wording matches the code (ADR 02)
 - Breaking: `redact:` adds to the defaults instead of replacing them (ADR 03)
 - Ecto repos default to the apps' `:ecto_repos`, one warning when none (ADR 02, ADR 05)
+- Public moduledocs for the built-in plugins, ADR links, Setup and plugin groups in the docs (ADR 05)
+- Experimental markers on the plugin API; `Truncate.changes/2` and `snapshot/1` are internal (ADR 05)

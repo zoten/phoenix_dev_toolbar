@@ -1,6 +1,6 @@
 defmodule PhoenixDevToolbar.Truncate do
   @moduledoc """
-  Bounds payloads before they are stored (ADR 03): plugins use these helpers
+  Bounds payloads before they are stored ([ADR 03](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/03-event-storage.md)): plugins use these helpers
   in `c:PhoenixDevToolbar.Plugin.collect/3`, which runs inside host processes.
   Every function is pure, cheap on small inputs and bounded on large ones.
   `redact/2` hides the values of sensitive keys (`config :phoenix_dev_toolbar,
@@ -160,18 +160,13 @@ defmodule PhoenixDevToolbar.Truncate do
     redacted
   end
 
-  @doc """
-  Bounded diff of the assigns changed by a callback.
-
-  Lists at most #{@change_keys} of the changed `keys` (sorted; `:all` means every
-  assign) and inspects, redacted, the values of the first #{@change_values}, each
-  capped at #{@change_bytes} bytes. `:flash` is listed without its value.
-  `omitted` counts the keys left out.
-
-      iex> PhoenixDevToolbar.Truncate.changes(%{count: 2, password: "x"}, [:count, :password])
-      %{keys: [:count, :password], values: %{count: "2", password: ~s("[REDACTED]")}, omitted: 0}
-
-  """
+  @doc false
+  # Bounded diff of the assigns changed by a callback (LiveView plugin).
+  #
+  # Lists at most @change_keys of the changed `keys` (sorted; `:all` means every
+  # assign) and inspects, redacted, the values of the first @change_values, each
+  # capped at @change_bytes bytes. `:flash` is listed without its value.
+  # `omitted` counts the keys left out.
   @spec changes(map(), [term()] | :all) :: changes()
   def changes(assigns, :all) when is_map(assigns), do: changes(assigns, Map.keys(assigns))
 
@@ -203,11 +198,10 @@ defmodule PhoenixDevToolbar.Truncate do
     end
   end
 
-  @doc """
-  Bounded, redacted view of a whole assigns map for the assigns inspector: at
-  most #{@snapshot_keys} assigns (sorted by key), each through `preview/3`.
-  Runs in the panel's task, never in a host process.
-  """
+  @doc false
+  # Bounded, redacted view of a whole assigns map for the assigns inspector: at
+  # most @snapshot_keys assigns (sorted by key), each through `preview/3`.
+  # Runs in the panel's task, never in a host process.
   @spec snapshot(map()) :: %{entries: [{term(), String.t()}], omitted: non_neg_integer()}
   def snapshot(assigns) when is_map(assigns) do
     redact = lowered_redact_keys()

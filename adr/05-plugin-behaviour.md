@@ -15,7 +15,7 @@ broken plugin from breaking the host or the rest of the toolbar.
 ## Decision
 
 Every panel, built-ins included (`PhoenixDevToolbar.Plugins.Ecto`, `.Request`,
-`.LiveView`), implements the public `PhoenixDevToolbar.Plugin` behaviour, and its
+`.LiveView`, `.Process`, `.System`), implements the public `PhoenixDevToolbar.Plugin` behaviour, and its
 tab is a `PhoenixDevToolbar.Panel` LiveComponent. Guide: `guides/writing-a-plugin.md`;
 example: `examples/oban` (the jobs a page enqueued).
 

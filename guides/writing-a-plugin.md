@@ -1,11 +1,14 @@
 # Writing a plugin
 
-A plugin adds a tab and badges to the toolbar. The built-in Ecto, Request and
-LiveView panels are plugins too, written against the same API. This guide
+A plugin adds a tab and badges to the toolbar. The built-in Ecto, Request,
+LiveView, Process and System panels are plugins too, written against the same API. This guide
 builds one step by step; the complete example is the Oban plugin in the
 repository's `examples/oban` folder.
 
-> The plugin API is unstable before 1.0: changes are listed in the CHANGELOG.
+> #### Experimental {: .warning}
+>
+> The plugin API may change in any 0.0.x release and is unstable before 1.0:
+> changes are listed in the CHANGELOG.
 
 ## Where the module lives
 
@@ -208,8 +211,10 @@ end
   `handle_info/2`. Do not define `update/2` or `update_many/1`: the toolbar
   defines them.
 - Style with the panel's classes: `pdt-list`, `pdt-row`, `pdt-row__head`,
-  `pdt-row__meta`, `pdt-tag`, `pdt-badge`, `pdt-time`, `pdt-error`,
-  `pdt-empty`, `pdt-hint`, `pdt-button`. The panel lives in its own iframe:
+  `pdt-row__meta`, `pdt-row--error`, `pdt-tag`, `pdt-badge`, `pdt-time`,
+  `pdt-origin`, `pdt-error`, `pdt-empty`, `pdt-list__empty`, `pdt-hint`,
+  `pdt-button`. This is the stable set; other `pdt-` classes are internal and
+  may change. The panel lives in its own iframe:
   your markup can never break the host page, and the panel stylesheet is the
   only one loaded.
 - DOM ids must be unique in the whole panel: prefix them with your plugin id.

@@ -90,6 +90,14 @@ defmodule PhoenixDevToolbar.TruncateTest do
   end
 
   describe "changes/2" do
+    test "redacts sensitive values" do
+      assert Truncate.changes(%{count: 2, password: "x"}, [:count, :password]) == %{
+               keys: [:count, :password],
+               values: %{count: "2", password: ~s("[REDACTED]")},
+               omitted: 0
+             }
+    end
+
     test "inspects the changed values, sorted by key" do
       assigns = %{__changed__: %{}, count: 2, name: "Ada", other: :untouched}
 

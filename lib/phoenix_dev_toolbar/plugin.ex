@@ -1,6 +1,10 @@
 defmodule PhoenixDevToolbar.Plugin do
   @moduledoc """
-  The behaviour every toolbar panel implements, the built-ins included (ADR 05).
+  > #### Experimental {: .warning}
+  >
+  > This API may change in any 0.0.x release. Changes are listed in the CHANGELOG.
+
+  The behaviour every toolbar panel implements, the built-ins included ([ADR 05](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/05-plugin-behaviour.md)).
 
   A plugin collects events from `:telemetry` inside the host's processes and,
   in the panel, folds them into summary badges (`c:summary_init/1`,
@@ -10,7 +14,7 @@ defmodule PhoenixDevToolbar.Plugin do
       config :phoenix_dev_toolbar,
         plugins: [:defaults, {MyApp.Toolbar.Jobs, queues: [:default]}]
 
-  `:defaults` expands to the built-ins (Ecto, Request, LiveView). Listing a
+  `:defaults` expands to the built-ins (Ecto, Request, LiveView, Process, System). Listing a
   built-in with options overrides it; `{:exclude, Module}` removes one. An
   invalid entry is logged and skipped: the host application always boots.
 
@@ -48,7 +52,7 @@ defmodule PhoenixDevToolbar.Plugin do
   A `collect/3` that raises, throws or exits is disabled (quarantined) and the
   error is logged once; the other plugins keep working.
 
-  This behaviour is unstable before 1.0: changes are listed in the CHANGELOG.
+  The behaviour is unstable before 1.0 (see the note at the top).
   """
 
   alias PhoenixDevToolbar.Context

@@ -1,6 +1,10 @@
 defmodule PhoenixDevToolbar.Plugins.Cluster do
   @moduledoc """
-  The Cluster tab (ADR 12): this node and its connected nodes, with each one's
+  > #### Experimental {: .warning}
+  >
+  > This API may change in any 0.0.x release. Changes are listed in the CHANGELOG.
+
+  The Cluster tab ([ADR 12](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/12-cluster-and-eval-plugins.md)): this node and its connected nodes, with each one's
   round trip time, process count, memory, OTP release and uptime. Not in
   `:defaults`: add it to the toolbar's `plugins:`.
 

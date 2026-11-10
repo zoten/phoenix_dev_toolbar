@@ -1,5 +1,29 @@
 defmodule PhoenixDevToolbar.Plugins.Ecto do
-  @moduledoc false
+  @moduledoc """
+  The Ecto tab ([ADR 08](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/08-query-diagnostics.md)): every query of the page,
+  oldest first, with SQL, params, timings, rows and the code that ran it, N+1
+  groups flagged above them, EXPLAIN for SELECTs and a JSON export. Part of
+  `:defaults`.
+
+      config :phoenix_dev_toolbar, repos: [MyApp.Repo]
+
+  ## Options
+
+  | Option | Type | Default |
+  | --- | --- | --- |
+  | `repos:` | list of repo modules | the top level `repos` config, else the `:ecto_repos` of the loaded applications |
+  | `n_plus_one:` | integer `>= 2`, or `false` to turn the detector off | `5` |
+
+  `repos:` in the plugin entry wins over the top level config:
+
+      config :phoenix_dev_toolbar,
+        plugins: [:defaults, {PhoenixDevToolbar.Plugins.Ecto, repos: [MyApp.Repo], n_plus_one: 3}]
+
+  With no repos found, the tab stays empty and one warning names the config line.
+  Set `stacktrace: true` in the repo's config to see where each query comes from.
+  `ecto_sql` is an optional dependency: without it this plugin attaches to nothing.
+  """
+
   # Built-in Ecto panel collector (ADR 02): one event per query of the repos in
   # `config :phoenix_dev_toolbar, repos: [MyApp.Repo]`, or in the plugin's own
   # `repos:` option (`{PhoenixDevToolbar.Plugins.Ecto, repos: [...]}`), which wins.

@@ -1,7 +1,7 @@
 defmodule PhoenixDevToolbar.Context do
   @moduledoc """
   What a plugin's `c:PhoenixDevToolbar.Plugin.collect/3` knows about the event
-  it is handling (ADR 05).
+  it is handling ([ADR 05](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/05-plugin-behaviour.md)).
 
     * `sid`: the page session the event belongs to
     * `source`: `:self` when the emitting process is tracked itself (a request,

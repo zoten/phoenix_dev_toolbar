@@ -10,15 +10,33 @@ defmodule PhoenixDevToolbar.Plug do
       end
 
   No router changes are needed: the panel is a LiveView rendered by this plug
-  under `:path`, connected through your existing LiveView socket. This keeps
-  the package installable with `only: :dev`, since nothing outside the
-  `code_reloading?` block references it.
+  under `:path`, and it connects through its own socket at `<path>/live`, not
+  through the host's `LiveSocket` or its `app.js`. This keeps the package
+  installable with `only: :dev`, since nothing outside the `code_reloading?`
+  block references it.
 
   ## Options
 
-    * `:path` - where the toolbar lives. Defaults to `"/__pdt"`.
+    * `:path` - where the toolbar lives, an absolute path below the root.
+      Defaults to `"/__pdt"`. The panel, its assets, its socket and the export
+      are served under it.
     * `:nonce_assign` - the `conn.assigns` key holding a CSP nonce for the
-      injected script tag. Defaults to `:csp_nonce`.
+      injected script tag. Defaults to `:csp_nonce`. A nonce based
+      `script-src` needs the same nonce in the assign:
+
+          # in a plug before this one, or in your CSP plug
+          conn = Plug.Conn.assign(conn, :csp_nonce, nonce)
+
+          # or, if your plug stores it elsewhere
+          plug PhoenixDevToolbar.Plug, nonce_assign: :my_nonce
+
+  ## Access rules
+
+  The panel, its socket and the export answer only a request whose `Host` cannot
+  be rebound: an IP address, `localhost`, your endpoint's `url: [host: ...]` or a
+  name listed in `config :phoenix_dev_toolbar, allowed_hosts: [...]`. The socket
+  also refuses a missing `Origin`, or one that differs from the host the request
+  was sent to.
 
   The plug does nothing when the toolbar is disabled
   (`config :phoenix_dev_toolbar, enabled: false`).

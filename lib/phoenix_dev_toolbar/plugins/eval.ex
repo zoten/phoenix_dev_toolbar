@@ -1,6 +1,10 @@
 defmodule PhoenixDevToolbar.Plugins.Eval do
   @moduledoc """
-  The Eval tab (ADR 12): read queries about the running node and, only when you
+  > #### Experimental {: .warning}
+  >
+  > This API may change in any 0.0.x release. Changes are listed in the CHANGELOG.
+
+  The Eval tab ([ADR 12](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/12-cluster-and-eval-plugins.md)): read queries about the running node and, only when you
   allow it, code you type, evaluated on the node. Not in `:defaults`: add it to
   the toolbar's `plugins:`.
 
@@ -24,7 +28,7 @@ defmodule PhoenixDevToolbar.Plugins.Eval do
 
   `allow: :eval` with `clients: :any` lets anyone who reaches the dev server run
   code as the BEAM user: both overrides are warned about when the toolbar
-  starts. See SECURITY.md.
+  starts. See [SECURITY.md](SECURITY.md).
   """
 
   use PhoenixDevToolbar.Plugin, id: :eval, name: "Eval"

@@ -1,6 +1,10 @@
 defmodule PhoenixDevToolbar.Panel do
   @moduledoc """
-  A plugin's tab in the toolbar panel: a `Phoenix.LiveComponent` (ADR 05).
+  > #### Experimental {: .warning}
+  >
+  > This API may change in any 0.0.x release. Changes are listed in the CHANGELOG.
+
+  A plugin's tab in the toolbar panel: a `Phoenix.LiveComponent` ([ADR 05](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/05-plugin-behaviour.md)).
 
   A plugin returns its panel module from `c:PhoenixDevToolbar.Plugin.panel/0`.
   The toolbar renders it inside its own iframe, never in the host page, and
@@ -42,7 +46,11 @@ defmodule PhoenixDevToolbar.Panel do
   The toolbar assigns, before calling either callback:
 
     * `@config`: the plugin's config, as returned by its `init/1`
-    * `@page`: the page shown (`@page.root` is the sid of its HTTP request)
+    * `@page`: the page shown, a struct whose module is internal. Rely only on
+      `@page.root` (the sid of its HTTP request) and `@page.sids` (the sids of
+      the sessions that make up the page: the request, then its LiveView once
+      connected; empty when the page's events have expired). Its other fields
+      (`transport`, `path`, `owner`) are internal and may change
     * `@shown?`: the tab is selected
     * `@visible?`: the panel is open and the browser tab visible
 
@@ -51,10 +59,10 @@ defmodule PhoenixDevToolbar.Panel do
   `update_many/1`, which the toolbar defines: `handle_event/3`
   (with `phx-target={@myself}`), `start_async/3` and `handle_async/3`. For
   timers, `send_after/4` delivers a message to `c:handle_info/2`. Style it with the panel's `pdt-`
-  classes (`pdt-list`, `pdt-row`, `pdt-tag`, `pdt-badge`): the panel
+  classes (the stable set is listed in the plugin guide): the panel
   stylesheet is the only one loaded.
 
-  This behaviour is unstable before 1.0: changes are listed in the CHANGELOG.
+  The behaviour is unstable before 1.0 (see the note at the top).
   """
 
   require Logger

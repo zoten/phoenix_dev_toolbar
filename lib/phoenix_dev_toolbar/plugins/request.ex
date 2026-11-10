@@ -1,5 +1,15 @@
 defmodule PhoenixDevToolbar.Plugins.Request do
-  @moduledoc false
+  @moduledoc """
+  The Request tab ([ADR 02](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/02-telemetry-collection-and-correlation.md)):
+  the page's routed requests, their exceptions with the error banner and
+  stacktrace, and the response (status, duration). Part of `:defaults`. It takes
+  no options.
+
+      config :phoenix_dev_toolbar, plugins: [:defaults]
+
+  Path params are redacted (see the `redact:` option of the application config).
+  """
+
   # Built-in Request panel collector (ADR 02): one event per routed request,
   # from `[:phoenix, :router_dispatch, :stop | :exception]`. Overall request
   # time, including plugs before the router, is recorded by

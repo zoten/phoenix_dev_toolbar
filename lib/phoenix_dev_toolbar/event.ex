@@ -1,6 +1,6 @@
 defmodule PhoenixDevToolbar.Event do
   @moduledoc """
-  One recorded fact: a query, a callback, a request (ADR 05).
+  One recorded fact: a query, a callback, a request ([ADR 05](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/05-plugin-behaviour.md)).
 
   Plugins build events with `new/4` in `c:PhoenixDevToolbar.Plugin.collect/3`.
   `plugin` is the plugin's id, `kind` an atom of the plugin's choosing, `data`

@@ -3,7 +3,7 @@ defmodule PhoenixDevToolbar do
   A dev-only debug toolbar for Phoenix LiveView applications.
 
   Every entry point of the library is a no-op unless `enabled?/0` returns
-  `true`. See ADR 01 for the production footprint rules.
+  `true`. See [ADR 01](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/01-zero-prod-footprint-and-installation.md) for the production footprint rules.
   """
 
   @doc """
