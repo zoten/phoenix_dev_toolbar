@@ -93,6 +93,10 @@ defmodule PhoenixDevToolbar.MixProject do
         "format",
         "test --warnings-as-errors",
         "test.js",
+        # priv/static is committed and shipped: rebuild and fail on a stale bundle (ADR 04).
+        # esbuild is a dev only dependency, hence the MIX_ENV=dev subprocess.
+        "cmd env MIX_ENV=dev mix assets.build",
+        "cmd git diff --exit-code priv/static",
         "credo --strict",
         "dialyzer",
         "docs --warnings-as-errors"

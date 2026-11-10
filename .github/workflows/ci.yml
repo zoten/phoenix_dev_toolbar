@@ -77,6 +77,27 @@ jobs:
           MIX_ENV=prod mix compile --warnings-as-errors
           MIX_ENV=dev mix deps.get
           MIX_ENV=dev mix compile --warnings-as-errors
+      # Boots the fixture (no Ecto): the toolbar is on in dev, absent in prod.
+      - name: Fixture host app boots without Ecto
+        if: matrix.lint
+        working-directory: fixtures/host_app
+        run: |
+          MIX_ENV=dev mix run check_boot.exs
+          MIX_ENV=prod mix run check_boot.exs
+      # What Hex would ship: the bundles and docs files in, dev only files out.
+      - name: Package contents
+        if: matrix.lint
+        run: |
+          out="$RUNNER_TEMP/pkg"
+          mix hex.build --unpack -o "$out"
+          for f in priv/static/loader.js priv/static/panel.js priv/static/panel.css \
+                   lib/phoenix_dev_toolbar.ex README.md LICENSE CHANGELOG.md; do
+            test -f "$out/$f" || { echo "missing from package: $f"; exit 1; }
+          done
+          for f in examples test dev.exs fixtures assets config; do
+            test ! -e "$out/$f" || { echo "must not be in package: $f"; exit 1; }
+          done
+          find "$out" -type f | sed "s|$out/||" | sort
       # priv/static is committed and shipped: it must match assets/ (ADR 04).
       - if: matrix.lint
         name: Built assets are up to date
