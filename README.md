@@ -18,7 +18,7 @@ you are working on.
 
 - **Summary bar**: one badge per tab (query count, N+1 flag, LiveView callbacks, dropped events), always visible on the page.
 - **Request tab**: the routed request, its route, status and duration, and exceptions with the stacktrace.
-- **Ecto tab**: every query with redacted params, timings (total, queue, query, decode) and origin, attributed to the request, the LiveView callback or the `Task` that ran it.
+- **Ecto tab**: every query with its params (values under sensitive key names are redacted, positional params are not: see `redact:`), timings (total, queue, query, decode) and origin, attributed to the request, the LiveView callback or the `Task` that ran it.
 - **N+1 detection**: the same query from the same origin repeated 5 times in one callback is flagged (the threshold is configurable).
 - **EXPLAIN**: one click on a SELECT, run in a transaction that is rolled back, never `EXPLAIN ANALYZE`.
 - **JSON export** of the page's queries, short or with EXPLAIN plans.
@@ -27,7 +27,7 @@ you are working on.
 - **System tab**: open any process by pid or name, read its info and stacktrace, walk its supervision and application trees, and list the top processes by memory, reductions or queue. Opt-in actions (`actions:` option): state read, kill, suspend, message peek and a message trace (OTP 27+).
 - **Cluster and Eval plugins** (experimental, opt-in): connected nodes, and read queries or code evaluated on the node.
 - **Plugin API**: your own tabs and badges, with a [guide](https://hexdocs.pm/phoenix_dev_toolbar/writing-a-plugin.html).
-- **Docks and resize**: bottom, top, left or right, draggable size, collapse to a pill. It follows LiveView live navigation.
+- **Docks and resize**: bottom, top, left or right, draggable size, collapse to a thin bar or hide to a pill. It follows LiveView live navigation.
 
 ## Requirements
 
@@ -111,7 +111,9 @@ Invalid `limits` values are logged at boot and keep their default.
 
 The toolbar enables itself only when the app runs under Mix with `MIX_ENV=dev`. Any other
 env (a release, `prod`, `test`, a custom one like `local` or `staging`) leaves it off
-unless you set `config :phoenix_dev_toolbar, enabled: true`.
+unless you set `config :phoenix_dev_toolbar, enabled: true`. For a custom Mix env the dependency
+is not compiled there when declared `only: :dev`, so list that env too
+(`only: [:dev, :local]`) AND set `enabled: true`.
 
 ### Turning it off for one run
 
@@ -130,7 +132,7 @@ read at boot, so restart to switch it.
 
 - [Phoenix LiveDashboard](https://github.com/phoenixframework/phoenix_live_dashboard): node-wide metrics and processes on its own page, not tied to the page you are viewing. Better for metrics over time.
 - [LiveDebugger](https://github.com/software-mansion/live-debugger): deeper LiveView state debugging. This toolbar's LiveView tab overlaps with it; use LiveDebugger when LiveView state is the whole problem.
-- [Tidewave](https://tidewave.ai): gives coding agents runtime access to your app. It has no per-page attribution, and this toolbar has no agent interface yet.
+- [Tidewave](https://tidewave.ai): gives coding agents runtime access to your app. A different job: this toolbar is for the developer looking at a page.
 - [phoenix_profiler](https://hex.pm/packages/phoenix_profiler): an existing profiler and debug toolbar for Phoenix.
 - What this one adds: everything is attributed to the page in front of you (its request, its LiveView processes and their tasks), with N+1 detection per callback and one-click EXPLAIN.
 
@@ -165,6 +167,7 @@ The toolbar is for development. It is off outside `MIX_ENV=dev`, adds nothing to
 ## Contributing
 
 The ADR index ([adr/README.md](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/README.md)) is the place to start. [AGENTS.md](https://github.com/zoten/phoenix_dev_toolbar/blob/main/AGENTS.md) is written for AI coding agents. Run `mix precommit` before pushing (its JS tests need Node 22 or later).
+`mix precommit` rebuilds the assets (the first run downloads the esbuild binary, so it needs network) and fails if `priv/static` differs from the committed bundles.
 CI also compiles `fixtures/host_app` in prod and dev, which `mix precommit` does not (run it there with `mix compile --warnings-as-errors`).
 Try your changes in a real browser with `mix dev`, a demo app at http://localhost:4000.
 

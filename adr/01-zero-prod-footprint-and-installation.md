@@ -33,7 +33,9 @@ Three layers keep production clean:
    in a release or in any other Mix env (`:prod`, `:test`) it disables itself and logs a
    warning, so a dependency installed without `only: :dev` stays off under
    `MIX_ENV=prod mix phx.server`. `enabled: true` forces it on (this library's own
-   test config does). To skip the toolbar for a single dev run, the
+   test config does); in a custom Mix env (`local`, `staging`) with the dependency
+   declared `only: :dev` it needs both, the env listed (`only: [:dev, :local]`) so the
+   package is compiled there, and `enabled: true`. To skip the toolbar for a single dev run, the
    host reads `enabled` from an environment variable in `config/dev.exs` (README,
    "Turning it off for one run"); it is settled at boot, so switching needs a restart.
 

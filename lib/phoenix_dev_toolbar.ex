@@ -9,8 +9,9 @@ defmodule PhoenixDevToolbar do
   @doc """
   Returns whether the toolbar is enabled.
 
-  Reads `config :phoenix_dev_toolbar, enabled: boolean()` and defaults to `true`,
-  since the package is meant to be installed with `only: :dev`.
+  True when `config :phoenix_dev_toolbar, enabled: true`, or when `enabled` is
+  unset under Mix env `:dev`. The application settles an unset value at boot:
+  in a release or any other Mix env it stores `false`.
 
   ## Examples
 

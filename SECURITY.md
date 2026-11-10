@@ -31,6 +31,9 @@ They run for whoever can open the panel, so each has a safe default:
   the host config refuses code too; unset `actions` does not); with `clients: :any` too,
   **anyone who reaches the dev server can run code on your machine**. Code is
   logged as a warning when the toolbar starts, with who may run it.
+- **Redaction is by key name** (`redact:`, ADR 03): values under keys such as "password" or
+  "token" in maps and keyword lists are hidden; positional Ecto query params (an INSERT's
+  values) are shown as they are, and the panel shows whatever the page and queries carry.
 - "Loopback" is the address the panel's websocket comes from, with no
   `x-forwarded-*` header: a proxy or tunnel that adds none (Docker's userland port
   proxy, a plain TCP tunnel) makes whoever reaches it look local.

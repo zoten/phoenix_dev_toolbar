@@ -99,6 +99,7 @@ Opt-in Cluster and Eval plugins. Plugin API with a guide. Off outside `MIX_ENV=d
 - Collector failure path tests; hot path wording matches the code (ADR 02)
 - `redact:` adds to the defaults instead of replacing them (ADR 03)
 - Ecto repos default to the apps' `:ecto_repos`, one warning when none (ADR 02, ADR 05)
+- Integer list params shown as lists, not charlists; `redact:` entries validated (ADR 03)
 - Public moduledocs for the built-in plugins, ADR links, Setup and plugin groups in the docs (ADR 05)
 - Experimental markers on the plugin API; `Truncate.changes/2` and `snapshot/1` are internal (ADR 05)
 - `Truncate.redact/2` cuts what it does not walk instead of returning it; scalar structs redacted (ADR 03)

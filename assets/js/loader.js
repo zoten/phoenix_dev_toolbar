@@ -154,12 +154,15 @@ const createSidePadding = () => {
   }
 }
 
+// The one element the loader adds to the page: its presence is the "mounted" mark.
+const HOST_ID = "phoenix-dev-toolbar"
+
 const mount = () => {
   const {pdtSid: sid, pdtPath: path} = script.dataset
-  if (!sid || !path) return
+  if (!sid || !path || document.getElementById(HOST_ID)) return
 
   const host = document.createElement("div")
-  host.id = "phoenix-dev-toolbar"
+  host.id = HOST_ID
   host.setAttribute("data-phx-update", "ignore")
   // Inline so host page rules cannot reach it. Its height is the space the bar
   // reserves in the page flow, so the page scrolls its end above the bar.
@@ -379,10 +382,9 @@ const mount = () => {
   setState(state)
 }
 
-// Never inside iframes (including our own panel) and never twice per page.
-if (script && window.top === window && !window.__phoenixDevToolbar) {
-  window.__phoenixDevToolbar = true
-
+// Never inside iframes (including our own panel); `mount` skips a page that
+// already has the toolbar, so a twice evaluated script adds nothing.
+if (script && window.top === window) {
   if (document.body) {
     mount()
   } else {
