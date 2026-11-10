@@ -76,10 +76,14 @@ serialize every query of the app behind one mailbox.
   these limits, including plug options and thrown or exited reasons.
   Keys whose name contains an entry of `config :phoenix_dev_toolbar, redact: [...]`
   (the defaults `"password"`, `"token"` and `"secret"` plus the configured ones, case insensitive) become `"[REDACTED]"`;
-  redaction is bounded in depth (6), width (only the first 50 items of a list, the
-  first 50 entries of a map in iteration order and tuples of up to 50 elements are
-  walked) and in total: `Truncate.redact/2` walks at most 1000 nodes, the rest becomes
-  `"…"` and is never walked (width and depth alone allow 50^6 nodes).
+  redaction is bounded in width (the first 50 items of a list, 50 entries of a map in
+  iteration order, 50 elements of a tuple) and in total: `Truncate.redact/2` walks at
+  most 1000 nodes (which also bounds the nesting depth, so there is no depth cap).
+  Contract: a sensitive key's value is `"[REDACTED]"`; anything the walk does not reach
+  is replaced by `"…"`, never returned as is (a list or tuple gets a last `"…"` element,
+  a map a `"…" => "…"` entry, a struct past 50 fields becomes a plain map). Scalars,
+  large binaries included, are returned as they are. Key names are matched on their
+  first 256 bytes.
 - LiveView assigns and params can be huge (preloaded lists), so they go through
   `Truncate.preview/3` instead: at most 200 nodes and 20 items per container are walked,
   whatever is not walked becomes `"…"` (so a sensitive key past the budget is cut, never
@@ -110,6 +114,8 @@ serialize every query of the app behind one mailbox.
   plugin can again push out a quiet one.
 - A host process killed between the counter bump and the event insert leaves its
   counters one above the stored rows: that scope settles at `max - 1` events.
-- `redact/2` returns entries past the 50th of a container, and containers past depth 6,
-  as they are: a sensitive key there is hidden by the inspect limit in practice, not by
-  redaction. Stored payloads go through `preview/3`, which cuts them.
+- Key matching only sees map, struct and keyword keys: a bare 2-tuple outside a list
+  (`%{creds: {"password", "x"}}`), a charlist key and a secret inside a string value are
+  not redacted.
+- Ecto params are positional: an INSERT shows a password hash column value, there is no
+  key to match.

@@ -93,3 +93,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ecto repos default to the apps' `:ecto_repos`, one warning when none (ADR 02, ADR 05)
 - Public moduledocs for the built-in plugins, ADR links, Setup and plugin groups in the docs (ADR 05)
 - Experimental markers on the plugin API; `Truncate.changes/2` and `snapshot/1` are internal (ADR 05)
+- `Truncate.redact/2` cuts what it does not walk instead of returning it; scalar structs redacted (ADR 03)

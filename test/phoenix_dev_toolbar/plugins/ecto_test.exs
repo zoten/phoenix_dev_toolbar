@@ -178,6 +178,16 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
     assert [%Event{data: %{params: ~s([password: "[REDACTED]"])}}] = Store.events(sid)
   end
 
+  test "redacts a scalar-only struct param by its field names", %{sid: sid} do
+    creds = %PhoenixDevToolbar.TestCreds{secret_key: "sk_live", user: "ada"}
+
+    run_query(sid, query_metadata(%{cast_params: [creds]}))
+
+    assert [%Event{data: %{params: stored}}] = Store.events(sid)
+    assert stored =~ "[REDACTED]"
+    refute stored =~ "sk_live"
+  end
+
   test "stores huge params within a byte cap and still redacts", %{sid: sid} do
     huge = for n <- 1..100, do: String.duplicate("x", 5_000) <> to_string(n)
     wide = for i <- 1..50, do: for(_ <- 1..50, do: for(_ <- 1..50, do: %{id: i}))
