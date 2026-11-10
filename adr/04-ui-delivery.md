@@ -24,10 +24,10 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   before the last `</body>` (the `Phoenix.LiveReloader` technique), only for
   `send_resp` (not chunked, not `send_file`) 200 `text/html` responses without a
   `content-encoding` other than `identity`. The tag gets `nonce` from the assign when it
-  is a string; every attribute is HTML escaped. A stale `etag` is removed. The callback
+  is a string; every attribute is HTML escaped. A stale `etag` and `content-length` are removed. The callback
   also records a `:response` event (status, content type, `injected?`, total duration),
   then drops the connection process from the `$callers` index while keeping its mark
-  for the `router_dispatch :stop` event. Any failure leaves the response untouched.
+  for the `router_dispatch :stop` event. Any failure (error, throw or exit) is logged and leaves the response untouched.
 - **Assets**: the plug serves a whitelist under `<path>/assets/` and halts; anything
   else, or a missing file, is a 404. Ours (`loader.js`, `panel.js`, `panel.css`) come from
   our `priv/static`; `phoenix.js` and `live_view.js` are the host's own installed

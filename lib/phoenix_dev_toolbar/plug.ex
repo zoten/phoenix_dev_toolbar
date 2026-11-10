@@ -290,11 +290,12 @@ defmodule PhoenixDevToolbar.Plug do
     # resolving this connection process as a `$callers` parent.
     Attribution.forget_pid()
     conn
-  rescue
-    exception ->
+  catch
+    # Every class: a throw or exit must not escape into the host's send_resp.
+    kind, reason ->
       Logger.error(
-        "[phoenix_dev_toolbar] response hook raised:\n" <>
-          Exception.format(:error, exception, __STACKTRACE__)
+        "[phoenix_dev_toolbar] response hook failed:\n" <>
+          Exception.format(kind, reason, __STACKTRACE__)
       )
 
       conn
@@ -316,8 +317,10 @@ defmodule PhoenixDevToolbar.Plug do
           binary_part(body, position, byte_size(body) - position)
         ]
 
-      # An ETag computed by an earlier hook no longer matches the body.
-      {%{Conn.delete_resp_header(conn, "etag") | resp_body: injected}, true}
+      # An ETag or content-length set by an earlier hook no longer matches the
+      # body; the server adapter computes the length for `send_resp`.
+      conn = conn |> Conn.delete_resp_header("etag") |> Conn.delete_resp_header("content-length")
+      {%{conn | resp_body: injected}, true}
     else
       _ -> {conn, false}
     end

@@ -92,6 +92,36 @@ defmodule PhoenixDevToolbar.PlugTest do
       assert get_resp_header(conn, "etag") == []
     end
 
+    test "drop a preset content-length: it would truncate the injected body" do
+      conn =
+        page_conn()
+        |> ToolbarPlug.call(@opts)
+        |> put_resp_header("content-length", Integer.to_string(byte_size(@page)))
+        |> put_resp_content_type("text/html")
+        |> send_resp(200, @page)
+
+      assert conn.resp_body != @page
+      assert get_resp_header(conn, "content-length") == []
+    end
+
+    for kind <- [:throw, :exit] do
+      test "a #{kind} in the response hook leaves the response untouched" do
+        conn = page_conn() |> ToolbarPlug.call(@opts)
+        PhoenixDevToolbar.HostileLimits.install(unquote(kind))
+
+        log =
+          ExUnit.CaptureLog.capture_log(fn ->
+            sent = conn |> put_resp_content_type("text/html") |> send_resp(200, @page)
+
+            assert sent.status == 200
+            assert sent.state == :sent
+            assert sent.resp_body == @page
+          end)
+
+        assert log =~ "response hook"
+      end
+    end
+
     test "inject once when the plug runs twice" do
       conn = page_conn() |> ToolbarPlug.call(@opts) |> respond()
 
