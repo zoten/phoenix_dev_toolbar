@@ -164,6 +164,50 @@ defmodule PhoenixDevToolbar.TruncateTest do
     end
   end
 
+  describe "redact/2 node budget" do
+    defp wide_value do
+      for(
+        i <- 1..50,
+        into: %{},
+        do: {"a#{i}", for(_ <- 1..50, do: for(_ <- 1..50, do: %{"k" => 1}))}
+      )
+    end
+
+    defp count_nodes(value) when is_map(value),
+      do: 1 + (value |> Map.values() |> Enum.map(&count_nodes/1) |> Enum.sum())
+
+    defp count_nodes(value) when is_list(value),
+      do: 1 + (value |> Enum.map(&count_nodes/1) |> Enum.sum())
+
+    defp count_nodes(_value), do: 1
+
+    defp reductions(fun) do
+      {:reductions, before} = :erlang.process_info(self(), :reductions)
+      result = fun.()
+      {:reductions, later} = :erlang.process_info(self(), :reductions)
+      {result, later - before}
+    end
+
+    test "a wide and deep value is walked within a fixed node budget" do
+      value = wide_value()
+      {redacted, cost} = reductions(fn -> Truncate.redact(value) end)
+
+      assert count_nodes(redacted) <= 2_500
+      assert cost < 150_000
+    end
+
+    test "a sensitive key within the budget is redacted, one beyond it is never shown" do
+      filler = Map.new(1..50, &{"f#{&1}", Enum.to_list(1..50)})
+      value = %{"a" => %{"user" => %{"password" => "near"}}, "b" => [1, 2]}
+
+      eaten = List.duplicate(filler, 50)
+      far = %{"a" => eaten, "m" => %{"password" => "farther"}, "z" => eaten}
+
+      assert %{"a" => %{"user" => %{"password" => "[REDACTED]"}}} = Truncate.redact(value)
+      refute inspect(Truncate.redact(far), limit: :infinity) =~ "farther"
+    end
+  end
+
   describe "preview/3" do
     test "cost and size are bounded however deep the value" do
       deep = Enum.reduce(1..5, :leaf, fn _level, acc -> List.duplicate(acc, 20) end)
@@ -171,6 +215,12 @@ defmodule PhoenixDevToolbar.TruncateTest do
       preview = Truncate.preview(deep)
 
       assert byte_size(preview) <= 360 + byte_size(" [truncated]")
+    end
+
+    test "100 strings of 5 KB stay under the byte cap" do
+      value = for n <- 1..100, do: String.duplicate("x", 5_000) <> to_string(n)
+
+      assert byte_size(Truncate.preview(value, 2048)) <= 2048 + byte_size(" [truncated]")
     end
 
     test "a sensitive key past the walk budget is cut, never shown" do

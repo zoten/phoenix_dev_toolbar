@@ -86,3 +86,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Breaking: panel socket requires a same-origin `Origin`, whatever the host `check_origin` (ADR 04)
 - `access-control-*` headers stripped from panel and export responses (ADR 04)
 - Breaking: `actions:` defaults to `false`; `:loopback` opts in; Eval refused only on explicit false (ADR 10, ADR 12)
+- Ecto params through the budgeted preview, 2 KB cap; `redact/2` node budget (ADR 02, ADR 03)

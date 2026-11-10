@@ -127,6 +127,9 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   defp failed(%{result: {:error, _}}), do: 1
   defp failed(_data), do: 0
 
+  # Stored params never exceed this many bytes (ADR 03).
+  @params_bytes 2048
+
   @impl PhoenixDevToolbar.Plugin
   def collect(_event, {measurements, metadata}, %Context{source: source}) do
     raw_sql = Map.get(metadata, :query)
@@ -135,7 +138,7 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
     data = %{
       repo: metadata[:repo],
       sql: sql,
-      params: metadata |> params() |> Truncate.redact() |> Truncate.inspect_value(),
+      params: metadata |> params() |> Truncate.preview(@params_bytes),
       source: metadata[:source],
       result: result(metadata[:result]),
       times: times(measurements),

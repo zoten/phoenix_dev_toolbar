@@ -70,21 +70,22 @@ serialize every query of the app behind one mailbox.
   and keeps its default: the host always boots.
 
 - Payloads are truncated before insert by `PhoenixDevToolbar.Truncate`:
-  `inspect(value, limit: 50, printable_limit: 1024)` for query and path params, SQL capped at
+  `inspect(value, limit: 50, printable_limit: 1024)` for path params, SQL capped at
   8 KB (UTF-8 safe), other text (exception messages and banners) at 2 KB, stacktraces at
   10 frames without toolbar and `:telemetry` frames. Every `inspect/2` in a collector uses
   these limits, including plug options and thrown or exited reasons.
   Keys whose name contains an entry of `config :phoenix_dev_toolbar, redact: [...]`
   (default `["password", "token", "secret"]`, case insensitive) become `"[REDACTED]"`;
-  redaction is bounded in depth (6) and width: only the first 50 items of a list, the
-  first 50 entries of a map (iteration order) and tuples of up to 50 elements are
-  walked (tuples too since the BEAM tools: queued messages and results are tuples; it
-  runs in collectors in host processes, at the same bounded cost as lists).
+  redaction is bounded in depth (6), width (only the first 50 items of a list, the
+  first 50 entries of a map in iteration order and tuples of up to 50 elements are
+  walked) and in total: `Truncate.redact/2` walks at most 1000 nodes, the rest becomes
+  `"…"` and is never walked (width and depth alone allow 50^6 nodes).
 - LiveView assigns and params can be huge (preloaded lists), so they go through
   `Truncate.preview/3` instead: at most 200 nodes and 20 items per container are walked,
   whatever is not walked becomes `"…"` (so a sensitive key past the budget is cut, never
   shown), then `inspect(limit: 20, printable_limit: 256)` capped at 360 bytes per value.
-  A `:callback` event stays around 4 KB at most.
+  A `:callback` event stays around 4 KB at most. Ecto query params use the same
+  `preview/3`, capped at 2 KB before the event is stored.
 - One payload is kept raw, by size instead of truncation: the params an Ecto SELECT
   needs for EXPLAIN (ADR 08), at most 50 scalars and 4 KB of binaries (copied), never
   rendered. An Ecto event stays under about 13 KB (8 KB of SQL, the params, the rest
@@ -109,5 +110,6 @@ serialize every query of the app behind one mailbox.
   plugin can again push out a quiet one.
 - A host process killed between the counter bump and the event insert leaves its
   counters one above the stored rows: that scope settles at `max - 1` events.
-- Redaction walks only the first 50 entries of large maps: a sensitive key further in is
-  hidden by the inspect limit in practice, not by redaction.
+- `redact/2` returns entries past the 50th of a container, and containers past depth 6,
+  as they are: a sensitive key there is hidden by the inspect limit in practice, not by
+  redaction. Stored payloads go through `preview/3`, which cuts them.

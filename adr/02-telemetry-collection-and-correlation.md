@@ -120,7 +120,7 @@ public plugin behaviour, ADR 05):
 - `Ecto`: `telemetry_prefix ++ [:query]` of each repo in its `repos:` option (default:
   the top level `repos` config), the prefix read from
   `repo.config/0` (a module that is not a repo is skipped with a warning). Records repo,
-  SQL, redacted params (`cast_params` when present), source, result (`{:ok, rows}` or
+  SQL, params (`cast_params` when present; `Truncate.preview/3`, 2 KB, redacted), source, result (`{:ok, rows}` or
   `{:error, message}`), the four timings in microseconds, the origin stacktrace without
   Ecto, DBConnection and repo frames, and `caller?` for queries from `$callers` children.
 - `LiveView`: `mount`, `handle_params`, `handle_event` and `live_component` `handle_event`

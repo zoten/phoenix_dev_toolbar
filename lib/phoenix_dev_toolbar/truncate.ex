@@ -16,6 +16,9 @@ defmodule PhoenixDevToolbar.Truncate do
   # the inspect limits hide them anyway.
   @max_depth 6
   @list_items 50
+  # Total nodes `redact/2` walks, whatever the value's shape: 50 entries per
+  # container and 6 levels alone would allow 50^6 nodes.
+  @redact_nodes 1000
   @default_redact ["password", "token", "secret"]
   @own_frames [:telemetry, PhoenixDevToolbar]
   # Assigns diff of one callback (ADR 03): about 4 KB at most.
@@ -128,7 +131,11 @@ defmodule PhoenixDevToolbar.Truncate do
 
   A key is sensitive when its name (atom or string, case insensitive) contains
   one of `keys`. Walks maps, structs, keyword lists, lists and tuples (up to
-  #{@list_items} elements), bounded in depth and length.
+  #{@list_items} elements per container) at most #{@redact_nodes} nodes in total and
+  #{@max_depth} levels deep. Whatever the budget does not reach is replaced by
+  `"#{@cut}"`, so cost does not depend on the value. Entries past the
+  #{@list_items}th of a container, and containers past the depth limit, are
+  returned as is: use `preview/3` when the result is stored or shown.
 
       iex> PhoenixDevToolbar.Truncate.redact(%{"user" => %{"password" => "hunter2", "name" => "Ada"}})
       %{"user" => %{"password" => "[REDACTED]", "name" => "Ada"}}
@@ -142,7 +149,15 @@ defmodule PhoenixDevToolbar.Truncate do
   """
   @spec redact(term(), [String.t() | atom()]) :: term()
   def redact(value, keys \\ redact_keys()) do
-    do_redact(value, Enum.map(keys, &(&1 |> to_string() |> String.downcase())), 0)
+    {redacted, _budget} =
+      do_redact(
+        value,
+        Enum.map(keys, &(&1 |> to_string() |> String.downcase())),
+        0,
+        @redact_nodes
+      )
+
+    redacted
   end
 
   @doc """
@@ -315,37 +330,48 @@ defmodule PhoenixDevToolbar.Truncate do
   defp cap(text, limit) when byte_size(text) <= limit, do: text
   defp cap(text, limit), do: valid_prefix(text, limit) <> " [truncated]"
 
-  defp do_redact(value, _keys, depth) when depth > @max_depth, do: value
+  defp do_redact(_value, _keys, _depth, budget) when budget <= 0, do: {@cut, 0}
+  defp do_redact(value, _keys, depth, budget) when depth > @max_depth, do: {value, budget - 1}
 
   # Maps and structs: only the first @list_items entries (iteration order) are
   # walked and written back, so cost does not grow with the map size. The rest
   # is left to the inspect limit, which shows at most 50 entries.
-  defp do_redact(%{} = map, keys, depth) do
-    redacted =
-      for {key, value} <- first_entries(map, @list_items),
-          key != :__struct__,
-          into: %{},
-          do: {key, redact_pair(key, value, keys, depth)}
+  defp do_redact(%{} = map, keys, depth, budget) do
+    {pairs, budget} =
+      map
+      |> first_entries(@list_items)
+      |> Enum.reject(fn {key, _value} -> key == :__struct__ end)
+      |> Enum.map_reduce(budget - 1, fn {key, value}, left ->
+        {value, left} = redact_pair(key, value, keys, depth, left)
+        {{key, value}, left}
+      end)
 
-    Map.merge(map, redacted)
+    {Map.merge(map, Map.new(pairs)), budget}
   end
 
-  defp do_redact(list, keys, depth) when is_list(list) do
+  defp do_redact(list, keys, depth, budget) when is_list(list) do
     case proper_split(list, @list_items) do
-      {:ok, head, rest} -> Enum.map(head, &redact_item(&1, keys, depth)) ++ rest
-      :improper -> list
+      {:ok, head, rest} ->
+        {items, budget} = Enum.map_reduce(head, budget - 1, &redact_item(&1, keys, depth, &2))
+        {items ++ rest, budget}
+
+      :improper ->
+        {list, budget - 1}
     end
   end
 
   # Tuples (messages, {:ok, value} results): each element, when the tuple is small.
-  defp do_redact(tuple, keys, depth) when is_tuple(tuple) and tuple_size(tuple) <= @list_items do
-    tuple
-    |> Tuple.to_list()
-    |> Enum.map(&do_redact(&1, keys, depth + 1))
-    |> List.to_tuple()
+  defp do_redact(tuple, keys, depth, budget)
+       when is_tuple(tuple) and tuple_size(tuple) <= @list_items do
+    {items, budget} =
+      tuple
+      |> Tuple.to_list()
+      |> Enum.map_reduce(budget - 1, &do_redact(&1, keys, depth + 1, &2))
+
+    {List.to_tuple(items), budget}
   end
 
-  defp do_redact(value, _keys, _depth), do: value
+  defp do_redact(value, _keys, _depth, budget), do: {value, budget - 1}
 
   defp first_entries(map, n), do: map |> :maps.iterator() |> take_entries(n, [])
 
@@ -358,15 +384,17 @@ defmodule PhoenixDevToolbar.Truncate do
     end
   end
 
-  defp redact_item({key, value}, keys, depth) when is_atom(key) or is_binary(key),
-    do: {key, redact_pair(key, value, keys, depth)}
+  defp redact_item({key, value}, keys, depth, budget) when is_atom(key) or is_binary(key) do
+    {value, budget} = redact_pair(key, value, keys, depth, budget)
+    {{key, value}, budget}
+  end
 
-  defp redact_item(value, keys, depth), do: do_redact(value, keys, depth + 1)
+  defp redact_item(value, keys, depth, budget), do: do_redact(value, keys, depth + 1, budget)
 
-  defp redact_pair(key, value, keys, depth) do
+  defp redact_pair(key, value, keys, depth, budget) do
     case sensitive?(key, keys) do
-      true -> @redacted
-      false -> do_redact(value, keys, depth + 1)
+      true -> {@redacted, budget - 1}
+      false -> do_redact(value, keys, depth + 1, budget)
     end
   end
 

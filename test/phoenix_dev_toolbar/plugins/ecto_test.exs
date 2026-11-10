@@ -142,6 +142,19 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
     assert [%Event{data: %{params: ~s([password: "[REDACTED]"])}}] = Store.events(sid)
   end
 
+  test "stores huge params within a byte cap and still redacts", %{sid: sid} do
+    huge = for n <- 1..100, do: String.duplicate("x", 5_000) <> to_string(n)
+    wide = for i <- 1..50, do: for(_ <- 1..50, do: for(_ <- 1..50, do: %{id: i}))
+    params = [{:password, "hunter2"}, {:blob, huge}, {:json, wide}]
+
+    run_query(sid, query_metadata(%{cast_params: params}))
+
+    assert [%Event{data: %{params: stored}}] = Store.events(sid)
+    assert byte_size(stored) <= 2048 + byte_size(" [truncated]")
+    assert stored =~ "[REDACTED]"
+    refute stored =~ "hunter2"
+  end
+
   test "skips, with a warning, configured modules that are not repos" do
     put_repos([DemoWeb.HelloPlug])
 
