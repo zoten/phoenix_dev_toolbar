@@ -47,7 +47,7 @@ the panel's `start_async/3` tasks, never in the panel process.
     is logged with its size, never its code; the last 10 runs are kept. The editor
     and its result answer only clients that pass the check above, on every event.
   - No per boot token: the panel is already reachable only through its signed
-    session and the endpoint's `check_origin` (ADR 04), and a token shown in the
+    session and the panel socket's same origin rule (ADR 04), and a token shown in the
     same page would add nothing against whoever can open it.
 - Security notes live here, in the plugin's moduledoc and in `SECURITY.md`.
 

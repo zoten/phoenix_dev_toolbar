@@ -58,6 +58,46 @@ defmodule PhoenixDevToolbar.HostCheckTest do
     refute HostCheck.allowed?(conn("other.test"))
   end
 
+  test "the export path is refused for a refused host too" do
+    conn =
+      Phoenix.ConnTest.build_conn(:get, "/__pdt/export/ecto.json?format=short")
+      |> Map.put(:host, "evil.example")
+      |> DemoWeb.Endpoint.call([])
+
+    assert conn.status == 403
+    assert conn.halted
+  end
+
+  describe "log_refused/1" do
+    @key {PhoenixDevToolbar.HostCheck, :logged}
+
+    setup do
+      :persistent_term.erase(@key)
+      on_exit(fn -> :persistent_term.erase(@key) end)
+    end
+
+    test "logs each host once" do
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          for host <- ["a.example", "a.example", "b.example", "a.example"],
+              do: HostCheck.log_refused(host)
+        end)
+
+      assert length(Regex.scan(~r/refused the panel for host "a\.example"/, log)) == 1
+      assert length(Regex.scan(~r/refused the panel for host "b\.example"/, log)) == 1
+    end
+
+    test "names at most 10 distinct hosts" do
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          for n <- 1..15, do: HostCheck.log_refused("h#{n}.example")
+        end)
+
+      assert length(Regex.scan(~r/refused the panel for host/, log)) == 10
+      refute log =~ "h11.example"
+    end
+  end
+
   test "the plug refuses the panel for a refused host, and says how to allow it" do
     conn =
       Phoenix.ConnTest.build_conn(:get, "/__pdt/panel?sid=x")

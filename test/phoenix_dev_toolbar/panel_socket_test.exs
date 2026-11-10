@@ -251,22 +251,70 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
     end
   end
 
-  test "the host socket's own check_origin applies, not only the endpoint's" do
-    start_supervised!(PhoenixDevToolbar.OriginEndpoint)
+  describe "origin (the panel is always same origin with its page)" do
+    # Direct calls to upgrade/1: a Plug.Test conn has no Host header, so the
+    # request's own host is `www.example.com`.
+    defp upgrade_status(endpoint, origin, host \\ nil) do
+      # Raw header lists: put_req_header/3 refuses "host" and replaces repeats.
+      headers = Enum.map(List.wrap(origin), &{"origin", &1})
+      headers = if(host, do: [{"host", host} | headers], else: headers)
+      conn = Plug.Test.conn(:get, "/__pdt/live/websocket?vsn=2.0.0")
+      conn = %{conn | req_headers: headers ++ conn.req_headers}
 
-    status = fn origin ->
-      :get
-      |> Plug.Test.conn("/__pdt/live/websocket?vsn=2.0.0")
-      |> Plug.Conn.put_req_header("origin", origin)
-      |> Plug.Conn.put_private(:phoenix_endpoint, PhoenixDevToolbar.OriginEndpoint)
+      conn
+      |> Plug.Conn.put_private(:phoenix_endpoint, endpoint)
       |> PhoenixDevToolbar.PanelSocket.upgrade()
       |> Map.fetch!(:status)
     end
 
-    # The endpoint alone would allow its own host; the socket allows only this one.
-    assert capture_log(fn -> assert status.("http://localhost") == 403 end) =~ "check origin"
-    # Past the origin check, a plain GET is not an upgrade.
-    assert status.("http://allowed.example") == 400
+    test "a foreign origin is refused even when the host socket has check_origin: false" do
+      start_supervised!(PhoenixDevToolbar.OriginEndpoint)
+
+      assert capture_log(fn ->
+               assert upgrade_status(PhoenixDevToolbar.OriginEndpoint, "http://evil.example") ==
+                        403
+             end) =~ "Origin"
+    end
+
+    test "a missing origin is refused" do
+      start_supervised!(PhoenixDevToolbar.OriginEndpoint)
+
+      capture_log(fn ->
+        assert upgrade_status(PhoenixDevToolbar.OriginEndpoint, nil) == 403
+      end)
+    end
+
+    test "the request's own origin passes (a plain GET is then not an upgrade: 400)" do
+      start_supervised!(PhoenixDevToolbar.OriginEndpoint)
+      endpoint = PhoenixDevToolbar.OriginEndpoint
+
+      assert upgrade_status(endpoint, "http://www.example.com") == 400
+      assert upgrade_status(endpoint, "http://WWW.Example.com:80") == 400
+      assert upgrade_status(endpoint, "https://www.example.com") == 400
+      assert upgrade_status(endpoint, "http://localhost:4000", "localhost:4000") == 400
+    end
+
+    test "scheme, host and port must be sane: other hosts, ports and schemes are refused" do
+      start_supervised!(PhoenixDevToolbar.OriginEndpoint)
+      endpoint = PhoenixDevToolbar.OriginEndpoint
+
+      capture_log(fn ->
+        for {origin, host} <- [
+              {"http://www.example.com.evil.example", nil},
+              {"http://localhost:3000", "localhost:4000"},
+              {"http://localhost:4000", "localhost"},
+              {"null", nil},
+              {"file://www.example.com", nil},
+              {"ftp://www.example.com", nil},
+              {"", nil},
+              {"not a url", nil}
+            ] do
+          assert upgrade_status(endpoint, origin, host) == 403, "#{origin} -> #{host}"
+        end
+
+        assert upgrade_status(endpoint, ["http://www.example.com", "http://evil.example"]) == 403
+      end)
+    end
   end
 
   test "an endpoint without a LiveView socket gets a 404, never a crash" do
@@ -279,14 +327,60 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
     assert {conn.status, conn.halted} == {404, true}
   end
 
-  test "a foreign origin is refused (the endpoint's check_origin)", %{port: port} do
+  test "a foreign or missing origin is refused over a real socket", %{port: port} do
+    path = "/__pdt/live/websocket?vsn=2.0.0"
+
+    capture_log(fn ->
+      assert {:error, {403, _head}} =
+               WebSocketClient.connect(port, path, [{"Origin", "http://evil.example"}])
+
+      assert {:error, {403, _head}} = WebSocketClient.connect(port, path)
+    end)
+  end
+
+  test "a Host that could be rebound gets 403 on the upgrade", %{port: port} do
+    path = "/__pdt/live/websocket?vsn=2.0.0"
+
     assert {:error, {403, _head}} =
-             WebSocketClient.connect(port, "/__pdt/live/websocket?vsn=2.0.0", [
+             WebSocketClient.connect(port, path, [
+               {"Host", "evil.example"},
                {"Origin", "http://evil.example"}
              ])
   end
 
   test "a request that is not a WebSocket upgrade is refused", %{port: port} do
-    assert WebSocketClient.get_status(port, "/__pdt/live/websocket?vsn=2.0.0") == 400
+    assert WebSocketClient.get_status(port, "/__pdt/live/websocket?vsn=2.0.0", [
+             {"Origin", "http://localhost:#{port}"}
+           ]) == 400
+  end
+
+  # The socket's peer is loopback here, so only the proxy header tells the panel
+  # its client is elsewhere. Observed through the Eval tab (allow: :eval), which
+  # shows its code form to a loopback client and a notice to any other.
+  describe "a join behind a proxy" do
+    defp eval_tab_diff(port, headers) do
+      capture_log(fn -> attach_plugins([{PhoenixDevToolbar.Plugins.Eval, allow: :eval}]) end)
+      {id, join} = panel_join_params()
+
+      {:ok, socket} =
+        WebSocketClient.connect(port, "/__pdt/live/websocket?vsn=2.0.0", [
+          {"Origin", "http://localhost:#{port}"} | headers
+        ])
+
+      :ok = WebSocketClient.send_json(socket, ["1", "1", "lv:#{id}", "phx_join", join])
+
+      [_, _, _, "phx_reply", %{"status" => "ok", "response" => response}] =
+        recv_reply(socket, "1")
+
+      inspect(response, limit: :infinity, printable_limit: :infinity)
+    end
+
+    test "a direct join is a loopback client; one with X-Forwarded-For is not", %{port: port} do
+      assert eval_tab_diff(port, []) =~ "pdt-eval-form"
+
+      proxied = eval_tab_diff(port, [{"X-Forwarded-For", "203.0.113.9"}])
+      assert proxied =~ "pdt-eval-off"
+      refute proxied =~ "pdt-eval-form"
+    end
   end
 end

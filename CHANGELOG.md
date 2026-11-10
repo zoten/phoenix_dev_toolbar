@@ -83,3 +83,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Eval plugin (opt-in): read queries, code with allow: :eval, loopback by default (ADR 12)
 - Breaking: panel refuses host names that could be rebound; list yours in `allowed_hosts` (ADR 04)
 - Breaking: unset `enabled` means on only in Mix `:dev`; prod under Mix is off (ADR 01)
+- Breaking: panel socket requires a same-origin `Origin`, whatever the host `check_origin` (ADR 04)
+- `access-control-*` headers stripped from panel and export responses (ADR 04)

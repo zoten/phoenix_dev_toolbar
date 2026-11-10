@@ -228,6 +228,58 @@ defmodule PhoenixDevToolbar.PlugTest do
     end
   end
 
+  describe "when the toolbar is disabled" do
+    test "its own paths pass through, not halted and not answered" do
+      Application.put_env(:phoenix_dev_toolbar, :enabled, false)
+
+      for path <- [
+            "/__pdt/assets/loader.js",
+            "/__pdt/panel?sid=x",
+            "/__pdt/live/websocket?vsn=2.0.0",
+            "/__pdt/export/ecto.json"
+          ] do
+        conn = :get |> conn(path) |> ToolbarPlug.call(@opts)
+
+        refute conn.halted, path
+        assert conn.state == :unset, path
+      end
+
+      assert Store.sessions() == []
+    end
+  end
+
+  describe "CORS headers from the host" do
+    # A host CORS plug runs before the toolbar's plug: the panel and the export
+    # are same origin only.
+    defp with_cors(conn) do
+      conn
+      |> put_resp_header("access-control-allow-origin", "*")
+      |> put_resp_header("access-control-allow-credentials", "true")
+      |> put_resp_header("vary", "origin")
+    end
+
+    test "are stripped from the panel, the export and a refusal" do
+      for {path, host} <- [
+            {"/__pdt/panel?sid=x", "www.example.com"},
+            {"/__pdt/export/ecto.json?format=xml", "www.example.com"},
+            {"/__pdt/panel?sid=x", "evil.example"}
+          ] do
+        # Through the endpoint: the panel renders a LiveView and needs one.
+        conn =
+          :get
+          |> Phoenix.ConnTest.build_conn(path)
+          |> Map.put(:host, host)
+          |> with_cors()
+          |> DemoWeb.Endpoint.call([])
+
+        assert conn.halted
+        assert get_resp_header(conn, "access-control-allow-origin") == [], path
+        assert get_resp_header(conn, "access-control-allow-credentials") == [], path
+        assert get_resp_header(conn, "vary") == ["origin"], path
+      end
+    end
+  end
+
   describe "init/1" do
     test "warns once that :live_socket_path is gone" do
       :persistent_term.erase({ToolbarPlug, :live_socket_path})

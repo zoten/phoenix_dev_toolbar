@@ -10,10 +10,17 @@ defmodule PhoenixDevToolbar.WebSocketClient do
     {:ok, socket} = :gen_tcp.connect(~c"localhost", port, [:binary, active: false, packet: :raw])
     key = Base.encode64(:crypto.strong_rand_bytes(16))
 
+    # A "Host" among the headers replaces the default one.
+    {host, headers} =
+      case Enum.split_with(headers, fn {name, _value} -> String.downcase(name) == "host" end) do
+        {[{_name, host} | _], rest} -> {host, rest}
+        {[], rest} -> {"localhost:#{port}", rest}
+      end
+
     request =
       [
         "GET #{path} HTTP/1.1\r\n",
-        "Host: localhost:#{port}\r\n",
+        "Host: #{host}\r\n",
         "Upgrade: websocket\r\n",
         "Connection: Upgrade\r\n",
         "Sec-WebSocket-Key: #{key}\r\n",
@@ -32,10 +39,14 @@ defmodule PhoenixDevToolbar.WebSocketClient do
   end
 
   # Plain HTTP GET (no upgrade): the status code.
-  @spec get_status(:inet.port_number(), String.t()) :: integer()
-  def get_status(port, path) do
+  @spec get_status(:inet.port_number(), String.t(), [{String.t(), String.t()}]) :: integer()
+  def get_status(port, path, headers \\ []) do
     {:ok, socket} = :gen_tcp.connect(~c"localhost", port, [:binary, active: false, packet: :raw])
-    :ok = :gen_tcp.send(socket, "GET #{path} HTTP/1.1\r\nHost: localhost:#{port}\r\n\r\n")
+    extra = Enum.map(headers, fn {name, value} -> "#{name}: #{value}\r\n" end)
+
+    :ok =
+      :gen_tcp.send(socket, ["GET #{path} HTTP/1.1\r\nHost: localhost:#{port}\r\n", extra, "\r\n"])
+
     {status, _head} = read_head(socket, "")
     :gen_tcp.close(socket)
     status

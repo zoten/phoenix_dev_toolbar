@@ -2,11 +2,16 @@ defmodule PhoenixDevToolbar.PanelSocket do
   @moduledoc false
   # The panel's own LiveView socket (ADR 04), at `<path>/live/websocket`,
   # upgraded by PhoenixDevToolbar.Plug itself: no host socket, so no host CSRF
-  # token and no host session. The endpoint's `check_origin` applies.
+  # token and no host session.
+  #
+  # The origin rule is ours, not the host's: the panel iframe is always same
+  # origin with the page, so a socket request must carry an `Origin` that names
+  # the host it was sent to (see `same_origin?/1`). The host socket's and the
+  # endpoint's `check_origin` (usually `false` in generated dev configs) play no
+  # part.
   #
   # It does what Phoenix's WebSocket transport does, through the public custom
-  # transport API (`Phoenix.Socket.Transport.check_origin/4`, `connect_info/3`),
-  # then the host's LiveView socket handler (`connect/1`) and
+  # transport API (`Phoenix.Socket.Transport.connect_info/3`), then the host's LiveView socket handler (`connect/1`) and
   # `WebSockAdapter.upgrade/4`. Not done, as the panel needs none of it: code
   # reloading on connect, subprotocols, a pool drainer (connections close as the
   # endpoint stops). `connect_info` carries no session: LiveView then skips its
@@ -22,10 +27,8 @@ defmodule PhoenixDevToolbar.PanelSocket do
   # an open panel reloads and registers again; anything else closes the
   # connection.
   #
-  # The host socket's `websocket:` options that Phoenix reads here
-  # (`check_origin`, `timeout`, `max_frame_size`) are passed through: our
-  # `check_origin` is the host socket's, and on Phoenix releases that cache it
-  # per handler only, both entries cache the same value.
+  # The host socket's `websocket:` options `timeout` and `max_frame_size` are
+  # passed through; its `check_origin` is not.
 
   @behaviour WebSock
 
@@ -41,7 +44,7 @@ defmodule PhoenixDevToolbar.PanelSocket do
     {Phoenix.Socket.V2.JSONSerializer, "~> 2.0.0"}
   ]
   @defaults [serializer: @serializers, timeout: 60_000, compress: false]
-  @host_options [:check_origin, :timeout, :max_frame_size]
+  @host_options [:timeout, :max_frame_size]
 
   @connect_info [:peer_data, :uri, :user_agent, :x_headers]
 
@@ -56,7 +59,7 @@ defmodule PhoenixDevToolbar.PanelSocket do
       {handler, options} ->
         conn
         |> Plug.Conn.fetch_query_params()
-        |> Transport.check_origin(handler, endpoint, options)
+        |> check_origin()
         |> connect(endpoint, handler, options)
         |> Plug.Conn.halt()
     end
@@ -64,6 +67,57 @@ defmodule PhoenixDevToolbar.PanelSocket do
 
   # Without an endpoint (the plug used outside Phoenix) there is nothing to join.
   def upgrade(conn), do: conn |> Plug.Conn.send_resp(404, "") |> Plug.Conn.halt()
+
+  # A browser always sends `Origin` on a WebSocket handshake, and for the panel
+  # iframe it is the page's own origin. Refuse a missing or foreign one.
+  #
+  # The scheme must be http or https but is not compared with the request's: a
+  # TLS terminating proxy or tunnel makes `conn.scheme` differ from the
+  # browser's. The host must match exactly (case-insensitively). The port is
+  # compared when the `Host` header names one (otherwise the Origin must use a
+  # default port), so another local app on a different port is refused too.
+  defp check_origin(conn) do
+    case same_origin?(conn) do
+      true ->
+        conn
+
+      false ->
+        Logger.warning(
+          "[phoenix_dev_toolbar] refused a panel socket request: Origin is missing or " <>
+            "does not match the host it was sent to"
+        )
+
+        conn |> Plug.Conn.send_resp(403, "") |> Plug.Conn.halt()
+    end
+  end
+
+  defp same_origin?(conn) do
+    with [origin] <- Plug.Conn.get_req_header(conn, "origin"),
+         %URI{scheme: scheme, host: origin_host, port: origin_port}
+         when scheme in ["http", "https"] and is_binary(origin_host) <- URI.parse(origin),
+         {host, port} <- request_authority(conn) do
+      String.downcase(origin_host) == String.downcase(host) and port_matches?(origin_port, port)
+    else
+      _missing_or_malformed -> false
+    end
+  end
+
+  # What the browser addressed: the `Host` header (host and optional port).
+  defp request_authority(conn) do
+    case Plug.Conn.get_req_header(conn, "host") do
+      [authority] ->
+        case URI.parse("//" <> authority) do
+          %URI{host: host, port: port} when is_binary(host) -> {host, port}
+          _malformed -> :error
+        end
+
+      _none ->
+        {conn.host, nil}
+    end
+  end
+
+  defp port_matches?(origin_port, nil), do: origin_port in [80, 443]
+  defp port_matches?(origin_port, port), do: origin_port == port
 
   defp connect(%Plug.Conn{halted: true} = conn, _endpoint, _handler, _options), do: conn
 

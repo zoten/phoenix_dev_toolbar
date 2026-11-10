@@ -111,12 +111,11 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   checks a link clicked in the iframe against the host's `frame-src`.
 - **Panel socket**: `PhoenixDevToolbar.PanelSocket`. The plug upgrades
   `GET <path>/live/websocket` itself, through Phoenix's documented custom transport API:
-  `Phoenix.Socket.Transport.check_origin/4` and `connect_info/3`, then
+  `Phoenix.Socket.Transport.connect_info/3`, then
   `Phoenix.LiveView.Socket.connect/1` and `WebSockAdapter.upgrade/4`, with Phoenix's
   default WebSocket options (JSON serializers 1.0 and 2.0, 60 s timeout). The host
-  socket's own `websocket:` options that apply here (`check_origin`, `timeout`,
-  `max_frame_size`) override those defaults, so the origin policy is the host socket's,
-  falling back to the endpoint's. It uses the host endpoint (PubSub, secret key base,
+  socket's own `websocket:` options `timeout` and `max_frame_size` override those
+  defaults; its `check_origin` does not apply (see the origin rule below). It uses the host endpoint (PubSub, secret key base,
   LiveView's session verification) and the endpoint's mounted LiveView socket handler
   (`Phoenix.LiveView.Socket`, or a host module that uses it), but its `connect_info`
   has no session. An endpoint without a LiveView socket gets a 404 and one warning; a
@@ -140,7 +139,16 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   - Security: the socket carries no session, so it gives nothing tied to the user's
     login and reads nothing from it. Joining the panel needs its signed LiveView session
     token (the sid inside, see Access), which only the panel's HTML holds and another
-    origin cannot read; the host socket's `check_origin` applies to the upgrade.
+    origin cannot read; the upgrade is refused unless its `Origin` is the page's own (origin rule).
+  - Origin rule: the panel iframe is always same origin with its page, so the plug
+    enforces that itself, whatever the host's `check_origin` says (generated dev
+    configs set it to `false`). The upgrade needs exactly one `Origin` header with an
+    `http` or `https` scheme and the same host as the request's `Host` header
+    (case-insensitive), else a 403 with one log line. The port must match the `Host`
+    header's port, or be a default port (80, 443) when `Host` names none. The scheme
+    is not compared with the request's, because a TLS terminating proxy or tunnel
+    changes it. A missing `Origin` is refused. `access-control-*` response headers
+    set by the host are removed from the panel and export responses.
 - **Reload breaker** (`assets/js/reloads.mjs`, the safety net for any join failure,
   present or future): each panel load is recorded per sid in `sessionStorage`. The 4th
   load within 10 s does not connect and shows, in the header (so in the collapsed bar
@@ -189,8 +197,9 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   `content-security-policy: frame-ancestors 'self'` (only the host page's own origin
   may frame it) and, like every served asset, `x-content-type-options: nosniff`.
 - **Host guard** (`HostCheck`, against DNS rebinding): a hostile page whose name
-  re-resolves to 127.0.0.1 would read the panel as same origin, and the endpoint's
-  dev `check_origin: false` would let its websocket in. So the panel, its socket
+  re-resolves to 127.0.0.1 would read the panel as same origin, and the
+  generated dev `check_origin: false` would let its websocket in were it not for the
+  origin rule above. So the panel, its socket
   and the export answer only for a Host that cannot be rebound: an IP literal,
   `localhost` and `*.localhost`, the endpoint's `url: [host: ...]`, or one listed in
   `allowed_hosts:` (`"myapp.test"`, or `".test"` for every name under it). Any other

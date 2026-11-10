@@ -125,6 +125,8 @@ defmodule PhoenixDevToolbar.Plug do
   # DNS rebinding guard (ADR 04, HostCheck): the panel, its socket and the export
   # answer only for a Host that cannot be rebound.
   defp guarded(conn, opts, serve) do
+    conn = Conn.register_before_send(conn, &strip_cors/1)
+
     case HostCheck.allowed?(conn) do
       true ->
         serve.(conn)
@@ -134,6 +136,15 @@ defmodule PhoenixDevToolbar.Plug do
         conn |> untracked() |> refuse(opts) |> Conn.halt()
     end
   end
+
+  # The panel and the export are same origin only: a host CORS plug running
+  # before this one must not open them to another origin.
+  defp strip_cors(conn) do
+    %{conn | resp_headers: Enum.reject(conn.resp_headers, &cors_header?/1)}
+  end
+
+  defp cors_header?({"access-control-" <> _rest, _value}), do: true
+  defp cors_header?(_header), do: false
 
   # The panel is the toolbar's iframe: the refusal shows there, as a bar in the
   # panel's own style that says what to add. The socket and the export get text.
