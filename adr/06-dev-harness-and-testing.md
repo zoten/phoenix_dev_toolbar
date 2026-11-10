@@ -75,7 +75,9 @@ correctness and boundedness need tests, not just eyeballing.
   override read by `mix.exs`) runs compile and tests with warnings as errors; the latest
   (Elixir 1.20 / OTP 29 / the locked LiveView) also runs format, unused deps, Credo,
   Dialyzer, ExDoc, the fixture host app and the built assets check. The minimum row is
-  what covers `PhoenixDevToolbar.LiveViewCompat` on LiveView 1.1.
+  what covers `PhoenixDevToolbar.LiveViewCompat` on LiveView 1.1. `agent-tools/ci-min.sh`
+  replays that row locally in Docker, on a copy of the working tree: `mix precommit`
+  only runs on the local toolchain.
 
 ## Consequences
 

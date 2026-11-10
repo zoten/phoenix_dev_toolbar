@@ -169,6 +169,7 @@ The toolbar is for development. It is off outside `MIX_ENV=dev`, adds nothing to
 The ADR index ([adr/README.md](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/README.md)) is the place to start. [AGENTS.md](https://github.com/zoten/phoenix_dev_toolbar/blob/main/AGENTS.md) is written for AI coding agents. Run `mix precommit` before pushing (its JS tests need Node 22 or later).
 `mix precommit` rebuilds the assets (the first run downloads the esbuild binary, so it needs network) and fails if `priv/static` differs from the committed bundles.
 CI also compiles `fixtures/host_app` in prod and dev, which `mix precommit` does not (run it there with `mix compile --warnings-as-errors`).
+CI also tests the minimum supported versions (Elixir 1.17, OTP 26, LiveView 1.1): `agent-tools/ci-min.sh` runs that row locally in Docker.
 Try your changes in a real browser with `mix dev`, a demo app at http://localhost:4000.
 
 ## License

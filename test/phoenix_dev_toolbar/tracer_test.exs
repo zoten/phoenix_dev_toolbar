@@ -142,14 +142,15 @@ defmodule PhoenixDevToolbar.TracerTest do
     assert status() == nil
 
     # The old session died with its tracer: the target is not traced any more.
-    # `:trace` exists from OTP 27 only: a module in a variable keeps OTP 26
-    # compiling without an undefined-function warning.
-    trace = :trace
-    assert trace.info(session, pid, :flags) == {:flags, []}
+    assert trace_mod().info(session, pid, :flags) == {:flags, []}
 
     :ok = Tracer.start(pid, self())
     send(pid, {:ping, self(), :again})
     assert_receive {:pong, :again}
     assert %{running?: true, events: [%{dir: :in}, %{dir: :out}]} = status()
   end
+
+  # Through a function, as the Tracer does: OTP 26 has no :trace module, and
+  # must compile without an undefined-function warning.
+  defp trace_mod, do: :trace
 end

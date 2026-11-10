@@ -15,6 +15,7 @@ This is an open source Elixir library: `phoenix_dev_toolbar` (`PhoenixDevToolbar
   - If port 4000 is taken (most likely by me), run with `PORT=4001 mix dev`
 - After changing `assets/`, run `mix assets.build` and commit `priv/static` (CI fails on stale bundles)
 - `mix precommit` is the quality gate (see Project guidelines)
+- `agent-tools/ci-min.sh` replays the minimum CI row (Elixir 1.17, OTP 26, LiveView `~> 1.1.0`) in Docker on a copy of the working tree. `mix precommit` only runs on the local toolchain: run it before pushing changes to tests, LiveView internals or OTP-version-dependent code (the Tracer)
 - You can create your own tooling to optimize your workflows (put scripts under `agent-tools/`). However, ask for review from me.
 
 ## Subagent workflow and token budget
