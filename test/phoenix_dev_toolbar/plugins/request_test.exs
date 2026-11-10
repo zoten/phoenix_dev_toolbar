@@ -1,4 +1,5 @@
 defmodule PhoenixDevToolbar.Plugins.RequestTest do
+  # Attaches global handlers and uses the node global Store.
   use ExUnit.Case, async: false
 
   import PhoenixDevToolbar.PageHelpers, only: [attach_plugins: 0]

@@ -114,7 +114,6 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
 
     assert log =~ "render boom"
     _ = render(panel)
-    assert Process.alive?(panel.pid)
     assert has_element?(panel, "#pdt-disabled-fragile", "render boom")
     still_works(host, panel)
   end

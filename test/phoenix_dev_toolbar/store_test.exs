@@ -144,6 +144,9 @@ defmodule PhoenixDevToolbar.StoreTest do
     end
 
     test "the sweep deletes counter rows whose session is gone" do
+      # Raw ETS on purpose: the public API never leaves a counter row behind a
+      # gone session (expiry removes both, next test); this is the leftover of a
+      # race the sweep exists to repair.
       :ets.insert(:pdt_counts, {{"ghost", :test}, 1, 0})
 
       Store.sweep()

@@ -408,6 +408,32 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
       refute has_element?(panel, "#pdt-system-watched-9")
     end
 
+    test "a panel that dies resumes what it suspended" do
+      pid = ponger()
+      # A registered name: the toolbar's own processes (whose code is in this
+      # namespace) are protected from Suspend.
+      Process.register(pid, :"pdt_suspend_target_#{System.unique_integer([:positive])}")
+      panel = open()
+      search(panel, inspect(pid))
+
+      panel |> element("#pdt-system-suspend") |> render_click()
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        panel |> element("#pdt-system-confirm") |> render_click()
+      end)
+
+      send(pid, {:ping, self()})
+      refute_receive {:pong, ^pid}, 50
+
+      # The test is linked to the panel LiveView (live/2).
+      Process.flag(:trap_exit, true)
+      ref = Process.monitor(panel.pid)
+      Process.exit(panel.pid, :kill)
+      assert_receive {:DOWN, ^ref, :process, _pid, :killed}
+
+      assert_receive {:pong, ^pid}, 1000
+    end
+
     test "the kill reason survives a change and a cancel" do
       pid = idle_process()
       panel = open()

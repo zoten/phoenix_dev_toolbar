@@ -36,7 +36,8 @@ correctness and boundedness need tests, not just eyeballing.
   after defining it; host apps do not need this, their repo modules are loadable when the
   toolbar starts. New panels add a harness page that demonstrates them.
 - **Test pyramid**:
-  - Unit: `Truncate`, `Store` (caps, TTL, flood guard, DOWN cleanup), attribution.
+  - Unit: `Truncate`, `Store` (caps, TTL, flood guard, DOWN cleanup); attribution is covered through the collector and
+    plug tests.
   - Telemetry: emit synthetic events with `:telemetry.execute/3` in tracked and untracked
     processes; assert recorded events through the Store API. Unique handler ids per test.
   - Plug: `Plug.Test` for injection rules (content type, status, chunked, missing `</body>`, nonce).
@@ -45,6 +46,14 @@ correctness and boundedness need tests, not just eyeballing.
     driven through `DemoWeb.Endpoint`). Plugin API: test plugins in `test/support`
     (a tab and badge, one that fails on demand everywhere its code runs) and the Oban
     example drive the public API through a real host LiveView.
+  - Determinism: no test waits on the wall clock. The test config sets the Store's sweep
+    interval to 24 h (tests call `Store.sweep/1`), the one-a-second limits of GC now and of
+    process actions read `ProcessInspector.now_ms/0`, which tests override with the
+    `:clock_ms` app env (a zero-arity function), and panel timers are delivered with
+    `Panel.send_now/4` (`PageHelpers.tick_now/4`). Waits poll under a deadline
+    (`ProcessHelpers.wait_until/2`), never a fixed count of iterations. Shared helpers live in
+    `test/support` (`PageHelpers.open_panel/2` and `flush/1`, `ProcessHelpers.ponger/0`,
+    `EnvHelpers.put_app_env/2` restoring the env on exit).
   - JS: the loader's pure helpers (`assets/js/client_events.mjs`) have unit tests run by
     `node --test` (`mix test.js`, Node built-ins only, part of `mix precommit`, so
     contributors need Node 22+; CI runs it in the latest row). The wiring (listeners, `postMessage`, hooks) is checked by hand.
