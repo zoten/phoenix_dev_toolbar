@@ -1,8 +1,8 @@
 defmodule PhoenixDevToolbar.Attribution do
   @moduledoc false
   # Which session does the current process belong to (ADR 02)? Called by every
-  # telemetry handler, so the untracked path must stay a single pdict read for
-  # processes without `$callers`.
+  # telemetry handler, so the untracked path is two pdict reads (`:pdt_sid`, then
+  # `$callers`) and, only for a process with callers, one ETS lookup per caller pid.
 
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store

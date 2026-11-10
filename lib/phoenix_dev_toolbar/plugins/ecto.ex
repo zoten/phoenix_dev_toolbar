@@ -81,16 +81,17 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
     repos
   end
 
-  defp maybe_warn_no_repos([]) do
-    if Code.ensure_loaded?(Ecto.Adapters.SQL) do
-      Logger.warning(
-        "[phoenix_dev_toolbar] no Ecto repos found: the Ecto tab stays empty. " <>
-          "Add `config :phoenix_dev_toolbar, repos: [MyApp.Repo]` to config/dev.exs"
-      )
-    end
-  end
-
+  defp maybe_warn_no_repos([]), do: warn_no_repos(Code.ensure_loaded?(Ecto.Adapters.SQL))
   defp maybe_warn_no_repos(_repos), do: :ok
+
+  defp warn_no_repos(false), do: :ok
+
+  defp warn_no_repos(true) do
+    Logger.warning(
+      "[phoenix_dev_toolbar] no Ecto repos found: the Ecto tab stays empty. " <>
+        "Add `config :phoenix_dev_toolbar, repos: [MyApp.Repo]` to config/dev.exs"
+    )
+  end
 
   defp repos(repos) when is_list(repos), do: {:ok, repos}
 

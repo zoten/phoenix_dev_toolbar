@@ -19,7 +19,7 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
     Collector.attach(plugins)
 
     on_exit(fn ->
-      Application.delete_env(:phoenix_dev_toolbar, :repos)
+      Application.put_env(:phoenix_dev_toolbar, :repos, [DemoWeb.SQLiteRepo])
       attach_plugins()
       Store.reset()
     end)

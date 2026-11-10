@@ -47,6 +47,7 @@ defmodule PhoenixDevToolbar.Plug do
   require Logger
 
   alias PhoenixDevToolbar.Attribution
+  alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Config
   alias PhoenixDevToolbar.EctoExport
   alias PhoenixDevToolbar.Event
@@ -304,19 +305,24 @@ defmodule PhoenixDevToolbar.Plug do
   def before_send(%Conn{private: %{phoenix_dev_toolbar: %{sid: sid} = info}} = conn, opts) do
     {conn, injected?} = maybe_inject(conn, sid, opts)
     record(conn, info, injected?)
-    # The response is done: keep the mark for `router_dispatch :stop`, but stop
-    # resolving this connection process as a `$callers` parent.
-    Attribution.forget_pid()
     conn
   catch
     # Every class: a throw or exit must not escape into the host's send_resp.
     kind, reason ->
-      Logger.error(
-        "[phoenix_dev_toolbar] response hook failed:\n" <>
-          Exception.format(kind, reason, __STACKTRACE__)
+      Collector.log_failure(
+        PhoenixDevToolbar.Plug,
+        "response hook failed",
+        kind,
+        reason,
+        __STACKTRACE__
       )
 
       conn
+  after
+    # The response is done, whatever happened: keep the mark for
+    # `router_dispatch :stop`, but stop resolving this connection process as a
+    # `$callers` parent. `forget_pid/0` rescues the only error it can raise.
+    Attribution.forget_pid()
   end
 
   defp maybe_inject(%Conn{state: :set, status: 200, resp_body: body} = conn, sid, opts)

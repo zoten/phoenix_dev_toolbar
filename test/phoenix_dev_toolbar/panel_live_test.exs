@@ -305,7 +305,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
       attach_plugins()
 
       on_exit(fn ->
-        Application.delete_env(:phoenix_dev_toolbar, :repos)
+        Application.put_env(:phoenix_dev_toolbar, :repos, [DemoWeb.SQLiteRepo])
         attach_plugins()
       end)
     end

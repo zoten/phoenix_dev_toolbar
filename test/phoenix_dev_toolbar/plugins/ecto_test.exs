@@ -20,7 +20,7 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
     Collector.attach([EctoPlugin])
 
     on_exit(fn ->
-      Application.delete_env(:phoenix_dev_toolbar, :repos)
+      put_repos([DemoWeb.SQLiteRepo])
       Collector.attach(PhoenixDevToolbar.Application.plugins())
       Store.reset()
     end)

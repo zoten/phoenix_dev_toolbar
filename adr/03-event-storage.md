@@ -92,8 +92,9 @@ serialize every query of the app behind one mailbox.
   `preview/3`, capped at 2 KB before the event is stored.
 - One payload is kept raw, by size instead of truncation: the params an Ecto SELECT
   needs for EXPLAIN (ADR 08), at most 50 scalars and 4 KB of binaries (copied), never
-  rendered. An Ecto event stays under about 13 KB (8 KB of SQL, the params, the rest
-  truncated).
+  rendered. An Ecto event stays under about 18 KB: 8 KB of SQL, 2 KB of params, 4 KB of
+  EXPLAIN params, 2 KB of error message (failed queries only) and 10 stacktrace frames
+  (about 1 to 2 KB; frames are capped in number, not in bytes).
 - Live updates: our own `Registry` (`PhoenixDevToolbar.Registry`, duplicate keys) keyed
   by sid. Writers `Registry.dispatch/3` a `{:pdt_event, sid}` notification (no payload);
   the panel reads from ETS and throttles re-renders to every 100 ms. No dependency on

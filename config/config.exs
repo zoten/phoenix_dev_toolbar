@@ -29,6 +29,10 @@ if config_env() == :test do
   # Mix.env() is :test here, not :dev: enable explicitly (ADR 01).
   config :phoenix_dev_toolbar, enabled: true
 
+  # The suite's canonical repo (test_helper.exs), so plugins start without the
+  # "no Ecto repos" warning; tests of other repos override it and restore it.
+  config :phoenix_dev_toolbar, repos: [DemoWeb.SQLiteRepo]
+
   # Phoenix.ConnTest's host: listed, as a host app lists its own (HostCheck).
   config :phoenix_dev_toolbar, allowed_hosts: ["www.example.com"]
 

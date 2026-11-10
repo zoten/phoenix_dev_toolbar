@@ -166,11 +166,7 @@ defmodule PhoenixDevToolbar.Collector do
   catch
     # Every class: `:telemetry` detaches a handler on throws and exits too.
     kind, reason ->
-      log_once(
-        {Collector, :logged, kind, error_type(reason)},
-        "collector",
-        Exception.format(kind, reason, __STACKTRACE__)
-      )
+      log_failure(Collector, "collector raised", kind, reason, __STACKTRACE__)
   end
 
   defp span_before(:before, _span), do: Attribution.next_span()
@@ -279,14 +275,28 @@ defmodule PhoenixDevToolbar.Collector do
   defp quarantine_key(plugin), do: {Collector, :quarantined, plugin}
 
   # `:persistent_term.put/2` is expensive, but runs once per key.
-  defp log_once(key, what, formatted) do
+  @doc false
+  # Logs a failure of toolbar code running in a host process, once per
+  # {scope, kind, exception module or :other} until the key is erased. The
+  # message is only built when it is logged, and is bounded: a throw or exit
+  # reason and the stacktrace can be huge.
+  @spec log_failure(module(), String.t(), :error | :exit | :throw, term(), Exception.stacktrace()) ::
+          :ok
+  def log_failure(scope, what, kind, reason, stacktrace) do
+    key = {scope, :logged, kind, error_type(reason)}
+
     case :persistent_term.get(key, false) do
       true ->
         :ok
 
       false ->
         :persistent_term.put(key, true)
-        Logger.error("[phoenix_dev_toolbar] #{what} raised:\n" <> formatted)
+
+        Logger.error(
+          "[phoenix_dev_toolbar] #{what}:\n" <>
+            Truncate.banner(kind, reason) <>
+            "\n" <> Exception.format_stacktrace(Enum.take(stacktrace, 10))
+        )
     end
   end
 end

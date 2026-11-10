@@ -104,22 +104,47 @@ defmodule PhoenixDevToolbar.PlugTest do
       assert get_resp_header(conn, "content-length") == []
     end
 
+    # The hook reads `resp_headers` with a comprehension: a stream that throws or
+    # exits when enumerated fails the hook body without touching the Store.
+    defp hostile_conn(kind) do
+      stream = Stream.map([:header], fn _ -> hostile(kind) end)
+      conn = page_conn() |> ToolbarPlug.call(@opts)
+      %{conn | state: :set, status: 200, resp_body: @page, resp_headers: stream}
+    end
+
+    defp hostile(:throw), do: throw(:hostile)
+    defp hostile(:exit), do: exit(:hostile)
+
+    setup do
+      key = {ToolbarPlug, :logged, :throw, :other}
+      exit_key = {ToolbarPlug, :logged, :exit, :other}
+      Enum.each([key, exit_key], &:persistent_term.erase/1)
+      on_exit(fn -> Enum.each([key, exit_key], &:persistent_term.erase/1) end)
+    end
+
     for kind <- [:throw, :exit] do
-      test "a #{kind} in the response hook leaves the response untouched" do
-        conn = page_conn() |> ToolbarPlug.call(@opts)
-        PhoenixDevToolbar.HostileLimits.install(unquote(kind))
+      test "a #{kind} in the response hook leaves the response untouched and the process untracked" do
+        conn = hostile_conn(unquote(kind))
+        assert Store.sid_for_pid(self()) == sid(conn)
 
         log =
           ExUnit.CaptureLog.capture_log(fn ->
-            sent = conn |> put_resp_content_type("text/html") |> send_resp(200, @page)
-
-            assert sent.status == 200
-            assert sent.state == :sent
-            assert sent.resp_body == @page
+            assert ToolbarPlug.before_send(conn, @opts) == conn
           end)
 
         assert log =~ "response hook"
+        assert Store.sid_for_pid(self()) == nil
       end
+    end
+
+    test "a failing response hook is logged once per failure class" do
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          for _ <- 1..3, do: ToolbarPlug.before_send(hostile_conn(:throw), @opts)
+          ToolbarPlug.before_send(hostile_conn(:exit), @opts)
+        end)
+
+      assert length(String.split(log, "response hook failed")) == 3
     end
 
     test "inject once when the plug runs twice" do
