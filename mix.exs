@@ -1,7 +1,7 @@
 defmodule PhoenixDevToolbar.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.0.1"
   @source_url "https://github.com/zoten/phoenix_dev_toolbar"
 
   def project do
@@ -103,7 +103,7 @@ defmodule PhoenixDevToolbar.MixProject do
   defp package do
     [
       licenses: ["MIT"],
-      links: %{"GitHub" => @source_url},
+      links: %{"GitHub" => @source_url, "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md"},
       files: ~w(lib priv/static .formatter.exs mix.exs README.md LICENSE CHANGELOG.md)
     ]
   end

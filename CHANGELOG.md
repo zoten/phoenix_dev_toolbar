@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-11-10
+
+First public release. A dev-only toolbar for Phoenix LiveView apps: a summary bar and panel
+overlaid on the page you are working on, installed with one plug in the endpoint.
+Tabs: Request, Ecto (queries, N+1 detection, EXPLAIN, JSON export), LiveView (lifecycle timings,
+assigns, events, component tree), Process and System (any process, supervision trees, opt-in actions).
+Opt-in Cluster and Eval plugins. Plugin API with a guide. Off outside `MIX_ENV=dev`.
+
 - Project conventions: AGENTS.md, ADRs, roadmap, `mix precommit`, CI matrix (ADR 00, ADR 06)
 - `PhoenixDevToolbar.enabled?/0` runtime guard (ADR 01)
 - Bounded ETS event store: caps, flood guard, TTL sweep, LiveView DOWN cleanup (ADR 03)
@@ -25,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Toolbar disables itself, with a warning, in releases unless explicitly enabled (ADR 01)
 - Panel UX: hide to a corner pill, HTTP/live query tags, timings, dropped badge, ARIA tabs (ADR 04)
 - CI tests the minimum stack with LiveView 1.1 (ADR 06)
-- Panel loads the host's own Phoenix and LiveView JS clients: no version skew, 1 KB panel.js (ADR 04)
+- Panel loads the host's own Phoenix and LiveView JS clients: no version skew (ADR 04)
 - LiveView collector: callback and render timings, bounded assigns diff, push_event names (ADR 02)
 - Bounded, budgeted redaction preview for assigns and LiveView params (ADR 03)
 - LiveView tab: lifecycle profiler, callbacks badge and server event log (ADR 07)
@@ -37,14 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Trimmed events badge in the summary bar; client event validation module (ADR 03, ADR 07)
 - Public plugin behaviour, `use` macro, plugin options and config validation (ADR 05)
 - Per plugin event caps and a per session ceiling, limits documented in the README (ADR 03)
-- Breaking: `max_events` now caps each plugin per session, not the session (ADR 03)
+- `max_events` now caps each plugin per session, not the session (ADR 03)
 - Plugin panel shell: LiveComponent tabs, per plugin badges and trimmed notes (ADR 05)
 - LiveView tab on the public panel API; PanelLive is generic glue (ADR 05, ADR 07)
 - Plugin errors shown in their tab with Re-enable; panel side boundary for plugin code (ADR 05)
 - Plugin guide in ExDoc, Oban example plugin, harness pages for jobs and plugin errors (ADR 05, ADR 06)
 - Plugin boundary covers all of render/1; event plugin ids stamped by the collector (ADR 05)
 - Panel seen seqs bounded per session; Config checks id and name; update/2 rejected (ADR 03, ADR 05)
-- Breaking: Ecto badge DOM id is `pdt-badge-ecto-queries` (ADR 05)
+- Ecto badge DOM id is `pdt-badge-ecto-queries` (ADR 05)
 - Summary bar: badges that do not fit are counted in a "+N" chip that opens the panel (ADR 04)
 - Callback spans: `Context.span` and `Event.span`, the LiveView callback an event ran in (ADR 02)
 - N+1 detector: Ecto badge, groups and row tags, `n_plus_one:` plugin option (ADR 08)
@@ -55,7 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Process tab: GC now button, rate limited; `/memory` harness page (ADR 06, ADR 09)
 - Panel reload breaker: stops after 3 refused loads in 10 s, with a notice and Retry (ADR 04)
 - Panel socket at `<path>/live`: no host CSRF token or session needed; fixes the reload loop (ADR 04)
-- Breaking: the plug's `:live_socket_path` option is gone (ADR 04)
+- the plug's `:live_socket_path` option is gone (ADR 04)
 - Panel socket review fixes: decoded join check, stale on unknown panels, host socket options (ADR 04)
 - Panel: disconnected state, shorter cannot connect notice, inert tabs; Process tab wording (ADR 04, ADR 09)
 - Docs: per-run disable recipe through `DEV_TOOLBAR=0` (ADR 01)
@@ -81,15 +89,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - System tab message trace: one process, 100 messages or 10 s, OTP 27 sessions (ADR 11)
 - Cluster plugin (opt-in): connected nodes with round trip, processes, memory (ADR 12)
 - Eval plugin (opt-in): read queries, code with allow: :eval, loopback by default (ADR 12)
-- Breaking: panel refuses host names that could be rebound; list yours in `allowed_hosts` (ADR 04)
-- Breaking: unset `enabled` means on only in Mix `:dev`; prod under Mix is off (ADR 01)
-- Breaking: panel socket requires a same-origin `Origin`, whatever the host `check_origin` (ADR 04)
+- panel refuses host names that could be rebound; list yours in `allowed_hosts` (ADR 04)
+- unset `enabled` means on only in Mix `:dev`; prod under Mix is off (ADR 01)
+- panel socket requires a same-origin `Origin`, whatever the host `check_origin` (ADR 04)
 - `access-control-*` headers stripped from panel and export responses (ADR 04)
-- Breaking: `actions:` defaults to `false`; `:loopback` opts in; Eval refused only on explicit false (ADR 10, ADR 12)
+- `actions:` defaults to `false`; `:loopback` opts in; Eval refused only on explicit false (ADR 10, ADR 12)
 - Ecto params through the budgeted preview, 2 KB cap; `redact/2` node budget (ADR 02, ADR 03)
 - Response hook catches throws and exits; injection drops a preset `content-length` (ADR 04)
 - Collector failure path tests; hot path wording matches the code (ADR 02)
-- Breaking: `redact:` adds to the defaults instead of replacing them (ADR 03)
+- `redact:` adds to the defaults instead of replacing them (ADR 03)
 - Ecto repos default to the apps' `:ecto_repos`, one warning when none (ADR 02, ADR 05)
 - Public moduledocs for the built-in plugins, ADR links, Setup and plugin groups in the docs (ADR 05)
 - Experimental markers on the plugin API; `Truncate.changes/2` and `snapshot/1` are internal (ADR 05)
