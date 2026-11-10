@@ -5,7 +5,7 @@ How to write and maintain ADRs: see the ADR rules in [AGENTS.md](../AGENTS.md) a
 [TEMPLATE.md](./TEMPLATE.md). Status and area come from each ADR's header: keep
 this table in sync when you add an ADR or change its status.
 
-Next free number: **13**.
+Next free number: **14**.
 
 ## Product
 
@@ -25,6 +25,12 @@ Next free number: **13**.
 | ADR | Title | Status |
 |---|---|---|
 | 02 | [Telemetry Collection and Correlation](./02-telemetry-collection-and-correlation.md) | Implemented (2026-11-05) |
+
+## Integration
+
+| ADR | Title | Status |
+|---|---|---|
+| 13 | [Report Read API](./13-report-read-api.md) | Implemented (2026-11-10) |
 
 ## Storage
 

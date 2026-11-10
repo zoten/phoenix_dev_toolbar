@@ -131,6 +131,20 @@ Then `DEV_TOOLBAR=0 mix phx.server` boots without the toolbar: no telemetry hand
 no supervised processes, and the plug passes requests through untouched. The value is
 read at boot, so restart to switch it.
 
+## From IEx or an agent
+
+`PhoenixDevToolbar.Report` reads what the toolbar captured without a browser, from IEx in your dev server or from an agent that evaluates code in the running app (such as Tidewave):
+
+```elixir
+alias PhoenixDevToolbar.Report
+
+Report.latest(path: "/posts") |> Report.summary()   # queries, N+1, slow callbacks, errors
+Report.sessions(path: ~r{^/posts}, limit: 5)
+Report.latest(path: "/posts") |> Report.n_plus_one()
+```
+
+It sees what the panel sees, for as long as the toolbar keeps it (10 minutes by default). A separate `mix run` starts another VM with nothing captured.
+
 ## How it compares
 
 - [Phoenix LiveDashboard](https://github.com/phoenixframework/phoenix_live_dashboard): node-wide metrics and processes on its own page, not tied to the page you are viewing. Better for metrics over time.

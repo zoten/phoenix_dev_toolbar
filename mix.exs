@@ -138,6 +138,7 @@ defmodule PhoenixDevToolbar.MixProject do
           PhoenixDevToolbar.Plugins.Cluster,
           PhoenixDevToolbar.Plugins.Eval
         ],
+        "Reading data": [PhoenixDevToolbar.Report],
         "Plugin API": [
           PhoenixDevToolbar.Plugin,
           PhoenixDevToolbar.Panel,
