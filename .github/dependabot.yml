@@ -1,0 +1,20 @@
+# Dependabot version updates (ADR 06). Monthly and grouped to keep PR noise low.
+# Only mix.lock moves; widening a requirement in mix.exs is a manual decision.
+version: 2
+updates:
+  - package-ecosystem: "mix"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    groups:
+      mix-minor-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      actions:
+        patterns: ["*"]
