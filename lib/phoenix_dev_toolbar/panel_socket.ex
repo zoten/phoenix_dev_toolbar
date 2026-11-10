@@ -82,13 +82,42 @@ defmodule PhoenixDevToolbar.PanelSocket do
         conn
 
       false ->
-        Logger.warning(
-          "[phoenix_dev_toolbar] refused a panel socket request: Origin is missing or " <>
-            "does not match the host it was sent to"
-        )
-
+        log_refused(conn)
         conn |> Plug.Conn.send_resp(403, "") |> Plug.Conn.halt()
     end
+  end
+
+  @logged {PhoenixDevToolbar.PanelSocket, :logged_refusals}
+  # Distinct {origin, host} pairs named in the log, at most (a page can send any).
+  @max_logged 10
+
+  # Once per distinct pair, for the first @max_logged of a boot (mirrors
+  # `HostCheck.log_refused/1`). Values are inspected with limits: they come
+  # from the client.
+  defp log_refused(conn) do
+    pair = {header_for_log(conn, "origin"), header_for_log(conn, "host")}
+    logged = :persistent_term.get(@logged, [])
+
+    case pair in logged or length(logged) >= @max_logged do
+      true ->
+        :ok
+
+      false ->
+        :persistent_term.put(@logged, [pair | logged])
+        {origin, host} = pair
+
+        Logger.warning(
+          "[phoenix_dev_toolbar] refused a panel socket request: Origin #{origin} does not " <>
+            "match Host #{host}. Behind a proxy or tunnel that rewrites the Host header the " <>
+            "panel cannot connect"
+        )
+    end
+  end
+
+  defp header_for_log(conn, name) do
+    conn
+    |> Plug.Conn.get_req_header(name)
+    |> inspect(limit: 5, printable_limit: 200)
   end
 
   defp same_origin?(conn) do
@@ -111,8 +140,11 @@ defmodule PhoenixDevToolbar.PanelSocket do
           _malformed -> :error
         end
 
-      _none ->
+      [] ->
         {conn.host, nil}
+
+      _several ->
+        :error
     end
   end
 

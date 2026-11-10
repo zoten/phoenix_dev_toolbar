@@ -197,10 +197,12 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   `content-security-policy: frame-ancestors 'self'` (only the host page's own origin
   may frame it) and, like every served asset, `x-content-type-options: nosniff`.
 - **Host guard** (`HostCheck`, against DNS rebinding): a hostile page whose name
-  re-resolves to 127.0.0.1 would read the panel as same origin, and the
-  generated dev `check_origin: false` would let its websocket in were it not for the
-  origin rule above. So the panel, its socket
-  and the export answer only for a Host that cannot be rebound: an IP literal,
+  re-resolves to 127.0.0.1 would read the panel as same origin. Under rebinding the
+  `Origin` and the `Host` both name the attacker's host and match, so the origin rule
+  does not stop it: only this guard does. The origin rule stops pages from other
+  origins (other sites, other local ports) reaching an allowed host. Both are required
+  on the socket path (the guard runs in the plug, before the upgrade). The panel, its
+  socket and the export answer only for a Host that cannot be rebound: an IP literal,
   `localhost` and `*.localhost`, the endpoint's `url: [host: ...]`, or one listed in
   `allowed_hosts:` (`"myapp.test"`, or `".test"` for every name under it). Any other
   gets a 403 that says how to allow it, logged once per boot. Assets stay public.
@@ -231,3 +233,13 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 - A panel left open for more than a day, or pushed out by 1000 newer panel renders,
   reloads on its next rejoin (its id is gone, so it gets `stale`).
 - Pages that are not HTML responses from Plug (static files) get no toolbar.
+- A Host without a port accepts an Origin on port 80 or 443, and the scheme is not
+  compared, so `http://localhost` and `https://localhost` are not told apart; the signed
+  panel session token (unreadable cross-origin, CORS headers stripped) remains the barrier.
+- A proxy or tunnel that rewrites the Host header (so the browser's Origin host differs
+  from the Host the server sees) cannot connect the panel; there is no `allowed_origins`
+  option yet.
+- A host plug that adds `access-control-*` headers from its own `register_before_send`,
+  registered earlier than the toolbar plug, runs after the toolbar's stripping and can
+  re-add them.
+- HTTP/2 requests carry no `host` header; the fallback then requires a default port.

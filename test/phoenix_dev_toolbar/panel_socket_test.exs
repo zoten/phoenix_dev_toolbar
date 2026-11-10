@@ -252,6 +252,14 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
   end
 
   describe "origin (the panel is always same origin with its page)" do
+    @refusals_key {PhoenixDevToolbar.PanelSocket, :logged_refusals}
+
+    # Refusals are logged once per pair: start each test with none logged.
+    setup do
+      :persistent_term.erase(@refusals_key)
+      on_exit(fn -> :persistent_term.erase(@refusals_key) end)
+    end
+
     # Direct calls to upgrade/1: a Plug.Test conn has no Host header, so the
     # request's own host is `www.example.com`.
     defp upgrade_status(endpoint, origin, host \\ nil) do
@@ -292,6 +300,60 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
       assert upgrade_status(endpoint, "http://WWW.Example.com:80") == 400
       assert upgrade_status(endpoint, "https://www.example.com") == 400
       assert upgrade_status(endpoint, "http://localhost:4000", "localhost:4000") == 400
+    end
+
+    test "the Host header decides: IPv6 literals, case and ports" do
+      start_supervised!(PhoenixDevToolbar.OriginEndpoint)
+      endpoint = PhoenixDevToolbar.OriginEndpoint
+
+      # HostCheck is not on this direct path: only the origin rule is exercised.
+      assert upgrade_status(endpoint, "http://[::1]:4000", "[::1]:4000") == 400
+      assert upgrade_status(endpoint, "http://localhost:4000", "LOCALHOST:4000") == 400
+
+      capture_log(fn ->
+        assert upgrade_status(endpoint, "http://localhost", "localhost:4000") == 403
+      end)
+    end
+
+    test "no Host header falls back to the request host, several Host headers are refused" do
+      start_supervised!(PhoenixDevToolbar.OriginEndpoint)
+      endpoint = PhoenixDevToolbar.OriginEndpoint
+      conn = Plug.Test.conn(:get, "/__pdt/live/websocket?vsn=2.0.0")
+
+      headers = [
+        {"host", "localhost:4000"},
+        {"host", "localhost:4000"},
+        {"origin", "http://localhost:4000"}
+      ]
+
+      log =
+        capture_log(fn ->
+          status =
+            %{conn | req_headers: headers}
+            |> Plug.Conn.put_private(:phoenix_endpoint, endpoint)
+            |> PhoenixDevToolbar.PanelSocket.upgrade()
+            |> Map.fetch!(:status)
+
+          assert status == 403
+        end)
+
+      assert log =~ "Host"
+    end
+
+    test "a refusal names the Origin and the Host, once per pair" do
+      start_supervised!(PhoenixDevToolbar.OriginEndpoint)
+      endpoint = PhoenixDevToolbar.OriginEndpoint
+
+      log =
+        capture_log(fn ->
+          for _repeat <- 1..3,
+              do: upgrade_status(endpoint, "http://app.example", "localhost:4000")
+        end)
+
+      assert log =~ "app.example"
+      assert log =~ "localhost:4000"
+      assert log =~ "rewrites the Host"
+      assert length(String.split(log, "refused a panel socket request")) == 2
     end
 
     test "scheme, host and port must be sane: other hosts, ports and schemes are refused" do
@@ -341,11 +403,13 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
   test "a Host that could be rebound gets 403 on the upgrade", %{port: port} do
     path = "/__pdt/live/websocket?vsn=2.0.0"
 
-    assert {:error, {403, _head}} =
-             WebSocketClient.connect(port, path, [
-               {"Host", "evil.example"},
-               {"Origin", "http://evil.example"}
-             ])
+    capture_log(fn ->
+      assert {:error, {403, _head}} =
+               WebSocketClient.connect(port, path, [
+                 {"Host", "evil.example"},
+                 {"Origin", "http://evil.example"}
+               ])
+    end)
   end
 
   test "a request that is not a WebSocket upgrade is refused", %{port: port} do

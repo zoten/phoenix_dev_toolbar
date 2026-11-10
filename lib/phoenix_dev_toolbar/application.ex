@@ -74,9 +74,11 @@ defmodule PhoenixDevToolbar.Application do
       PhoenixDevToolbar.Tracer
     ]
 
-  defp maybe_attach(false), do: :ok
+  @doc false
+  @spec maybe_attach(boolean()) :: :ok
+  def maybe_attach(false), do: :ok
 
-  defp maybe_attach(true) do
+  def maybe_attach(true) do
     ClientPolicy.warn_config()
     Collector.attach(plugins())
   end

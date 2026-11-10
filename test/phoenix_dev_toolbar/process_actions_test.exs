@@ -25,12 +25,13 @@ defmodule PhoenixDevToolbar.ProcessActionsTest do
 
   test "a client off this machine may not act, and is told how to allow it", %{context: context} do
     pid = idle_process()
+    ref = Process.monitor(pid)
     remote = %{context | client: {192, 168, 1, 20}}
 
     assert {:error, message} = ProcessActions.kill(pid, "kill", remote)
     assert message =~ "actions: :any"
     assert {:error, _message} = ProcessActions.peek(pid, remote)
-    assert Process.alive?(pid)
+    refute_received {:DOWN, ^ref, :process, ^pid, _reason}
 
     Application.put_env(:phoenix_dev_toolbar, :actions, false)
     assert {:error, "Actions are off" <> _rest} = ProcessActions.allowed(pid, context)
@@ -39,11 +40,12 @@ defmodule PhoenixDevToolbar.ProcessActionsTest do
   test "with actions unset nobody acts, and the message names the option", %{context: context} do
     Application.delete_env(:phoenix_dev_toolbar, :actions)
     pid = idle_process()
+    ref = Process.monitor(pid)
 
     assert {:error, message} = ProcessActions.kill(pid, "kill", context)
     assert message =~ "actions: :loopback"
     assert {:error, _message} = ProcessActions.peek(pid, context)
-    assert Process.alive?(pid)
+    refute_received {:DOWN, ^ref, :process, ^pid, _reason}
   end
 
   test "a protected process is never killed", %{context: context} do
@@ -65,9 +67,10 @@ defmodule PhoenixDevToolbar.ProcessActionsTest do
 
   test "an unknown reason kills nothing", %{context: context} do
     pid = idle_process()
+    ref = Process.monitor(pid)
 
     assert ProcessActions.kill(pid, "nuke", context) == {:error, "Unknown kill reason."}
-    assert Process.alive?(pid)
+    refute_received {:DOWN, ^ref, :process, ^pid, _reason}
   end
 
   test "suspend and resume, logged", %{context: context} do

@@ -79,6 +79,12 @@ Cluster and Eval document theirs in their module docs.
 
 Invalid `limits` values are logged at boot and keep their default.
 
+### When it is on
+
+The toolbar enables itself only when the app runs under Mix with `MIX_ENV=dev`. Any other
+env (a release, `prod`, `test`, a custom one like `local` or `staging`) leaves it off
+unless you set `config :phoenix_dev_toolbar, enabled: true`.
+
 ### Turning it off for one run
 
 Keep the dependency and the plug, and drive `enabled` from an environment variable:

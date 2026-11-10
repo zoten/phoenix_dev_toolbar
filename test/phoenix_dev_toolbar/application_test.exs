@@ -1,10 +1,14 @@
 defmodule PhoenixDevToolbar.ApplicationTest do
-  # Touches the :enabled application env.
+  # Touches the :enabled application env and detaches the global telemetry
+  # handlers, which other tests rely on.
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
 
+  import PhoenixDevToolbar.PageHelpers, only: [attach_plugins: 0]
+
   alias PhoenixDevToolbar.Application, as: ToolbarApp
+  alias PhoenixDevToolbar.Collector
 
   setup do
     previous = Application.fetch_env(:phoenix_dev_toolbar, :enabled)
@@ -50,5 +54,14 @@ defmodule PhoenixDevToolbar.ApplicationTest do
   test "disabled starts no children, enabled starts the stores" do
     assert ToolbarApp.children(false) == []
     assert PhoenixDevToolbar.Store in ToolbarApp.children(true)
+  end
+
+  test "disabled attaches no telemetry handlers" do
+    on_exit(&attach_plugins/0)
+    :ok = Collector.detach()
+
+    assert ToolbarApp.maybe_attach(false) == :ok
+
+    assert for(%{id: {Collector, _event}} <- :telemetry.list_handlers([]), do: :found) == []
   end
 end

@@ -1,7 +1,7 @@
 defmodule PhoenixDevToolbar.ProcessActions do
   @moduledoc false
   # What the panel does to host processes (ADR 10): kill, suspend, peek at
-  # messages. Each one asks ClientPolicy (`actions:`, loopback by default) about
+  # messages. Each one asks ClientPolicy (`actions:`, off by default) about
   # the panel's client; kill and suspend also ask Protected about the target.
   # Kills and suspensions are logged. Reasons come from the client as strings
   # and are matched, never turned into atoms.
