@@ -7,16 +7,40 @@ spirit of `django-debug-toolbar`: Ecto queries, LiveView assigns and lifecycle
 timings, process diagnostics and a plugin API, shown as an overlay on the page
 you are working on.
 
-> Status: early development, not on Hex yet. See the [roadmap](https://github.com/zoten/phoenix_dev_toolbar/blob/main/docs/2026-11-05-roadmap.md).
+> Status: early development. 0.0.x releases may break between versions. See the [roadmap](https://github.com/zoten/phoenix_dev_toolbar/blob/main/docs/2026-11-05-roadmap.md).
+
+<!-- TODO(owner): add a screenshot or GIF recorded from `mix dev` -->
 
 > **Disclaimer:** this project is currently fully AI-coded and has not been reviewed
 > by a human yet. Use it at your own risk.
 
+## What you get
+
+- **Summary bar**: one badge per tab (query count, N+1 flag, LiveView callbacks, dropped events), always visible on the page.
+- **Request tab**: the routed request, its route, status and duration, and exceptions with the stacktrace.
+- **Ecto tab**: every query with redacted params, timings (total, queue, query, decode) and origin, attributed to the request, the LiveView callback or the `Task` that ran it.
+- **N+1 detection**: the same query from the same origin repeated 5 times in one callback is flagged (the threshold is configurable).
+- **EXPLAIN**: one click on a SELECT, run in a transaction that is rolled back, never `EXPLAIN ANALYZE`.
+- **JSON export** of the page's queries, short or with EXPLAIN plans.
+- **LiveView tab**: lifecycle timings (`mount`, `handle_params`, `handle_event`, `render`), assigns with a diff per event, an event log that includes client `phx:` events, and the component tree.
+- **Process tab**: memory, message queue, reductions and garbage collection of the page's LiveView, with links, monitors and nested LiveViews.
+- **System tab**: open any process by pid or name, read its info and stacktrace, walk its supervision and application trees, and list the top processes by memory, reductions or queue. Opt-in actions (`actions:` option): state read, kill, suspend, message peek and a message trace (OTP 27+).
+- **Cluster and Eval plugins** (experimental, opt-in): connected nodes, and read queries or code evaluated on the node.
+- **Plugin API**: your own tabs and badges, with a [guide](https://hexdocs.pm/phoenix_dev_toolbar/writing-a-plugin.html).
+- **Docks and resize**: bottom, top, left or right, draggable size, collapse to a pill. It follows LiveView live navigation.
+
+## Requirements
+
+- Elixir 1.17 or later, Phoenix 1.8 or later, LiveView 1.1 or later.
+- OTP 26 or later is tested in CI. Some process reads need OTP 26.2, and the message trace needs OTP 27.
+- `ecto_sql` is optional: without it the Ecto tab stays empty and nothing else changes.
+- A browser with WebSocket support: the panel has no long-poll fallback.
+
 ## Installation
 
 ```elixir
-# mix.exs: from GitHub until the first Hex release
-{:phoenix_dev_toolbar, github: "zoten/phoenix_dev_toolbar", only: :dev}
+# mix.exs
+{:phoenix_dev_toolbar, "~> 0.0.1", only: :dev}
 
 # config/dev.exs
 config :phoenix_dev_toolbar, repos: [MyApp.Repo]  # optional: defaults to your apps' :ecto_repos
@@ -102,9 +126,46 @@ Then `DEV_TOOLBAR=0 mix phx.server` boots without the toolbar: no telemetry hand
 no supervised processes, and the plug passes requests through untouched. The value is
 read at boot, so restart to switch it.
 
+## How it compares
+
+- [Phoenix LiveDashboard](https://github.com/phoenixframework/phoenix_live_dashboard): node-wide metrics and processes on its own page, not tied to the page you are viewing. Better for metrics over time.
+- [LiveDebugger](https://github.com/software-mansion/live-debugger): deeper LiveView state debugging. This toolbar's LiveView tab overlaps with it; use LiveDebugger when LiveView state is the whole problem.
+- [Tidewave](https://tidewave.ai): gives coding agents runtime access to your app. It has no per-page attribution, and this toolbar has no agent interface yet.
+- [phoenix_profiler](https://hex.pm/packages/phoenix_profiler): an existing profiler and debug toolbar for Phoenix.
+- What this one adds: everything is attributed to the page in front of you (its request, its LiveView processes and their tasks), with N+1 detection per callback and one-click EXPLAIN.
+
+## Troubleshooting
+
+**The toolbar does not appear.**
+- It is on only under `MIX_ENV=dev` (see "When it is on").
+- `plug PhoenixDevToolbar.Plug` must be inside the endpoint's `if code_reloading?` block.
+- It injects only into top-level HTML documents answered with status 200 that have a `</body>`. Compressed responses (a `content-encoding` other than `identity`), JSON, fragments and iframe or fetch requests get nothing.
+
+**A strict Content-Security-Policy hides it.** Give the plug your CSP nonce through `conn.assigns`; the injected script and the toolbar frame style both use it:
+
+```elixir
+conn = Plug.Conn.assign(conn, :csp_nonce, nonce)      # in a plug before PhoenixDevToolbar.Plug
+plug PhoenixDevToolbar.Plug, nonce_assign: :csp_nonce # the default key; change it if yours differs
+```
+
+A `frame-src` or `child-src` that excludes your own origin still blocks the panel frame.
+
+**The panel answers 403.** The host name you use is not allowed (a DNS rebinding guard). The panel answers IP addresses, `localhost` and your endpoint's url host; add other names with `allowed_hosts: ["myapp.test"]`.
+
+**The panel never connects behind a proxy or tunnel.** If the proxy rewrites the `Host` header, the browser's origin no longer matches what the server sees and the socket is refused. There is no `allowed_origins` option yet.
+
+**Docker or LAN access.** Add the host name to `allowed_hosts`. Process actions are off by default; `actions: :loopback` allows them for a browser on this machine and `actions: :any` for Docker or the LAN (anyone who can reach the server can then use them). Eval is limited to this machine unless `clients: :any`.
+
+**The Ecto tab is empty.** The toolbar watches the repos in your apps' `:ecto_repos`; if there are none it logs one warning. Set `repos: [MyApp.Repo]` in `config/dev.exs`.
+
+## Security
+
+The toolbar is for development. It is off outside `MIX_ENV=dev`, adds nothing to a production build when installed with `only: :dev`, and the panel refuses other origins and unknown host names. Process actions and the Eval plugin are opt-in and limited to a browser on this machine by default. Report vulnerabilities privately: see [SECURITY.md](https://github.com/zoten/phoenix_dev_toolbar/blob/main/SECURITY.md).
+
 ## Contributing
 
-Read [AGENTS.md](https://github.com/zoten/phoenix_dev_toolbar/blob/main/AGENTS.md) and the [ADR index](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/README.md). Run `mix precommit` before pushing (its JS tests need Node 22 or later).
+The ADR index ([adr/README.md](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/README.md)) is the place to start. [AGENTS.md](https://github.com/zoten/phoenix_dev_toolbar/blob/main/AGENTS.md) is written for AI coding agents. Run `mix precommit` before pushing (its JS tests need Node 22 or later).
+CI also compiles `fixtures/host_app` in prod and dev, which `mix precommit` does not (run it there with `mix compile --warnings-as-errors`).
 Try your changes in a real browser with `mix dev`, a demo app at http://localhost:4000.
 
 ## License
