@@ -112,7 +112,8 @@ defmodule PhoenixDevToolbar.MixProject do
     [
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url, "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md"},
-      files: ~w(lib priv/static .formatter.exs mix.exs README.md LICENSE CHANGELOG.md)
+      files:
+        ~w(lib priv/static .formatter.exs mix.exs README.md LICENSE CHANGELOG.md usage-rules.md usage-rules)
     ]
   end
 

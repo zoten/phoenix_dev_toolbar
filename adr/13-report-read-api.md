@@ -40,6 +40,12 @@ Store, built for IEx and agents:
 - Reads run in the caller's process and touch nothing else: no GenServer call,
   no telemetry handler change. While the toolbar is disabled, or the Store is
   not running, every function returns `[]` or `nil`.
+- The package ships `usage-rules.md` and an agent skill,
+  `usage-rules/skills/phoenix-dev-toolbar-report/SKILL.md`, in the `usage_rules`
+  layout: host apps pull them with `mix usage_rules.sync`. The skill teaches the
+  before and after routine (reach the running VM, trigger the page, read
+  `summary/2`, check status and dropped events, compare). Both are part of the
+  API's docs: a renamed key or function changes them too.
 - Read-only by design: EXPLAIN and process actions stay in the panel, behind
   their own policies (ADR 08, ADR 10). Raw EXPLAIN params are never returned.
 

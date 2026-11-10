@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - EXPLAIN tests on Postgres, a Postgres service in CI (ADR 08)
 - `allowed_origins:` for proxies and tunnels that rewrite the Host header (ADR 04)
 - `PhoenixDevToolbar.Report`: read API over captured sessions for IEx and agents (ADR 13)
+- Shipped `usage-rules.md` and the `phoenix-dev-toolbar-report` agent skill (ADR 13)
 
 ## [0.0.1] - 2026-11-10
 

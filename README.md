@@ -145,6 +145,19 @@ Report.latest(path: "/posts") |> Report.n_plus_one()
 
 It sees what the panel sees, for as long as the toolbar keeps it (10 minutes by default). A separate `mix run` starts another VM with nothing captured.
 
+The package ships [usage rules](https://hexdocs.pm/usage_rules) and a skill that teaches coding agents this check-before-and-after routine. With `usage_rules` in your project:
+
+```elixir
+# mix.exs, project/0
+usage_rules: [
+  file: "AGENTS.md",
+  usage_rules: [:phoenix_dev_toolbar],
+  skills: [package_skills: [:phoenix_dev_toolbar]]
+]
+```
+
+then `mix usage_rules.sync`.
+
 ## How it compares
 
 - [Phoenix LiveDashboard](https://github.com/phoenixframework/phoenix_live_dashboard): node-wide metrics and processes on its own page, not tied to the page you are viewing. Better for metrics over time.
