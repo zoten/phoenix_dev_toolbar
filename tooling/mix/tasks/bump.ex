@@ -15,11 +15,11 @@ defmodule Mix.Tasks.Bump do
        `PDT_LIVE_VIEW` unset (mix.exs would publish its LiveView requirement)
     2. `mix precommit`, then `agent-tools/ci-min.sh` (the minimum CI row in Docker),
        and the tree still clean after them
-    3. The version: when its `v<version>` tag does not exist yet it is released as
+    3. The version: when its `<version>` tag does not exist yet it is released as
        it is (the first release, 0.0.1), otherwise it is bumped by `--version`
     4. `@version` in mix.exs, and CHANGELOG.md: the Unreleased entries move into
        the version's section, dated today
-    5. A commit (none when no file changed) and an annotated `v<version>` tag,
+    5. A commit (none when no file changed) and an annotated `<version>` tag,
        nothing pushed: `./publish.sh` pushes, waits for CI and publishes to Hex
   """
 

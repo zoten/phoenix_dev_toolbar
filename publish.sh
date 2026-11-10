@@ -31,7 +31,7 @@ cd "$(git rev-parse --show-toplevel)"
 
 version="$(sed -n 's/^  @version "\(.*\)"$/\1/p' mix.exs)"
 [ -n "$version" ] || fail "no @version in mix.exs."
-tag="v$version"
+tag="$version"
 
 git rev-parse --quiet --verify "refs/tags/$tag" >/dev/null || fail "no tag $tag: run mix bump first."
 [ "$(git rev-parse "$tag^{commit}")" = "$(git rev-parse HEAD)" ] || fail "$tag is not on HEAD: run mix bump."

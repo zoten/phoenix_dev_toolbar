@@ -117,7 +117,7 @@ defmodule PhoenixDevToolbar.MixProject do
   defp docs do
     [
       main: "readme",
-      source_ref: "v#{@version}",
+      source_ref: @version,
       extras: ["README.md", "guides/writing-a-plugin.md", "CHANGELOG.md", "SECURITY.md"],
       groups_for_extras: [Guides: ["guides/writing-a-plugin.md"]],
       # Examples and the release tooling are compiled in dev and tests, where the

@@ -121,7 +121,7 @@ defmodule PdtTooling.ReleaseTest do
 
   describe "tag/1" do
     test "matches the docs source_ref" do
-      assert Release.tag("0.0.1") == "v0.0.1"
+      assert Release.tag("0.0.1") == "0.0.1"
     end
   end
 end

@@ -34,9 +34,12 @@ defmodule PdtTooling.Release do
   defp bump(version, :minor), do: %{version | minor: version.minor + 1, patch: 0}
   defp bump(version, :major), do: %{version | major: version.major + 1, minor: 0, patch: 0}
 
-  @doc "The git tag of a version, as the docs' `source_ref` expects it."
+  @doc """
+  The git tag of a version: the plain version, as Hex publishes it and as the docs'
+  `source_ref` expects it.
+  """
   @spec tag(String.t()) :: String.t()
-  def tag(version), do: "v" <> version
+  def tag(version), do: version
 
   @doc "Replaces `@version \"current\"` in mix.exs, exactly once."
   @spec put_version(String.t(), String.t(), String.t()) ::

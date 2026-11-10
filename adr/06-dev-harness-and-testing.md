@@ -80,7 +80,7 @@ correctness and boundedness need tests, not just eyeballing.
   only runs on the local toolchain.
 - Releases: `mix bump` (tooling/mix/tasks/bump.ex) gates on `mix precommit` and the
   minimum CI row, writes the version and the CHANGELOG section, commits and tags
-  `v<version>`; `publish.sh` pushes, waits for CI and runs `mix hex.publish`. Repository
+  `<version>`; `publish.sh` pushes, waits for CI and runs `mix hex.publish`. Repository
   tooling is compiled from `tooling/` in dev and test only, so the package (lib/ only)
   and host apps (which compile the dependency in prod) never see it.
 
