@@ -168,6 +168,10 @@ const mount = () => {
 
   const style = document.createElement("style")
   style.textContent = STYLE
+  // A strict style-src needs the nonce of the page's CSP; the injected script
+  // tag carries it (the `nonce` property survives parsing, the attribute does not).
+  const nonce = script.nonce || script.getAttribute("nonce")
+  if (nonce) style.setAttribute("nonce", nonce)
 
   const frame = document.createElement("iframe")
   frame.className = "frame"
