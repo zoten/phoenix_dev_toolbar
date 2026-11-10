@@ -11,7 +11,7 @@ permissions:
 jobs:
   test:
     name: Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }} / LiveView ${{ matrix.live_view || 'locked' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       MIX_ENV: test
       # Read by mix.exs: overrides the LiveView requirement (empty = published one).
@@ -30,12 +30,12 @@ jobs:
             otp: "29"
             lint: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: erlef/setup-beam@v1
         with:
           elixir-version: ${{ matrix.elixir }}
           otp-version: ${{ matrix.otp }}
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             deps
@@ -55,7 +55,7 @@ jobs:
       - if: matrix.lint
         run: mix deps.unlock --check-unused
       - if: matrix.lint
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
       - if: matrix.lint
