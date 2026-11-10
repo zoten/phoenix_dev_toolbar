@@ -22,6 +22,9 @@ if config_env() == :test do
   # LiveView logs every mount at :debug; tests drive real mount telemetry.
   config :logger, level: :warning
 
+  # Mix.env() is :test here, not :dev: enable explicitly (ADR 01).
+  config :phoenix_dev_toolbar, enabled: true
+
   # Phoenix.ConnTest's host: listed, as a host app lists its own (HostCheck).
   config :phoenix_dev_toolbar, allowed_hosts: ["www.example.com"]
 

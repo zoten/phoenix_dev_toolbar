@@ -11,7 +11,7 @@ defmodule PhoenixDevToolbar.Application do
 
   @impl Application
   def start(_type, _args) do
-    :ok = settle_enabled(Application.fetch_env(:phoenix_dev_toolbar, :enabled), mix_loaded?())
+    :ok = settle_enabled(Application.fetch_env(:phoenix_dev_toolbar, :enabled), mix_env())
     enabled? = PhoenixDevToolbar.enabled?()
 
     with {:ok, pid} <-
@@ -35,27 +35,38 @@ defmodule PhoenixDevToolbar.Application do
   def plugins, do: Config.plugins()
 
   @doc false
-  # Running without Mix means a release: the package was installed without
-  # `only: :dev`. Turn off unless `enabled` was set explicitly (ADR 01).
-  @spec settle_enabled({:ok, term()} | :error, boolean()) :: :ok
-  def settle_enabled({:ok, _explicit}, _mix_loaded?), do: :ok
-  def settle_enabled(:error, true), do: :ok
+  # Unset `enabled` means on only under Mix in the `:dev` env. Running without
+  # Mix is a release, any other Mix env is test or prod: the package was
+  # installed without `only: :dev`. Turn off unless `enabled` was set
+  # explicitly (ADR 01). `mix_env` is `nil` when Mix is not loaded.
+  @spec settle_enabled({:ok, term()} | :error, atom() | nil) :: :ok
+  def settle_enabled({:ok, _explicit}, _mix_env), do: :ok
+  def settle_enabled(:error, :dev), do: :ok
 
-  def settle_enabled(:error, false) do
+  def settle_enabled(:error, mix_env) do
     Application.put_env(:phoenix_dev_toolbar, :enabled, false)
 
     Logger.warning(
-      "[phoenix_dev_toolbar] running outside Mix (a release?): the toolbar is disabled. " <>
+      "[phoenix_dev_toolbar] running outside Mix (a release?) or with a Mix env that is not " <>
+        ":dev (#{inspect(mix_env)}): the toolbar is disabled. " <>
         "Declare the dependency with `only: :dev`, or set `enabled: true` to force it."
     )
   end
 
-  defp mix_loaded?, do: Code.ensure_loaded?(Mix)
+  # `Mix.env/0` only when Mix is loaded: a release has no Mix.
+  defp mix_env do
+    case Code.ensure_loaded?(Mix) do
+      true -> Mix.env()
+      false -> nil
+    end
+  end
 
+  @doc false
   # Disabled means no processes, no ETS tables and no handlers (ADR 01).
-  defp children(false), do: []
+  @spec children(boolean()) :: [module()]
+  def children(false), do: []
 
-  defp children(true),
+  def children(true),
     do: [
       PhoenixDevToolbar.Store,
       PhoenixDevToolbar.Notify,

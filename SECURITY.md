@@ -1,8 +1,8 @@
 # Security
 
 `phoenix_dev_toolbar` is a development tool. It is meant to be installed with
-`only: :dev` and to run on the developer's machine; it disables itself in releases
-unless explicitly enabled (see [ADR 01](adr/01-zero-prod-footprint-and-installation.md)).
+`only: :dev` and to run on the developer's machine; it disables itself in releases and in any
+Mix env other than `:dev` unless explicitly enabled (see [ADR 01](adr/01-zero-prod-footprint-and-installation.md)).
 Running it on a server reachable by others is out of scope.
 
 In scope: anything that leaks the toolbar into production builds, lets another origin

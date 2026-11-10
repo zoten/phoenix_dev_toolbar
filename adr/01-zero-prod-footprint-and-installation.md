@@ -29,9 +29,11 @@ Three layers keep production clean:
 3. At runtime every entry point (plug, telemetry attach, supervisor children) checks
    `PhoenixDevToolbar.enabled?/0` (`config :phoenix_dev_toolbar, enabled: false` turns
    everything into a no-op, for example in `:test` of the host app). When `enabled` is
-   not configured and the application starts without `Mix` loaded (a release, so the
-   dependency was installed without `only: :dev`), it disables itself and logs a
-   warning; `enabled: true` forces it on. To skip the toolbar for a single dev run, the
+   not configured, the toolbar is on only when `Mix` is loaded and `Mix.env()` is `:dev`;
+   in a release or in any other Mix env (`:prod`, `:test`) it disables itself and logs a
+   warning, so a dependency installed without `only: :dev` stays off under
+   `MIX_ENV=prod mix phx.server`. `enabled: true` forces it on (this library's own
+   test config does). To skip the toolbar for a single dev run, the
    host reads `enabled` from an environment variable in `config/dev.exs` (README,
    "Turning it off for one run"); it is settled at boot, so switching needs a restart.
 
