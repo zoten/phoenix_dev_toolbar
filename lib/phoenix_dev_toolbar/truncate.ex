@@ -191,7 +191,10 @@ defmodule PhoenixDevToolbar.Truncate do
 
   @doc false
   @spec redact_keys() :: [String.t() | atom()]
-  def redact_keys, do: Application.get_env(:phoenix_dev_toolbar, :redact, @default_redact)
+  def redact_keys do
+    configured = Application.get_env(:phoenix_dev_toolbar, :redact, [])
+    Enum.uniq(@default_redact ++ List.wrap(configured))
+  end
 
   defp change_value(key, value, redact) do
     case sensitive?(key, redact) do

@@ -82,6 +82,42 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
     assert message =~ "list of modules"
   end
 
+  describe "without repos configured" do
+    setup do
+      Application.delete_env(:phoenix_dev_toolbar, :repos)
+      on_exit(fn -> Application.delete_env(:phoenix_dev_toolbar, :ecto_repos) end)
+    end
+
+    test "falls back to the :ecto_repos of the loaded applications" do
+      Application.put_env(:phoenix_dev_toolbar, :ecto_repos, [DemoWeb.FakeRepo])
+
+      assert events([]) == [@event]
+    end
+
+    test "explicit config wins over the fallback" do
+      Application.put_env(:phoenix_dev_toolbar, :ecto_repos, [DemoWeb.HelloPlug])
+
+      assert events(repos: [DemoWeb.FakeRepo]) == [@event]
+      put_repos([DemoWeb.FakeRepo])
+      assert events([]) == [@event]
+    end
+
+    test "an explicit empty list opts out, silently" do
+      Application.put_env(:phoenix_dev_toolbar, :ecto_repos, [DemoWeb.FakeRepo])
+
+      log = capture_log(fn -> assert events(repos: []) == [] end)
+      assert log == ""
+    end
+
+    test "finding nothing logs one warning naming the config line" do
+      log = capture_log(fn -> assert events([]) == [] end)
+
+      assert log =~ "no Ecto repos found"
+      assert log =~ "config :phoenix_dev_toolbar, repos: [MyApp.Repo]"
+      assert length(String.split(log, "no Ecto repos found")) == 2
+    end
+  end
+
   test "n_plus_one: defaults to 5, takes an integer >= 2 or false, and is validated" do
     assert {:ok, %{n_plus_one: 5}} = EctoPlugin.init([])
     assert {:ok, %{n_plus_one: 3}} = EctoPlugin.init(n_plus_one: 3)

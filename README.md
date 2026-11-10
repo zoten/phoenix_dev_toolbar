@@ -19,7 +19,7 @@ you are working on.
 {:phoenix_dev_toolbar, github: "zoten/phoenix_dev_toolbar", only: :dev}
 
 # config/dev.exs
-config :phoenix_dev_toolbar, repos: [MyApp.Repo]
+config :phoenix_dev_toolbar, repos: [MyApp.Repo]  # optional: defaults to your apps' :ecto_repos
 config :my_app, MyApp.Repo, stacktrace: true  # optional: shows where each query comes from
 
 # lib/my_app_web/endpoint.ex, next to Phoenix.LiveReloader
@@ -62,8 +62,9 @@ config :phoenix_dev_toolbar,
   # The toolbar makes room so the page scrolls clear of it; false lets it overlap
   # (the dock menu's toggle overrides this per browser)
   reserve_space: true,
-  # Values of keys containing these words are shown as [REDACTED]
-  redact: ["password", "token", "secret"],
+  # Values of keys containing these words are shown as [REDACTED]; added to the
+  # defaults (password, token, secret), which always apply
+  redact: ["api_key"],
   # Memory bounds (ADR 03), these are the defaults. A session is one request
   # or one LiveView process: a LiveView page has two.
   limits: [

@@ -119,7 +119,9 @@ public plugin behaviour, ADR 05):
   status, redacted path params, duration; on exception also the error banner and the
   stacktrace without router and Plug frames.
 - `Ecto`: `telemetry_prefix ++ [:query]` of each repo in its `repos:` option (default:
-  the top level `repos` config), the prefix read from
+  the top level `repos` config; with neither, the `:ecto_repos` of the loaded
+  applications, read once in `init/1`, and one warning naming the config line if
+  there are none), the prefix read from
   `repo.config/0` (a module that is not a repo is skipped with a warning). Records repo,
   SQL, params (`cast_params` when present; `Truncate.preview/3`, 2 KB, redacted), source, result (`{:ok, rows}` or
   `{:error, message}`), the four timings in microseconds, the origin stacktrace without

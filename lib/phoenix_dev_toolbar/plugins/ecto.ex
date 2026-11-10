@@ -3,6 +3,8 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   # Built-in Ecto panel collector (ADR 02): one event per query of the repos in
   # `config :phoenix_dev_toolbar, repos: [MyApp.Repo]`, or in the plugin's own
   # `repos:` option (`{PhoenixDevToolbar.Plugins.Ecto, repos: [...]}`), which wins.
+  # With neither, the repos are the `:ecto_repos` of the loaded applications,
+  # read once in `init/1` (attach time, never in a telemetry handler).
   # `n_plus_one:` (default 5) is the N+1 detector's threshold, `false` turns
   # it off (ADR 08).
   # `ecto_sql` stays an optional dependency: without repos, or without Ecto
@@ -27,16 +29,44 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
 
   @impl PhoenixDevToolbar.Plugin
   def init(opts) do
-    repos =
-      Keyword.get_lazy(opts, :repos, fn ->
-        Application.get_env(:phoenix_dev_toolbar, :repos, [])
-      end)
+    repos = Keyword.get_lazy(opts, :repos, &configured_or_declared_repos/0)
 
     with {:ok, repos} <- repos(repos),
          {:ok, threshold} <- threshold(Keyword.get(opts, :n_plus_one, @n_plus_one)) do
       {:ok, %{repos: repos, n_plus_one: threshold}}
     end
   end
+
+  defp configured_or_declared_repos do
+    case Application.get_env(:phoenix_dev_toolbar, :repos) do
+      nil -> declared_repos()
+      repos -> repos
+    end
+  end
+
+  # The repos the host declares with `config :my_app, ecto_repos: [...]`.
+  defp declared_repos do
+    repos =
+      for {app, _description, _version} <- Application.loaded_applications(),
+          repo <- List.wrap(Application.get_env(app, :ecto_repos, [])),
+          is_atom(repo),
+          uniq: true,
+          do: repo
+
+    maybe_warn_no_repos(repos)
+    repos
+  end
+
+  defp maybe_warn_no_repos([]) do
+    if Code.ensure_loaded?(Ecto.Adapters.SQL) do
+      Logger.warning(
+        "[phoenix_dev_toolbar] no Ecto repos found: the Ecto tab stays empty. " <>
+          "Add `config :phoenix_dev_toolbar, repos: [MyApp.Repo]` to config/dev.exs"
+      )
+    end
+  end
+
+  defp maybe_warn_no_repos(_repos), do: :ok
 
   defp repos(repos) when is_list(repos), do: {:ok, repos}
 

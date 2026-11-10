@@ -44,7 +44,7 @@ Installation:
 {:phoenix_dev_toolbar, "~> 0.1", only: :dev}
 
 # config/dev.exs
-config :phoenix_dev_toolbar, repos: [MyApp.Repo]
+config :phoenix_dev_toolbar, repos: [MyApp.Repo]  # optional: defaults to your apps' :ecto_repos
 config :my_app, MyApp.Repo, stacktrace: true  # optional: query origins
 
 # lib/my_app_web/endpoint.ex, next to Phoenix.LiveReloader

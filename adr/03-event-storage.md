@@ -75,7 +75,7 @@ serialize every query of the app behind one mailbox.
   10 frames without toolbar and `:telemetry` frames. Every `inspect/2` in a collector uses
   these limits, including plug options and thrown or exited reasons.
   Keys whose name contains an entry of `config :phoenix_dev_toolbar, redact: [...]`
-  (default `["password", "token", "secret"]`, case insensitive) become `"[REDACTED]"`;
+  (the defaults `"password"`, `"token"` and `"secret"` plus the configured ones, case insensitive) become `"[REDACTED]"`;
   redaction is bounded in depth (6), width (only the first 50 items of a list, the
   first 50 entries of a map in iteration order and tuples of up to 50 elements are
   walked) and in total: `Truncate.redact/2` walks at most 1000 nodes, the rest becomes

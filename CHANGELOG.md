@@ -89,3 +89,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ecto params through the budgeted preview, 2 KB cap; `redact/2` node budget (ADR 02, ADR 03)
 - Response hook catches throws and exits; injection drops a preset `content-length` (ADR 04)
 - Collector failure path tests; hot path wording matches the code (ADR 02)
+- Breaking: `redact:` adds to the defaults instead of replacing them (ADR 03)
+- Ecto repos default to the apps' `:ecto_repos`, one warning when none (ADR 02, ADR 05)
