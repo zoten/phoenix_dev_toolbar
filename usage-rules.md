@@ -1,5 +1,3 @@
-# phoenix_dev_toolbar usage rules
-
 `phoenix_dev_toolbar` is a dev-only debug toolbar for Phoenix LiveView apps. It
 records each page view (the request and its LiveView processes) with its Ecto
 queries, LiveView callbacks, renders and errors, and shows them in a panel.
