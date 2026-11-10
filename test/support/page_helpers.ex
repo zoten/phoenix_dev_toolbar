@@ -52,7 +52,7 @@ defmodule PhoenixDevToolbar.PageHelpers do
   @doc """
   Has the panel handle everything the Store sent it (`:pdt_flush`) and renders.
   """
-  @spec flush(struct()) :: String.t()
+  @spec flush(struct()) :: String.t() | {:error, term()}
   def flush(view) do
     send(view.pid, :pdt_flush)
     render(view)
@@ -66,7 +66,7 @@ defmodule PhoenixDevToolbar.PageHelpers do
   `{cid_to_component, ...}` with `{module, id, assigns, ...}` values). Isolated
   here on purpose; configure the tab's interval high so the real timer cannot race.
   """
-  @spec tick_now(struct(), module(), String.t(), atom()) :: String.t()
+  @spec tick_now(struct(), module(), String.t(), atom()) :: String.t() | {:error, term()}
   def tick_now(view, module, id, kind) do
     {cid_to_component, _id_to_cid, _uuids} = :sys.get_state(view.pid).components
 

@@ -1,6 +1,7 @@
 defmodule PhoenixDevToolbar.TruncateTest do
   use ExUnit.Case, async: true
 
+  alias PhoenixDevToolbar.TestCreds
   alias PhoenixDevToolbar.Truncate
 
   doctest Truncate
@@ -93,7 +94,7 @@ defmodule PhoenixDevToolbar.TruncateTest do
 
       redacted = Truncate.redact(struct)
 
-      refute is_struct(redacted)
+      refute Map.has_key?(redacted, :__struct__)
       assert redacted["…"] == "…"
     end
 
@@ -212,8 +213,6 @@ defmodule PhoenixDevToolbar.TruncateTest do
   end
 
   describe "structs with only scalar fields" do
-    alias PhoenixDevToolbar.TestCreds
-
     test "preview redacts a sensitive field name" do
       preview = Truncate.preview([%TestCreds{secret_key: "sk_live", user: "ada"}], 2048)
 
