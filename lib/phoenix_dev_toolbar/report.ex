@@ -637,7 +637,7 @@ defmodule PhoenixDevToolbar.Report do
     root = PageLookup.root(sid)
 
     case Enum.find(all, &(&1.sid == root)) do
-      %Session{started_at: us} -> {us, root}
+      %Session{started_at: us} = session -> {us, session}
       nil -> :none
     end
   end
@@ -645,8 +645,13 @@ defmodule PhoenixDevToolbar.Report do
   defp cursor(_all, _other), do: :none
 
   defp own_page?(_session, nil), do: false
-  defp own_page?(%Session{sid: root}, root), do: true
-  defp own_page?(%Session{parent: root}, root), do: true
+  defp own_page?(%Session{sid: sid}, %Session{sid: sid}), do: true
+
+  # Only a request's connected mount belongs to it (like `with_children/3`): a
+  # LiveView's navigated child is the next page.
+  defp own_page?(%Session{kind: :live_view, parent: sid}, %Session{kind: :request, sid: sid}),
+    do: true
+
   defp own_page?(_session, _root), do: false
 
   defp session_errors(%Session{} = session, after_us) do

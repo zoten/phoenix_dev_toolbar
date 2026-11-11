@@ -141,7 +141,7 @@ not a breaking change, renaming or removing is (a CHANGELOG line).
 - `page_assigns_shape`: the 2 s timeout is soft (`flat_size` on a huge term does not yield).
 - `page_assigns_shape`: `words` overstate data shared between assigns.
 - `page_assigns_shape`: a host `max_heap_size` can kill the copying task and with it the request (a 500).
-- `page_assigns_shape`: a closed newest tab hides an older open tab of the same path.
+- `page_assigns_shape`: a closed newest tab hides an older open tab of the same path, for up to `ttl_ms` (closed sessions are no longer dropped on DOWN).
 - `recent_errors` with a sid that expires between validation and read returns no errors instead of a tool error.
 - `compare_pages` without `after` can pick a live navigation back to the same path (no reload) as the after page; `warning` flags a kind or session count mismatch, not that case.
 - A dev server bound to a Unix socket has no peer address to match: only

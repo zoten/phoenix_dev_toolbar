@@ -235,6 +235,7 @@ defmodule PhoenixDevToolbar.StoreTest do
         })
 
       Store.insert(sid, event(1, now))
+      Store.track_pid(owner, sid)
       Store.link_socket_id("phx-abc", sid)
       sync_store()
 
@@ -247,11 +248,13 @@ defmodule PhoenixDevToolbar.StoreTest do
 
       Store.sweep(now + 500_000)
       assert {:ok, _} = Store.session(sid)
+      assert Store.sid_for_pid(owner) == nil
 
       Store.sweep(now + 2_000_000)
       assert Store.session(sid) == :error
       assert Store.events(sid) == []
       assert Store.sid_for_socket_id("phx-abc") == nil
+      assert Store.latest_for_transport(transport) == nil
     end
 
     test "a closed session is evicted before live ones at max_sessions" do
@@ -278,6 +281,7 @@ defmodule PhoenixDevToolbar.StoreTest do
     end
 
     test "keeps a session claimed by a new owner" do
+      Store.put_limits(ttl_ms: 1_000)
       old_owner = start_owner()
       %Session{sid: sid} = Store.new_session(Session.new(:live_view, owner: old_owner))
       sync_store()
@@ -287,7 +291,7 @@ defmodule PhoenixDevToolbar.StoreTest do
 
       stop_owner(old_owner)
 
-      Store.sweep(System.system_time(:microsecond) + 60_000_000)
+      Store.sweep(System.system_time(:microsecond) + 2_000_000)
       assert {:ok, %Session{owner: ^new_owner}} = Store.session(sid)
     end
   end

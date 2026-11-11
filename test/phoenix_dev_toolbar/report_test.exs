@@ -392,6 +392,15 @@ defmodule PhoenixDevToolbar.ReportTest do
                Report.recent_errors(since: req.sid) |> Enum.map(& &1.message)
     end
 
+    test "since: a LiveView root still lists the next navigated page's errors" do
+      root = failing(:live_view, "/a", @t0, "root crash", @t0 + 1)
+      nav = session(:live_view, path: "/b", parent: root.sid, started_at: @t0 + 5)
+      callback(nav, :handle_info, error: "next page crash", at: @t0 + 6)
+
+      assert ["next page crash"] ==
+               Report.recent_errors(since: root.sid) |> Enum.map(& &1.message)
+    end
+
     test "items carry page_sid, the request for a connected mount" do
       req = session(:request, path: "/a", started_at: @t0)
       mount = failing(:live_view, "/a", @t0 + 1, "in handle_info", @t0 + 2)
