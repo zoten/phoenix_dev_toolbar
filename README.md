@@ -193,9 +193,17 @@ Or by hand:
 url = "http://localhost:4000/__pdt/mcp"
 ```
 
-Claude Code asks once to approve a server from the project's `.mcp.json`; `/mcp` shows whether it is connected. Older Codex releases also need `experimental_use_rmcp_client = true` for HTTP servers. Start the dev server before the agent, or reconnect the server from the agent once it runs.
+Claude Code asks once to approve a server from the project's `.mcp.json`; `/mcp` shows whether it is connected. Older Codex releases also need `experimental_use_rmcp_client = true` for HTTP servers.
 
-If the dev server listens on a LAN address (so phones can reach it), use that address in the URL (`http://192.168.1.20:4000/__pdt/mcp`): the agent on the same machine is still accepted. Agents elsewhere (a container, a VM, another device) need their addresses allowed:
+MCP clients connect when the agent starts. If the dev server was not running then, the tools fail with a refused connection (`ECONNREFUSED`) until the client reconnects, even after the server is up: start the dev server first, or reconnect it from the agent (`/mcp` in Claude Code). A dev server restart drops the connection the same way.
+
+If the dev server listens on a LAN address (so phones can reach it), use that address in the URL (`http://192.168.1.20:4000/__pdt/mcp`): the agent on the same machine is still accepted. When the address comes from an environment variable (say `PHX_IP`, read by your endpoint's `http: [ip: ...]` config), Claude Code expands it in `.mcp.json`, with a default for everyone else:
+
+```json
+{"mcpServers": {"phoenix-dev-toolbar": {"type": "http", "url": "http://${PHX_IP:-127.0.0.1}:4000/__pdt/mcp"}}}
+```
+
+The variable must be set in the agent's environment too, not only the server's. Agents elsewhere (a container, a VM, another device) need their addresses allowed:
 
 ```elixir
 # config/dev.exs
@@ -222,6 +230,8 @@ then `mix usage_rules.sync`. Adding `file:` and `usage_rules: [:phoenix_dev_tool
 - What this one adds: everything is attributed to the page in front of you (its request, its LiveView processes and their tasks), with N+1 detection per callback and one-click EXPLAIN.
 
 ## Troubleshooting
+
+**The agent's MCP tools fail with `ECONNREFUSED`.** The client tried to connect before the dev server listened, or the server restarted: reconnect it from the agent (`/mcp` in Claude Code). If the server listens on a LAN address only, the URL must use that address (see "MCP server").
 
 **The toolbar does not appear.**
 - It is on only under `MIX_ENV=dev` (see "When it is on").

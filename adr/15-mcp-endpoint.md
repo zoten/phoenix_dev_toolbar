@@ -141,3 +141,7 @@ not a breaking change, renaming or removing is (a CHANGELOG line).
 - Plugin events outside the built-ins, assigns snapshots and the component tree
   are not exposed (as in `Report`).
 - No resources, prompts or change notifications.
+- Clients connect when the agent starts: a dev server started later, or
+  restarted, gives `ECONNREFUSED` until the client reconnects (`/mcp` in Claude
+  Code). The README and `guides/agent-setup.md` say so, with the LAN address and
+  `${PHX_IP:-127.0.0.1}` URL forms.

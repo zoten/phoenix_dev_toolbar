@@ -110,6 +110,16 @@ A JSON `result` means it works. A 403 or a refused connection: README,
 reconnect (`/mcp` in Claude Code, which also asks the user to approve a project
 server once): tell the user.
 
+Clients connect when the agent starts: if the dev server was not running then,
+every tool call fails with `ECONNREFUSED` until the client reconnects, even once the
+server is up. Tell the user to start the dev server first, or to reconnect after
+starting it (and after each server restart).
+
+If the dev server listens on a LAN address (check the endpoint's `http: [ip: ...]`
+in `config/dev.exs`), use that address in the URL. When it comes from an environment
+variable such as `PHX_IP`, write the URL as
+`http://${PHX_IP:-127.0.0.1}:<port>/__pdt/mcp`: Claude Code expands it in `.mcp.json`.
+
 ## 6. Agent skill and usage rules
 
 The package ships a skill, `phoenix-dev-toolbar-report` (measure a page before and
