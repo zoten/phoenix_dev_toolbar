@@ -336,9 +336,11 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   end
 
   # The requested path, else the newest page's own path: never another page.
+  # No path at all (the page expired meanwhile) means no alternative.
   defp path_filter(args, requested) do
     with {:ok, path} <- string_arg(args, "path"),
-         do: {:ok, PageLookup.filter(path: path || session_path(requested))}
+         path when is_binary(path) <- path || session_path(requested),
+         do: {:ok, PageLookup.filter(path: path)}
   end
 
   defp find_live(filter) do
