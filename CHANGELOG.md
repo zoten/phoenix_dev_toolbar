@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- README screenshots and demo GIF in `media/`, kept out of the Hex package (ADR 01)
+- README screenshots and demo GIF in `media/`: shipped with the docs, not the Hex package (ADR 01)
 
 ## [0.0.4] - 2026-11-11
 

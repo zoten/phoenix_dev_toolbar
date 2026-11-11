@@ -110,6 +110,8 @@ defmodule PhoenixDevToolbar.MixProject do
   defp docs do
     [
       main: "readme",
+      # README images: copied into the docs (hexdocs), never into the package files
+      assets: %{"media" => "media"},
       source_ref: @version,
       extras: [
         "README.md",
