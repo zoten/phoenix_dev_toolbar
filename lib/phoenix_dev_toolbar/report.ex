@@ -46,12 +46,13 @@ defmodule PhoenixDevToolbar.Report do
   alias PhoenixDevToolbar.NPlusOne
   alias PhoenixDevToolbar.PageLookup
   alias PhoenixDevToolbar.Plugins
+  alias PhoenixDevToolbar.Report.Compare
   alias PhoenixDevToolbar.Report.Markdown
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
 
   @slowest 5
-  @compare_cap 20
+  @compare_cap Compare.cap()
   @burst_gap_us 100_000
   @unattributed_origins 5
   @query_brief [:seq, :sid, :origin, :duration_us, :rows, :source, :n_plus_one?, :error]
@@ -237,6 +238,26 @@ defmodule PhoenixDevToolbar.Report do
   @type recent_errors_opt ::
           {:since, sid() | DateTime.t()} | {:limit, non_neg_integer() | nil}
 
+  @typedoc "An option of `sessions/1`."
+  @type sessions_opt ::
+          {:path, String.t() | Regex.t()}
+          | {:view, module()}
+          | {:kind, :request | :live_view}
+          | {:limit, non_neg_integer() | nil}
+          | {:since, sid() | DateTime.t()}
+
+  @typedoc "An option of `summary/2`."
+  @type summary_opt ::
+          {:verbose, boolean()}
+          | {:children, boolean()}
+          | {:threshold, pos_integer() | false}
+
+  @typedoc "An option of `compare/3` and `markdown/2`."
+  @type compare_opt :: {:children, boolean()} | {:threshold, pos_integer() | false}
+
+  @typedoc "An option of `markdown/2`."
+  @type markdown_opt :: compare_opt() | {:panel_url, String.t() | nil}
+
   @typedoc "The dead render request: its route and response."
   @type request :: %{
           method: String.t() | nil,
@@ -306,7 +327,8 @@ defmodule PhoenixDevToolbar.Report do
   Each list holds distinct keys, at most #{@compare_cap}; `fixed_total` and
   `new_total` count them all. An error carries `count`, its occurrences.
   `before` and `after` say which `kind` and `sids` were read; a `warning`
-  is present when the two differ in kind, session count or path.
+  is present when the two differ in kind, session count or path, or when
+  either side lost events (`dropped`, `trimmed`).
   """
   @type comparison :: %{
           required(:before) => compared_side(),
@@ -326,7 +348,9 @@ defmodule PhoenixDevToolbar.Report do
           path: String.t() | nil,
           started_at: DateTime.t(),
           kind: :request | :live_view,
-          sids: [sid()]
+          sids: [sid()],
+          dropped: non_neg_integer(),
+          trimmed: non_neg_integer()
         }
 
   @typedoc "Findings fixed, new and kept between two pages."
@@ -350,7 +374,7 @@ defmodule PhoenixDevToolbar.Report do
   read a whole page; a `DateTime`: only sessions that started after it; an
   unknown sid or any other value gives `[]`, never a raise).
   """
-  @spec sessions(keyword()) :: [session()]
+  @spec sessions([sessions_opt()]) :: [session()]
   def sessions(opts \\ []) do
     all = all_sessions()
 
@@ -363,7 +387,7 @@ defmodule PhoenixDevToolbar.Report do
   end
 
   @doc "The newest session matching `sessions/1` options, or nil."
-  @spec latest(keyword()) :: session() | nil
+  @spec latest([sessions_opt()]) :: session() | nil
   def latest(opts \\ []), do: opts |> Keyword.put(:limit, 1) |> sessions() |> List.first()
 
   ## Reads
@@ -376,7 +400,7 @@ defmodule PhoenixDevToolbar.Report do
   Options: `verbose:` (true returns the full `t:query/0`, `t:callback/0` and
   `t:error/0` items), `children:` (see the module docs), `threshold:` (see `n_plus_one/2`).
   """
-  @spec summary(target(), keyword()) :: summary() | nil
+  @spec summary(target(), [summary_opt()]) :: summary() | nil
   def summary(target, opts \\ []) do
     case read(target, opts) do
       {[], _events} ->
@@ -425,7 +449,7 @@ defmodule PhoenixDevToolbar.Report do
   `panel_url:` (a link to the page in the panel: the report ends with a footer
   naming the page's sid and the link, so a pasted report leads back to it).
   """
-  @spec markdown(target(), keyword()) :: String.t() | nil
+  @spec markdown(target(), [markdown_opt()]) :: String.t() | nil
   def markdown(target, opts \\ []) do
     summary_opts = Keyword.take(opts, [:children, :threshold])
 
@@ -447,25 +471,13 @@ defmodule PhoenixDevToolbar.Report do
   pass through. A connected mount reads as its request. Nil when either page
   is gone. See `t:comparison/0` for the matching rules and the `warning`.
   """
-  @spec compare(target(), target(), keyword()) :: comparison() | nil
+  @spec compare(target(), target(), [compare_opt()]) :: comparison() | nil
   def compare(before_target, after_target, opts \\ []) do
+    opts = Keyword.take(opts, [:threshold, :children])
+
     with %{} = b <- before_target |> root() |> summary(opts),
          %{} = a <- after_target |> root() |> summary(opts) do
-      {fixed, new, still} = diff(b.n_plus_one, a.n_plus_one, &n_plus_one_key/1)
-      {errors_fixed, errors_new, errors_still} = diff(b.errors, a.errors, &error_key/1)
-
-      comparison = %{
-        before: side(b),
-        after: side(a),
-        queries: tally_change(b.queries, a.queries),
-        callbacks: tally_change(b.callbacks, a.callbacks),
-        renders: tally_change(b.renders, a.renders),
-        unattributed: tally_change(b.unattributed, a.unattributed),
-        n_plus_one: with_totals(fixed, new, still),
-        errors: with_totals(errors_fixed, errors_new, errors_still)
-      }
-
-      maybe_warn(comparison)
+      Compare.build(b, a)
     end
   end
 
@@ -473,98 +485,6 @@ defmodule PhoenixDevToolbar.Report do
   defp root(sid) when is_binary(sid), do: PageLookup.root(sid)
   defp root(%{sid: sid}) when is_binary(sid), do: PageLookup.root(sid)
   defp root(target), do: target
-
-  defp side(summary) do
-    summary.session
-    |> Map.take([:sid, :path, :started_at, :kind])
-    |> Map.put(:sids, summary.sids)
-  end
-
-  defp maybe_warn(%{before: b, after: a} = comparison) do
-    case warnings(b, a) do
-      [] -> comparison
-      warnings -> Map.put(comparison, :warning, Enum.join(warnings, " "))
-    end
-  end
-
-  defp warnings(b, a) do
-    kind =
-      b.kind != a.kind or length(b.sids) != length(a.sids)
-
-    path = b.path != a.path
-
-    Enum.filter(
-      [
-        kind &&
-          "before is a #{b.kind} read from #{length(b.sids)} session(s), after is a #{a.kind} " <>
-            "read from #{length(a.sids)}: totals may not be comparable (live navigation, or a " <>
-            "dead render without its connected mount).",
-        path &&
-          "before is #{inspect(b.path)}, after is #{inspect(a.path)}: different pages, so " <>
-            "fixed and new reflect the pages, not a change."
-      ],
-      & &1
-    )
-  end
-
-  defp tally_change(before, after_) do
-    b = Map.take(before, [:count, :total_us])
-    a = Map.take(after_, [:count, :total_us])
-    %{before: b, after: a, delta: %{count: a.count - b.count, total_us: a.total_us - b.total_us}}
-  end
-
-  defp n_plus_one_key(group), do: {group.sql, without_line(group.origin)}
-
-  defp error_key(error),
-    do: {error.source, without_line(Map.get(error, :origin)), normalize_message(error.message)}
-
-  # "lib/app.ex:10: App.list/0" -> "lib/app.ex: App.list/0"
-  defp without_line(origin) when is_binary(origin),
-    do: Regex.replace(~r/\A(.*?):\d+: /, origin, "\\1: ")
-
-  defp without_line(origin), do: origin
-
-  # The first line, with pids, references, ports and numbers made equal.
-  defp normalize_message(message) when is_binary(message) do
-    message
-    |> String.split("\n", parts: 2)
-    |> hd()
-    |> String.replace(~r/#(PID|Reference|Port)<[^>]*>/, "#\\1")
-    |> String.replace(~r/\d+/, "N")
-  end
-
-  defp normalize_message(message), do: inspect(message, limit: 5)
-
-  # Distinct keys only, each with its number of occurrences (`count` on errors).
-  defp group(items, key) do
-    counts = Enum.frequencies_by(items, key)
-    items |> Enum.uniq_by(key) |> Enum.map(&{key.(&1), &1, Map.fetch!(counts, key.(&1))})
-  end
-
-  defp diff(before, after_, key) do
-    before_groups = group(before, key)
-    after_groups = group(after_, key)
-    before_keys = MapSet.new(before_groups, &elem(&1, 0))
-    after_keys = MapSet.new(after_groups, &elem(&1, 0))
-
-    {for({k, item, n} <- before_groups, k not in after_keys, do: counted(item, n)),
-     for({k, item, n} <- after_groups, k not in before_keys, do: counted(item, n)),
-     MapSet.size(MapSet.intersection(before_keys, after_keys))}
-  end
-
-  # N+1 groups carry their own `count`; errors get the number of occurrences.
-  defp counted(%{callbacks: _} = group, _n), do: group
-  defp counted(error, n), do: Map.put(error, :count, n)
-
-  defp with_totals(fixed, new, still) do
-    %{
-      fixed: Enum.take(fixed, @compare_cap),
-      fixed_total: length(fixed),
-      new: Enum.take(new, @compare_cap),
-      new_total: length(new),
-      still: still
-    }
-  end
 
   @doc """
   Every query of `target`, oldest first.

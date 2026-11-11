@@ -6,6 +6,7 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
 
   alias PhoenixDevToolbar.Mcp.Json
   alias PhoenixDevToolbar.Mcp.Tools
+  alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
 
   @opts [base_url: "http://localhost:4000/__pdt"]
@@ -101,9 +102,18 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       assert %{"pages" => [%{"sid" => sid}]} = call!("list_pages", %{"since" => iso})
       assert sid == c.sid
 
-      msg = call_error("list_pages", %{"since" => "unknown-sid"})
+      # A 16-char sid (Session.new_sid/0 shape) that is gone.
+      gone = Session.new_sid()
+      msg = call_error("list_pages", %{"since" => gone})
       assert msg =~ "no longer captured" and msg =~ "started_at" and msg =~ "ISO 8601"
-      assert call_error("list_pages", %{"since" => "2026-11-11"}) =~ "no longer captured"
+      assert call_error("recent_errors", %{"since" => gone}) =~ "no longer captured"
+
+      # Anything else is not a sid at all.
+      for value <- ["yesterday", "unknown-sid", "2026-11-11"] do
+        msg = call_error("list_pages", %{"since" => value})
+        assert msg =~ "not a captured page sid or an ISO 8601 time"
+        refute msg =~ "no longer captured"
+      end
     end
 
     test "an invalid since is a tool error saying what is accepted" do
@@ -513,6 +523,10 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
 
       assert call_error("compare_pages", %{}) =~ "before"
       assert call_error("compare_pages", %{"before" => "gone"}) =~ "before"
+
+      assert call_error("compare_pages", %{"before" => "gone"}) =~
+               "Reload the page, then call page_summary for a new sid"
+
       assert call_error("compare_pages", %{"before" => "bad sid!"}) =~ "before"
       assert call_error("compare_pages", %{"before" => 5}) =~ "before"
       assert call_error("compare_pages", %{"before" => before.sid, "after" => "gone"}) =~ "after"

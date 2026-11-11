@@ -15,8 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Report.markdown and MCP page_report: a page as Markdown (ADR 13, 15)
 - Panel Copy as Markdown (ADR 04, 13)
 - MCP page_assigns_shape: assign sizes without values (ADR 07, 15)
-- Release bump also updates the install snippets of README.md and guides/agent-setup.md (ADR 06)
 - MCP prompt audit_page (ADR 15)
+- Compare lost-event warning, Markdown sections, clearer `since` and `before` errors (ADR 13, 15)
+- Release bump also updates the install snippets of README.md and guides/agent-setup.md (ADR 06)
 
 ## [0.0.3] - 2026-11-11
 

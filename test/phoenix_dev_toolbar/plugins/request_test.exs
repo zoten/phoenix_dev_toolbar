@@ -58,6 +58,23 @@ defmodule PhoenixDevToolbar.Plugins.RequestTest do
            }
   end
 
+  test "a LiveView route without an action names the view alone", %{sid: sid} do
+    in_process(fn ->
+      Attribution.track(sid)
+
+      conn =
+        :get
+        |> conn("/demo")
+        |> Plug.Conn.put_private(:phoenix_endpoint, DemoWeb.Endpoint)
+        |> init_test_session(%{})
+
+      DemoWeb.Router.call(conn, DemoWeb.Router.init([]))
+    end)
+
+    assert [%Event{plugin: :request, kind: :dispatch, data: %{handler: "DemoWeb.PageLive"}}] =
+             Store.events(sid)
+  end
+
   test "keeps huge plug options and thrown terms bounded", %{sid: sid} do
     dispatch(sid, :get, "/big-opts")
     {_pid, {:raised, _}} = dispatch(sid, :get, "/throw")

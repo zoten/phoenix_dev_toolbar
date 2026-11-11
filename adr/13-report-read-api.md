@@ -114,6 +114,9 @@ Store, built for IEx and agents:
   mount (`list_pages` drops mounts).
 - `recent_errors` copies every captured event of up to 50 sessions per call (bounded, on demand).
 - `compare` `still` is a count only: an N+1 group dropping from 50 repetitions to 10 shows as still.
+- Timings differ between two captures of the same page (cache, JIT, load): `compare` deltas of `total_us` are indicative, counts are exact.
+- `recent_errors` has no path filter: filter the result by `path`.
+- A raw Repo query failure in `recent_errors` has no callback context (the source is `:ecto`, no view or callback).
 - In the Markdown a dead render's and a connected mount's `mount` and `handle_params` rows look alike (same view and callback): the report does not say which session ran them.
 - `compare` reads at most 50 N+1 groups per side (summary cap): a larger set can yield false fixed or new.
 - Assigns snapshots, client `phx:*` events and the component tree are not exposed.

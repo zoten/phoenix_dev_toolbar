@@ -114,6 +114,9 @@ defmodule PhoenixDevToolbar.Plugins.Request do
   # Everything below runs in the host's request process: bounded inspects only.
 
   # LiveView routes dispatch to Phoenix.LiveView.Plug: show the view instead.
+  defp handler(%{phoenix_live_view: {view, nil, _opts, _live_session}}),
+    do: Truncate.inspect_value(view)
+
   defp handler(%{phoenix_live_view: {view, action, _opts, _live_session}}),
     do: Truncate.inspect_value(view) <> " " <> Truncate.inspect_value(action)
 

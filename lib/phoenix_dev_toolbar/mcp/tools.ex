@@ -13,6 +13,8 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   @type opts :: [base_url: String.t(), assigns_timeout: pos_integer()]
 
   @max_path 2048
+  # What `Session.new_sid/0` makes (12 random bytes, URL-safe Base64).
+  @captured_sid_shape ~r/\A[A-Za-z0-9_-]{16}\z/
 
   @sid_prop %{
     "type" => "string",
@@ -404,7 +406,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       _unusable ->
         {:error,
          "#{key}: no captured page with that sid (sessions are capped and expire after 10 minutes). " <>
-           "Capture the page again with page_summary."}
+           "Reload the page, then call page_summary for a new sid."}
     end
   end
 
@@ -470,7 +472,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   defp parse_timestamp(value) do
     case DateTime.from_iso8601(value) do
       {:ok, datetime, _offset} -> {:ok, since: datetime}
-      {:error, _reason} -> {:error, since_message(PageLookup.valid_sid?(value))}
+      {:error, _reason} -> {:error, since_message(Regex.match?(@captured_sid_shape, value))}
     end
   end
 
@@ -482,8 +484,8 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
 
   defp since_message(false),
     do:
-      "since must be a captured page sid (from list_pages) or an ISO 8601 timestamp " <>
-        "such as 2026-11-11T10:00:00Z."
+      "since: that is not a captured page sid or an ISO 8601 time. Pass a sid from " <>
+        "list_pages or a timestamp such as 2026-11-11T10:00:00Z."
 
   defp exclusive(path, prefix) when is_binary(path) and is_binary(prefix),
     do: {:error, "Use path or path_prefix, not both."}

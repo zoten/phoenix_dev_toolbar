@@ -74,7 +74,10 @@ body.pdt {
 /* One row tall: badges that do not fit wrap out of sight and are counted by
    #pdt-summary-more. Open, the header grows to show them all. */
 .pdt-summary { display: flex; flex-wrap: wrap; gap: 6px; min-inline-size: 0; block-size: 20px; overflow: hidden; }
-.pdt-open .pdt-header { block-size: auto; min-block-size: 34px; padding-block: 7px; }
+/* Open on a narrow viewport (about 600px bottom dock) the tabs, Copy as Markdown and
+   the dock controls no longer fit one row: they wrap to the next row instead of
+   being pushed off screen. */
+.pdt-open .pdt-header { block-size: auto; min-block-size: 34px; padding-block: 7px; flex-wrap: wrap; row-gap: 6px; }
 .pdt-open .pdt-summary { block-size: auto; }
 .pdt-summary-more { flex: none; }
 .pdt-summary-more[hidden] { display: none; }

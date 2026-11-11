@@ -6,6 +6,7 @@ defmodule PhoenixDevToolbar.ReportTest do
   import PhoenixDevToolbar.ReportFixtures
 
   alias PhoenixDevToolbar.Report
+  alias PhoenixDevToolbar.Report.Markdown
   alias PhoenixDevToolbar.Store
 
   setup do
@@ -600,6 +601,35 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert md =~ "RuntimeError"
     end
 
+    test "callback and render totals have their own section, singular and plural" do
+      s = session(:live_view, path: "/one", view: DemoWeb.PageLive)
+      query(s, sql: "SELECT 1")
+      callback(s, :mount, span: 2)
+      md = Report.markdown(s.sid)
+
+      assert md =~ "## Queries\n\n1 query, "
+      assert md =~ "## Callbacks and renders\n\n1 callback, "
+      refute md =~ "queries, "
+
+      many = session(:request, path: "/many")
+      query(many, sql: "SELECT 1")
+      query(many, sql: "SELECT 2")
+      assert Report.markdown(many.sid) =~ "2 queries, "
+    end
+
+    test "the callbacks table drops the Origin column when no row has one" do
+      s = session(:live_view, path: "/x", view: DemoWeb.PageLive)
+      callback(s, :mount, span: 1)
+      refute Report.markdown(s.sid) =~ "Origin |\n| ---"
+      assert Report.markdown(s.sid) =~ "| Callback | Time | Queries |\n"
+
+      # A row with an origin brings the column back.
+      summary = Report.summary(s.sid, verbose: true)
+      [row] = summary.callbacks.slowest
+      summary = put_in(summary.callbacks.slowest, [%{row | origin: "lib/a.ex:1: A.a/0"}])
+      assert Markdown.render(summary) =~ "| Callback | Time | Queries | Origin |"
+    end
+
     test "omits empty sections" do
       s = session(:request, path: "/empty")
       md = Report.markdown(s.sid)
@@ -826,6 +856,38 @@ defmodule PhoenixDevToolbar.ReportTest do
 
       assert %{errors: %{fixed: [%{count: 2}], fixed_total: 1, new: [], new_total: 0}} =
                Report.compare(before.sid, gone.sid)
+    end
+
+    test "each side reports lost events and a warning says so" do
+      clean = page("/posts", @t0, fn s -> query(s, us: 10) end)
+      assert %{before: %{dropped: 0, trimmed: 0}} = c = Report.compare(clean.sid, clean.sid)
+      refute Map.has_key?(c, :warning)
+
+      Store.put_limits(max_events: 1)
+      lossy = page("/posts", @t0 + 5, fn s -> for _ <- 1..3, do: query(s, us: 10) end)
+      _ = :sys.get_state(Store)
+
+      assert %{before: %{dropped: 0, trimmed: 0}, after: %{trimmed: trimmed}, warning: warning} =
+               Report.compare(clean.sid, lossy.sid)
+
+      assert trimmed > 0
+      assert warning =~ "lost to the caps"
+    end
+
+    test "verbose is not passed on to the two summaries" do
+      before =
+        page("/posts", @t0, fn s ->
+          callback(s, :handle_event,
+            error: "** (RuntimeError) boom",
+            stacktrace: [],
+            stack_args: []
+          )
+        end)
+
+      after_ = page("/posts", @t0 + 5, fn _s -> :ok end)
+
+      assert Report.compare(before.sid, after_.sid, verbose: true, threshold: false) ==
+               Report.compare(before.sid, after_.sid, threshold: false)
     end
 
     test "fixed and new lists are capped, their totals are not" do

@@ -53,11 +53,18 @@ defmodule PhoenixDevToolbar.Report.Markdown do
     """
     ## Queries
 
-    #{queries.count} queries#{failed}, #{ms(queries.total_us) || "0 ms"}. \
-    Callbacks: #{summary.callbacks.count}, #{ms(summary.callbacks.total_us) || "0 ms"}. \
-    Renders: #{summary.renders.count}.\
+    #{count(queries.count, "query", "queries")}#{failed}, #{ms(queries.total_us) || "0 ms"}.
+
+    ## Callbacks and renders
+
+    #{count(summary.callbacks.count, "callback", "callbacks")}, \
+    #{ms(summary.callbacks.total_us) || "0 ms"}. \
+    #{count(summary.renders.count, "render", "renders")}.\
     """
   end
+
+  defp count(1, singular, _plural), do: "1 #{singular}"
+  defp count(n, _singular, plural), do: "#{n} #{plural}"
 
   defp n_plus_one([]), do: nil
 
@@ -88,17 +95,17 @@ defmodule PhoenixDevToolbar.Report.Markdown do
   defp slowest_callbacks([]), do: nil
 
   defp slowest_callbacks(callbacks) do
+    # Only inferred callbacks have an origin: the column is noise without one.
+    origin? = Enum.any?(callbacks, & &1.origin)
+
     rows =
       for c <- callbacks do
-        [
-          code(callback_name(c)),
-          ms(c.duration_us),
-          c.queries,
-          code(c.origin)
-        ]
+        [code(callback_name(c)), ms(c.duration_us), c.queries] ++
+          if(origin?, do: [code(c.origin)], else: [])
       end
 
-    table("## Slowest callbacks", ["Callback", "Time", "Queries", "Origin"], rows)
+    headers = ["Callback", "Time", "Queries"] ++ if(origin?, do: ["Origin"], else: [])
+    table("## Slowest callbacks", headers, rows)
   end
 
   defp callback_name(c) do
@@ -114,7 +121,7 @@ defmodule PhoenixDevToolbar.Report.Markdown do
     rows = for o <- origins, do: [code(o.origin), o.count, ms(o.total_us)]
 
     table(
-      "## Unattributed queries\n\n#{un.count} queries in no callback (usually handle_info or PubSub).",
+      "## Unattributed queries\n\n#{count(un.count, "query", "queries")} in no callback (usually handle_info or PubSub).",
       ["Origin", "Count", "Time"],
       rows
     )
