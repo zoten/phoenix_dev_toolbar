@@ -11,8 +11,7 @@ defmodule Mix.Tasks.Bump do
 
   Steps, stopping at the first failure:
 
-    1. Checks: on `main`, a clean tree, nothing on `origin/main` missing here,
-       `PDT_LIVE_VIEW` unset (mix.exs would publish its LiveView requirement)
+    1. Checks: on `main`, a clean tree, nothing on `origin/main` missing here
     2. `mix precommit`, then `agent-tools/ci-min.sh` (the minimum CI row in Docker),
        and the tree still clean after them
     3. The version: when its `<version>` tag does not exist yet it is released as
@@ -81,7 +80,6 @@ defmodule Mix.Tasks.Bump do
     end
 
     check_clean!(true, "")
-    check_env!(System.get_env("PDT_LIVE_VIEW", ""))
     _ = git!(["fetch", "--quiet", "--tags", "origin", "main"])
 
     case System.cmd("git", ["merge-base", "--is-ancestor", "origin/main", "HEAD"]) do
@@ -89,11 +87,6 @@ defmodule Mix.Tasks.Bump do
       _behind -> Mix.raise("origin/main has commits missing here: pull first")
     end
   end
-
-  defp check_env!(""), do: :ok
-
-  defp check_env!(value),
-    do: Mix.raise("Unset PDT_LIVE_VIEW (#{inspect(value)}): mix.exs would ship that requirement")
 
   defp check_clean!(false, _when), do: :ok
 

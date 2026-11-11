@@ -77,8 +77,9 @@ correctness and boundedness need tests, not just eyeballing.
   adds `:unmatched_returns`, `:error_handling`, `:extra_return` and `:missing_return`.
   `.dialyzer_ignore.exs` lists only the test fixtures that raise on purpose, by file and
   warning type, and an unused entry fails the run. CI runs two rows: the minimum supported
-  stack (Elixir 1.17 / OTP 26 / LiveView `~> 1.1.0`, through the `PDT_LIVE_VIEW`
-  override read by `mix.exs`) runs compile and tests with warnings as errors; the latest
+  stack (Elixir 1.17 / OTP 26 / LiveView `~> 1.1.0`, pinned by
+  `agent-tools/pin-live-view.sh` in the CI checkout, so the shipped `mix.exs` reads no
+  environment) runs compile and tests with warnings as errors; the latest
   (Elixir 1.20 / OTP 29 / the locked LiveView) also runs format, unused deps, Credo,
   Dialyzer, ExDoc, the fixture host app and the built assets check. The minimum row is
   what covers `PhoenixDevToolbar.LiveViewCompat` on LiveView 1.1. `agent-tools/ci-min.sh`

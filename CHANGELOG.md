@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Shipped `mix.exs` no longer reads `PDT_LIVE_VIEW`: CI pins LiveView in its checkout (ADR 06)
+
 ## [0.0.2] - 2026-11-11
 
 - DOM-level JS tests for `loader.js` and `panel.js` wiring and postMessage origin gate (ADR 06)

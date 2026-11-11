@@ -27,7 +27,6 @@ cd "$(git rev-parse --show-toplevel)"
 
 [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || fail "not on main."
 [ -z "$(git status --porcelain)" ] || fail "the working tree is not clean."
-[ -z "${PDT_LIVE_VIEW:-}" ] || fail "unset PDT_LIVE_VIEW: mix.exs would publish that LiveView requirement."
 
 version="$(sed -n 's/^  @version "\(.*\)"$/\1/p' mix.exs)"
 [ -n "$version" ] || fail "no @version in mix.exs."

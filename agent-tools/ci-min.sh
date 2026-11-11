@@ -44,6 +44,7 @@ files | tar --null -T - -cf - | docker run --rm -i \
     mix local.hex --force --if-missing >/dev/null
     mix local.rebar --force --if-missing >/dev/null
     elixir --version | tail -1
+    sh agent-tools/pin-live-view.sh "$PDT_LIVE_VIEW"
     mix deps.update phoenix_live_view
     mix deps.get
     mix compile --warnings-as-errors

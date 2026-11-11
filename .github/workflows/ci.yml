@@ -14,8 +14,6 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       MIX_ENV: test
-      # Read by mix.exs: overrides the LiveView requirement (empty = published one).
-      PDT_LIVE_VIEW: ${{ matrix.live_view }}
       # Read by test_helper.exs: runs the Postgres EXPLAIN tests (ADR 08).
       PDT_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
     services:
@@ -58,9 +56,13 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ matrix.live_view || 'locked' }}-${{ hashFiles('mix.lock') }}
       - run: mix deps.get
         if: ${{ !matrix.live_view }}
-      # Resolves the overridden requirement (the lockfile pins the latest LiveView),
-      # then fetches the rest: deps.update alone only fetches LiveView (a cold cache).
-      - run: mix deps.update phoenix_live_view && mix deps.get
+      # Pins the row's requirement in this checkout's mix.exs, resolves it (the
+      # lockfile pins the latest LiveView), then fetches the rest: deps.update alone
+      # only fetches LiveView (a cold cache).
+      - run: |
+          agent-tools/pin-live-view.sh "${{ matrix.live_view }}"
+          mix deps.update phoenix_live_view
+          mix deps.get
         if: ${{ matrix.live_view }}
       - run: mix compile --warnings-as-errors
       - run: mix test --warnings-as-errors
@@ -82,7 +84,7 @@ jobs:
         run: mix docs --warnings-as-errors
       # The README install must compile where the dependency does not exist (ADR 01).
       # Latest row only: the fixture's lockfile pins the latest LiveView, which the
-      # minimum row's PDT_LIVE_VIEW override would conflict with.
+      # minimum row's pinned requirement would conflict with.
       - name: Fixture host app compiles in prod and dev
         if: matrix.lint
         working-directory: fixtures/host_app
