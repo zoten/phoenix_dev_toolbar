@@ -16,6 +16,19 @@ defmodule PhoenixDevToolbar.NPlusOneTest do
     }
   end
 
+  test "a task query without frames is keyed and attributed by its initial call" do
+    event = fn seq ->
+      %{
+        query("SELECT u", seq: seq, stacktrace: [])
+        | data: %{sql: "SELECT u", stacktrace: [], initial_call: "App.run/0"}
+      }
+    end
+
+    {_results, state} = fold(NPlusOne.new(2), [event.(1), event.(2)])
+
+    assert [%{origin: "App.run/0", count: 2}] = NPlusOne.groups(state)
+  end
+
   defp fold(state, events) do
     Enum.map_reduce(events, state, fn event, state ->
       {state, result} = NPlusOne.add(state, event)

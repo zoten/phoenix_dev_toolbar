@@ -60,6 +60,7 @@ defmodule PhoenixDevToolbar.Report do
     :callback,
     :event,
     :inferred,
+    :origin,
     :duration_us,
     :queries,
     :query_us,
@@ -128,9 +129,13 @@ defmodule PhoenixDevToolbar.Report do
 
   LiveView emits no telemetry for `handle_info`, so `inferred: true` entries
   stand for it: the queries of a LiveView span no callback owns, split where two
-  consecutive queries are more than 100 ms apart. They have no duration, event,
-  params or changes. Several `handle_info` within 100 ms in one span merge into
-  one entry; one that runs no query is invisible.
+  consecutive queries are more than 100 ms apart. Queries run by the LiveView
+  process are `callback: :handle_info` (also PubSub reloads); queries run by a
+  task (`assign_async`, `start_async`, `Task.start`) are `callback: :async`.
+  They have no duration, event, params or changes, and `origin` is the origin
+  of the first query (see `t:query/0`; nil on real callbacks). Several
+  `handle_info` within 100 ms in one span merge into one entry; one that runs no
+  query is invisible.
   """
   @type callback :: %{
           inferred: boolean(),
@@ -144,6 +149,7 @@ defmodule PhoenixDevToolbar.Report do
           component: module() | nil,
           id: String.t() | nil,
           event: String.t() | nil,
+          origin: String.t() | nil,
           params: String.t() | nil,
           changes: PhoenixDevToolbar.Truncate.changes() | nil,
           queries: non_neg_integer(),
@@ -163,13 +169,14 @@ defmodule PhoenixDevToolbar.Report do
           sids: [sid()]
         }
 
-  @typedoc "A failure: a request exception, a failed callback or render, a failed query. Request, LiveView and Ecto errors carry a formatted stacktrace (LiveView: host frames first, ADR 07)."
+  @typedoc "A failure: a request exception, a failed callback or render, a failed query. Request, LiveView and Ecto errors carry a formatted stacktrace in call order (LiveView: cut after the last host frame plus one, ADR 07)."
   @type error :: %{
           sid: sid(),
           seq: pos_integer(),
           at: DateTime.t(),
           source: :request | :live_view | :ecto,
           message: String.t(),
+          origin: String.t() | nil,
           stacktrace: [String.t()]
         }
 
@@ -194,13 +201,14 @@ defmodule PhoenixDevToolbar.Report do
           callback: atom(),
           event: String.t() | nil,
           inferred: boolean(),
+          origin: String.t() | nil,
           duration_us: non_neg_integer() | nil,
           queries: non_neg_integer(),
           query_us: non_neg_integer(),
           error: String.t() | nil
         }
 
-  @typedoc "An `t:error/0` with its first stacktrace frame as `origin` (nil when there is none)."
+  @typedoc "An `t:error/0` with its `origin` (its first host frame, else its first frame; nil when there is none)."
   @type error_brief :: %{
           seq: pos_integer(),
           sid: sid(),
@@ -295,7 +303,8 @@ defmodule PhoenixDevToolbar.Report do
         nil
 
       {[first | _] = sessions, events} ->
-        queries = queries_of(events, sessions, threshold(opts))
+        owners = owners(events, sessions)
+        queries = queries_of(events, owners, threshold(opts))
         callbacks = callbacks_of(events)
         orphans = orphans_of(events, sessions)
         renders = for %Event{plugin: :live_view, kind: :render} = event <- events, do: event
@@ -312,7 +321,7 @@ defmodule PhoenixDevToolbar.Report do
             slowest: queries |> slowest() |> Enum.map(&brief.(&1, @query_brief))
           },
           n_plus_one: n_plus_one_of(events, threshold(opts)),
-          unattributed: unattributed(orphans),
+          unattributed: unattributed(orphans, owners),
           callbacks: %{
             count: length(callbacks),
             total_us: total(callbacks),
@@ -333,7 +342,7 @@ defmodule PhoenixDevToolbar.Report do
   @spec queries(target(), keyword()) :: [query()]
   def queries(target, opts \\ []) do
     {sessions, events} = read(target, opts)
-    queries_of(events, sessions, threshold(opts))
+    queries_of(events, owners(events, sessions), threshold(opts))
   end
 
   @doc """
@@ -460,9 +469,8 @@ defmodule PhoenixDevToolbar.Report do
     }
   end
 
-  defp queries_of(events, sessions, threshold) do
+  defp queries_of(events, owners, threshold) do
     flagged = flagged(events, threshold)
-    owners = owners(events, sessions)
 
     for %Event{plugin: :ecto, kind: :query, data: data} = event <- events do
       %{
@@ -528,6 +536,7 @@ defmodule PhoenixDevToolbar.Report do
         component: data[:component],
         id: data[:id],
         inferred: false,
+        origin: nil,
         event: data[:event],
         params: data[:params],
         changes: data[:changes],
@@ -554,10 +563,10 @@ defmodule PhoenixDevToolbar.Report do
         do: event
   end
 
-  defp unattributed(orphans) do
+  defp unattributed(orphans, owners) do
     origins =
       orphans
-      |> Enum.group_by(&origin(&1, %{}))
+      |> Enum.group_by(&origin(&1, owners))
       |> Enum.map(fn {origin, queries} ->
         %{origin: origin, count: length(queries), total_us: total(queries)}
       end)
@@ -601,20 +610,24 @@ defmodule PhoenixDevToolbar.Report do
   # One `handle_info` stand-in per burst of orphan queries (a span, split on gaps).
   defp inferred_of(events, sessions) do
     views = Map.new(sessions, &{&1.sid, &1.view})
+    owners = owners(events, sessions)
 
     events
     |> orphans_of(sessions)
-    |> Enum.group_by(&{&1.sid, &1.span})
-    |> Enum.flat_map(fn {_key, queries} -> bursts(queries) end)
-    |> Enum.map(fn [first | _] = burst ->
+    |> Enum.group_by(&{&1.sid, &1.span, &1.data[:caller?] == true})
+    |> Enum.flat_map(fn {{_sid, _span, caller?}, queries} ->
+      queries |> bursts() |> Enum.map(&{caller?, &1})
+    end)
+    |> Enum.map(fn {caller?, [first | _] = burst} ->
       %{
         sid: first.sid,
         seq: first.seq,
         span: first.span,
         at: datetime(first.at),
         duration_us: nil,
-        callback: :handle_info,
+        callback: inferred_callback(caller?),
         inferred: true,
+        origin: origin(first, owners),
         view: views[first.sid],
         component: nil,
         id: nil,
@@ -627,6 +640,11 @@ defmodule PhoenixDevToolbar.Report do
       }
     end)
   end
+
+  # Queries of a task (`start_async`, `assign_async`, `Task.start`) come from
+  # the caller's pid, the others from the LiveView process (`handle_info`).
+  defp inferred_callback(true), do: :async
+  defp inferred_callback(false), do: :handle_info
 
   defp bursts(queries) do
     queries
@@ -711,7 +729,8 @@ defmodule PhoenixDevToolbar.Report do
       at: datetime(event.at),
       source: source,
       message: to_string(message),
-      stacktrace: stacktrace || []
+      stacktrace: stacktrace || [],
+      origin: event.data[:origin] || List.first(stacktrace || [])
     }
   end
 
@@ -727,7 +746,7 @@ defmodule PhoenixDevToolbar.Report do
 
   defp maybe_origin(%{stacktrace: _} = full, _error), do: full
 
-  defp maybe_origin(item, error), do: Map.put(item, :origin, List.first(error.stacktrace))
+  defp maybe_origin(item, error), do: Map.put(item, :origin, error.origin)
 
   defp slowest(items) do
     items |> Enum.sort_by(&(&1.duration_us || 0), :desc) |> Enum.take(@slowest)

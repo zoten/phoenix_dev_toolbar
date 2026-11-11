@@ -83,11 +83,15 @@ navigation.
 
 - **Crashes**: a callback or render that raises stores its banner (`error`) and
   its `stacktrace`: formatted frames without the toolbar's and `:telemetry`'s,
-  cut after the last frame of the host's own applications plus the one after it,
-  at most 10. The host's applications (the Mix project's `:app`, an umbrella's
-  `apps_paths`) are resolved once at `Collector.attach/1` into a
-  `:persistent_term`, never in a handler; when unknown (no Mix) or when no host
-  frame is present, the first 10 frames are kept. Successes store `[]`.
+  in call order, cut after the last host frame plus the one after it, at most 10.
+  A frame is a host frame when its module's source file (`module_info(:compile)`)
+  lies under a host source root, so modules created and code-reloaded during the
+  session count. The roots (the Mix project directory, an umbrella's app
+  directories, never the deps path; from an umbrella child's directory only that
+  child counts) are resolved once at `Collector.attach/1` into a `:persistent_term`,
+  never in a handler. `origin` is the first host frame. When the roots are unknown
+  (no Mix) or no host frame is present, the first 10 frames are kept and `origin`
+  is the first frame. Successes store `[]`.
 
 ## Consequences
 

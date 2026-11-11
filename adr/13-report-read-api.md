@@ -26,7 +26,7 @@ Store, built for IEx and agents:
   5 slowest, render totals, errors, and the events lost to the caps. The slowest
   queries, slowest callbacks and errors are briefs by default (no SQL, params,
   assigns changes, times or stacktrace; an error keeps its first frame as
-  `origin`; LiveView crashes carry their stacktrace, host frames first, ADR 07): `verbose: true` returns the full items, `queries/2`, `callbacks/2`
+  `origin`; LiveView crashes carry their stacktrace in call order, cut after the last host frame plus one, and `origin` is their first host frame, ADR 07): `verbose: true` returns the full items, `queries/2`, `callbacks/2`
   and `errors/2` the detail.
 - A query's `origin` (queries, briefs, `unattributed.origins`) is the first stacktrace
   frame, else the task function (`initial_call`), else `task in View.callback "event"`
@@ -34,10 +34,12 @@ Store, built for IEx and agents:
   `queries/2`, `callbacks/2`, `n_plus_one/2` and `errors/2` return the full lists.
 - LiveView emits no telemetry for `handle_info`, so a query of a `:live_view`
   session whose `{sid, span}` no `:callback` or `:render` event owns is
-  unattributed (usually `handle_info` or a PubSub reload). `summary/2` reports
+  unattributed (`handle_info`, a PubSub reload, or a task). `summary/2` reports
   `unattributed: %{count, total_us, origins}` (top 5 origins by time; compact
-  and verbose alike), and `callbacks/2` adds inferred entries (`callback:
-  :handle_info`, `inferred: true`, no duration): one per `{sid, span}`, split
+  and verbose alike), and `callbacks/2` adds inferred entries (`inferred: true`, no duration, `origin` of
+  their first query): one per `{sid, span}` and source, `callback: :handle_info`
+  for queries run by the LiveView process, `callback: :async` for task queries
+  (`assign_async`, `start_async`, `Task.start`, those with `caller?`), split
   where two consecutive queries are more than 100 ms apart. Limit: several
   `handle_info` within 100 ms in one span merge into one entry, and a
   `handle_info` that runs no query is invisible. `summary.callbacks` counts and

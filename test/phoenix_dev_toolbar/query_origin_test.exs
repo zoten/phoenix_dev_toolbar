@@ -43,6 +43,9 @@ defmodule PhoenixDevToolbar.QueryOriginTest do
 
     query = query(sid, "2")
     assert_not_plumbing(query.origin)
-    assert query.origin =~ "DemoWeb.PageLive" or query.origin =~ "task in DemoWeb.PageLive"
+    assert query.origin == "task in DemoWeb.PageLive"
+
+    assert [%{origin: origin}] = Report.summary(sid).unattributed.origins
+    assert origin == query.origin
   end
 end

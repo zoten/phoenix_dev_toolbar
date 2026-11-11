@@ -39,30 +39,71 @@ defmodule PhoenixDevToolbar.Collector do
 
   @plugins_key {Collector, :plugins}
   @configs_key {Collector, :configs}
-  @host_apps_key {Collector, :host_apps}
+  @host_roots_key {Collector, :host_roots}
 
   @doc """
-  The host's own applications (ADR 07), resolved once at `attach/1` so that
-  handlers never call `Mix`: the Mix project's app plus an umbrella's apps.
-  `nil` when unknown (no Mix project loaded).
+  Whether `module` is the host's own code (ADR 07): its source file lies under
+  a host source root (`attach/1` resolves them) and not under the deps path.
+  Based on `module_info(:compile)[:source]`, so a module created and
+  code-reloaded during the session counts, unlike an application's module list.
+  False for an unloaded module or when the roots are unknown. Reads the module
+  attributes: for the exception path only, never for a regular handler.
   """
-  @spec host_apps() :: [atom()] | nil
-  def host_apps, do: :persistent_term.get(@host_apps_key, nil)
-
-  defp resolve_host_apps do
-    case Code.ensure_loaded?(Mix.Project) and Mix.Project.get() do
-      mix when is_atom(mix) and mix not in [nil, false] -> mix_apps(Mix.Project.config())
-      _none -> nil
+  @spec host_module?(term()) :: boolean()
+  def host_module?(module) when is_atom(module) do
+    case :persistent_term.get(@host_roots_key, nil) do
+      {roots, deps} -> host_source?(module_source(module), roots, deps)
+      nil -> false
     end
   end
 
-  defp mix_apps(config) do
-    umbrella = config |> Keyword.get(:apps_paths, %{}) |> Map.keys()
+  def host_module?(_other), do: false
 
-    case Enum.filter([config[:app] | umbrella], &is_atom/1) |> Enum.reject(&is_nil/1) do
-      [] -> nil
-      apps -> apps
+  defp module_source(module) do
+    case function_exported?(module, :module_info, 1) do
+      true -> Keyword.get(module.module_info(:compile), :source)
+      false -> nil
     end
+  rescue
+    _ -> nil
+  catch
+    _, _ -> nil
+  end
+
+  defp host_source?(source, roots, deps) when is_list(source) or is_binary(source) do
+    source = source |> to_string() |> Path.expand()
+    not under?(source, deps) and Enum.any?(roots, &under?(source, &1))
+  end
+
+  defp host_source?(_source, _roots, _deps), do: false
+
+  defp under?(path, root), do: String.starts_with?(path, root <> "/")
+
+  # The Mix project's directory, or an umbrella's app directories. From an
+  # umbrella child's directory only that child counts. `nil` when no Mix
+  # project is loaded.
+  defp resolve_host_roots do
+    case Code.ensure_loaded?(Mix.Project) and Mix.Project.get() do
+      mix when is_atom(mix) and mix not in [nil, false] -> mix_roots()
+      _none -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp mix_roots do
+    base = Mix.Project.project_file() |> Path.dirname()
+
+    roots =
+      case Mix.Project.config()[:apps_paths] do
+        paths when is_map(paths) and map_size(paths) > 0 ->
+          for {_app, path} <- paths, do: Path.expand(path, base)
+
+        _none ->
+          [Path.expand(base)]
+      end
+
+    {roots, Path.expand(Mix.Project.deps_path(), base)}
   end
 
   @doc """
@@ -73,7 +114,7 @@ defmodule PhoenixDevToolbar.Collector do
   @spec attach([Config.entry() | module()]) :: :ok
   def attach(plugins) do
     detach()
-    :persistent_term.put(@host_apps_key, resolve_host_apps())
+    :persistent_term.put(@host_roots_key, resolve_host_roots())
 
     attached = Enum.flat_map(plugins, &attachable/1)
     configs = Enum.map(attached, fn {plugin, _id, config, _events} -> {plugin, config} end)

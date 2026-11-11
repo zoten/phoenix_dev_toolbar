@@ -53,7 +53,7 @@ defmodule PhoenixDevToolbar.TruncateTest do
   describe "exception_stacktrace/2" do
     defp frame(module, n), do: {module, :fun, n, [file: ~c"lib/f.ex", line: n]}
 
-    test "keeps frames up to the last app frame plus the one after it" do
+    test "keeps frames up to the last host frame plus the one after it" do
       frames = [
         frame(MyApp.Page, 1),
         frame(Phoenix.LiveView.Channel, 2),
@@ -63,7 +63,7 @@ defmodule PhoenixDevToolbar.TruncateTest do
         frame(:gen_server, 6)
       ]
 
-      trimmed = Truncate.exception_stacktrace(frames, [:my_app], &app_of/1)
+      trimmed = Truncate.exception_stacktrace(frames, &host?/1)
 
       # Format adds "(app version) " for loaded dependency modules.
       assert Enum.map(trimmed, &String.replace(&1, ~r/^\(.*?\) /, "")) == [
@@ -78,23 +78,29 @@ defmodule PhoenixDevToolbar.TruncateTest do
       own = [frame(PhoenixDevToolbar.Collector, 0), frame(:telemetry, 0)]
       app = for n <- 1..15, do: frame(MyApp.Page, n)
 
-      frames = Truncate.exception_stacktrace(own ++ app, [:my_app], &app_of/1)
+      frames = Truncate.exception_stacktrace(own ++ app, &host?/1)
 
       assert length(frames) == 10
       assert hd(frames) == "lib/f.ex:1: MyApp.Page.fun/1"
     end
 
-    test "falls back to the first frames without a known app set or app frame" do
+    test "falls back to the first frames without a host predicate or host frame" do
       frames = for n <- 1..12, do: frame(Phoenix.LiveView.Channel, n)
 
-      assert length(Truncate.exception_stacktrace(frames, nil, &app_of/1)) == 10
-      assert length(Truncate.exception_stacktrace(frames, [:my_app], &app_of/1)) == 10
-      assert Truncate.exception_stacktrace(nil, [:my_app], &app_of/1) == []
+      assert length(Truncate.exception_stacktrace(frames, nil)) == 10
+      assert length(Truncate.exception_stacktrace(frames, &host?/1)) == 10
+      assert Truncate.exception_stacktrace(nil, &host?/1) == []
     end
 
-    defp app_of(MyApp.Page), do: {:ok, :my_app}
-    defp app_of(MyApp.Helper), do: {:ok, :my_app}
-    defp app_of(_module), do: :undefined
+    test "the origin is the first host frame, else the first frame" do
+      frames = [frame(Phoenix.LiveView.Channel, 1), frame(MyApp.Page, 2), frame(MyApp.Helper, 3)]
+
+      assert Truncate.exception_origin(frames, &host?/1) =~ "MyApp.Page.fun/2"
+      assert Truncate.exception_origin(frames, nil) =~ "Phoenix.LiveView.Channel.fun/1"
+      assert Truncate.exception_origin(nil, &host?/1) == nil
+    end
+
+    defp host?(module), do: module in [MyApp.Page, MyApp.Helper]
   end
 
   describe "redact/2" do

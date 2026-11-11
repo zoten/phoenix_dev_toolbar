@@ -58,8 +58,9 @@ Check, in this order:
   missing query or N+1 proves nothing.
 - `errors`, `n_plus_one`, `queries.count`, `queries.total_us`,
   `queries.slowest`, `callbacks.slowest`, `unattributed`: queries of a
-  LiveView page no callback owns, usually `handle_info` or PubSub reloads
-  (`callbacks/2` lists them as `inferred: true`, `callback: :handle_info`).
+  LiveView page no callback owns (`callbacks/2` lists them as `inferred: true`:
+  `:handle_info` for queries of the LiveView process, such as PubSub reloads,
+  `:async` for task queries, such as `assign_async` or `start_async`).
   These items are compact (no SQL,
   params or assigns): use `queries/2` and `callbacks/2`, or `summary(page,
   verbose: true)` (`page_summary` with `verbose: true`), for the detail.

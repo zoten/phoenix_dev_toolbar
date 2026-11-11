@@ -151,4 +151,4 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
   modules). `Report` derives `origin` as the first stacktrace frame, else
   `initial_call`, else `task in View.callback "event"` of the callback owning the
   query's `{sid, span}`, else `task in View` (a `start_async` often runs after its
-  callback ended), else nil. N+1 keys stay on the stacktrace frame.
+  callback ended), else nil. The N+1 key and group origin are the stacktrace frame, else `initial_call`.

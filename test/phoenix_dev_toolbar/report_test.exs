@@ -99,6 +99,42 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert origins["view"] == "task in DemoWeb.PageLive"
       assert origins["inline"] == nil
     end
+
+    test "an orphan task query has the same origin in queries, briefs and unattributed" do
+      request = session(:request, path: "/demo")
+      live = session(:live_view, parent: request.sid, path: "/demo", view: DemoWeb.PageLive)
+      callback(live, :handle_event, event: "load", span: 1)
+      query(live, span: 2, caller?: true, stacktrace: [])
+
+      [full] = Report.queries(request.sid)
+      summary = Report.summary(request.sid)
+
+      assert full.origin == "task in DemoWeb.PageLive"
+      assert [%{origin: "task in DemoWeb.PageLive"}] = summary.queries.slowest
+      assert [%{origin: "task in DemoWeb.PageLive", count: 1}] = summary.unattributed.origins
+
+      assert [%{inferred: true, callback: :async, origin: "task in DemoWeb.PageLive"}] =
+               Enum.filter(Report.callbacks(request.sid), & &1.inferred)
+    end
+
+    test "an error brief origin is the first host frame the plugin stored" do
+      s = session(:live_view, path: "/users")
+
+      insert(
+        s,
+        :live_view,
+        :callback,
+        %{
+          view: DemoWeb.PageLive,
+          callback: :mount,
+          error: "** (RuntimeError) x",
+          origin: "lib/h.ex:1: H.f/0",
+          stacktrace: ["(phoenix 1.8) a.ex:1: A.b/0", "lib/h.ex:1: H.f/0"]
+        }
+      )
+
+      assert [%{origin: "lib/h.ex:1: H.f/0"}] = Report.summary(s.sid).errors
+    end
   end
 
   describe "queries/2" do
@@ -218,6 +254,16 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert first.at == DateTime.from_unix!(@t0 + 1_000, :microsecond)
     end
 
+    test "splits inferred entries by source: LiveView process or task" do
+      s = session(:live_view, path: "/users", view: DemoWeb.PageLive)
+      query(s, span: 2, at: @t0 + 1_000, stacktrace: [])
+      query(s, span: 2, at: @t0 + 2_000, caller?: true, stacktrace: [], initial_call: "App.run/0")
+
+      assert [first, second] = Report.callbacks(s.sid)
+      assert %{callback: :handle_info, inferred: true, queries: 1, origin: nil} = first
+      assert %{callback: :async, inferred: true, queries: 1, origin: "App.run/0"} = second
+    end
+
     test "request sessions have no inferred callbacks" do
       s = session(:request, path: "/users")
       query(s, span: 2)
@@ -328,7 +374,7 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert brief.origin == "lib/app.ex:10: App.list/0"
 
       assert Map.keys(cb_brief) |> Enum.sort() ==
-               ~w(callback component duration_us error event inferred queries query_us seq sid view)a
+               ~w(callback component duration_us error event inferred origin queries query_us seq sid view)a
 
       assert Map.keys(err_brief) |> Enum.sort() == ~w(message origin seq sid source)a
       assert err_brief.message == "boom"

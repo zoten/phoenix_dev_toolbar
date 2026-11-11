@@ -134,53 +134,60 @@ defmodule PhoenixDevToolbar.Truncate do
   @doc """
   Formats the stacktrace of a crash: like `stacktrace/2`, then cut after the
   last frame of the host's own code plus the one frame that follows (the
-  framework frames below it say nothing new), at most #{@frames} frames.
+  framework frames below it say nothing new), at most #{@frames} frames. The
+  order is kept.
 
-  `apps` is the host's application set (`Collector.host_apps/0`), `app_of` maps
-  a module to its application (`:application.get_application/1`, an ETS read:
-  fine on the exception path only). With `apps` unknown (`nil`) or no host frame
-  in the stacktrace, the first #{@frames} frames are kept.
+  `host?` tells whether a module is host code (`Collector.host_module?/1`). With
+  `nil` or no host frame in the stacktrace, the first #{@frames} frames are kept.
 
       iex> frames = [{MyApp.A, :f, 0, []}, {Phoenix.Diff, :g, 0, []}, {MyApp.B, :h, 0, []}, {Phoenix.Diff, :i, 0, []}, {:gen_server, :j, 0, []}]
-      iex> app_of = fn module -> if module in [MyApp.A, MyApp.B], do: {:ok, :my_app}, else: :undefined end
-      iex> PhoenixDevToolbar.Truncate.exception_stacktrace(frames, [:my_app], app_of)
+      iex> host? = fn module -> module in [MyApp.A, MyApp.B] end
+      iex> PhoenixDevToolbar.Truncate.exception_stacktrace(frames, host?)
       ["MyApp.A.f/0", "Phoenix.Diff.g/0", "MyApp.B.h/0", "Phoenix.Diff.i/0"]
 
   """
-  @spec exception_stacktrace(
-          Exception.stacktrace() | nil,
-          [atom()] | nil,
-          (module() -> {:ok, atom()} | :undefined)
-        ) :: [String.t()]
-  def exception_stacktrace(frames, apps, app_of \\ &:application.get_application/1)
-  def exception_stacktrace(nil, _apps, _app_of), do: []
+  @spec exception_stacktrace(Exception.stacktrace() | nil, (module() -> boolean()) | nil) ::
+          [String.t()]
+  def exception_stacktrace(nil, _host?), do: []
 
-  def exception_stacktrace(frames, apps, app_of) when is_list(frames) do
-    frames = Enum.reject(frames, &skipped_frame?(&1, @own_frames))
-
+  def exception_stacktrace(frames, host?) when is_list(frames) do
     frames
-    |> cut_after_app(apps, app_of)
+    |> Enum.reject(&skipped_frame?(&1, @own_frames))
+    |> cut_after_host(host?)
     |> Enum.take(@frames)
     |> Enum.map(&Exception.format_stacktrace_entry/1)
   end
 
-  defp cut_after_app(frames, nil, _app_of), do: frames
+  @doc """
+  The origin of a crash: its first host frame, formatted, else its first frame
+  (the toolbar's own frames skipped), else nil. See `exception_stacktrace/2`.
+  """
+  @spec exception_origin(Exception.stacktrace() | nil, (module() -> boolean()) | nil) ::
+          String.t() | nil
+  def exception_origin(nil, _host?), do: nil
 
-  defp cut_after_app(frames, apps, app_of) do
-    case Enum.find_index(Enum.reverse(frames), &app_frame?(&1, apps, app_of)) do
+  def exception_origin(frames, host?) when is_list(frames) do
+    frames = Enum.reject(frames, &skipped_frame?(&1, @own_frames))
+
+    case Enum.find(frames, &host_frame?(&1, host?)) || List.first(frames) do
+      nil -> nil
+      frame -> Exception.format_stacktrace_entry(frame)
+    end
+  end
+
+  defp cut_after_host(frames, nil), do: frames
+
+  defp cut_after_host(frames, host?) do
+    case Enum.find_index(Enum.reverse(frames), &host_frame?(&1, host?)) do
       nil -> frames
       from_end -> Enum.take(frames, length(frames) - from_end + 1)
     end
   end
 
-  defp app_frame?({module, _fun, _arity, _location}, apps, app_of) when is_atom(module) do
-    case app_of.(module) do
-      {:ok, app} -> app in apps
-      _other -> false
-    end
-  end
+  defp host_frame?({module, _fun, _arity, _location}, host?) when is_atom(module),
+    do: is_function(host?, 1) and host?.(module)
 
-  defp app_frame?(_frame, _apps, _app_of), do: false
+  defp host_frame?(_frame, _host?), do: false
 
   @doc """
   Replaces the value of sensitive keys with `"#{@redacted}"`.

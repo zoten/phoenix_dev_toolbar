@@ -11,8 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Query origin inside `Task.async` and `start_async`: app frame, task function or owning callback (ADR 08, 13)
 - Panel loads tab rows when the tab opens: mount 82 KB to 60 KB, new events 7.7 KB to 0.3 KB (ADR 04)
 - Ecto rows render params and stacktrace when expanded: mount 60 KB to 33 KB (ADR 04)
-- LiveView callback and render exceptions keep their stacktrace, app frames first (ADR 07, 13)
+- LiveView callback and render exceptions keep their stacktrace, cut after the last host frame (ADR 07, 13)
 - Compact `summary/2` and `page_summary` by default, `verbose:` for full items (breaking, ADR 13, 15)
+- Inferred `:async` callbacks, N+1 origin from `initial_call` (ADR 08, 13)
 - `unattributed` queries in `summary/2`, inferred `handle_info` callbacks (ADR 13)
 - Shipped `mix.exs` no longer reads `PDT_LIVE_VIEW`: CI pins LiveView in its checkout (ADR 06)
 

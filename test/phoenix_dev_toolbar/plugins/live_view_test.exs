@@ -342,6 +342,10 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
       assert first =~ "DemoWeb.BoomComponent.handle_event/3"
       assert length(frames) <= 10
       refute Enum.any?(frames, &(&1 =~ "PhoenixDevToolbar"))
+
+      # Cut after the last host frame plus one: nothing deeper than that.
+      last_host = Enum.find_index(Enum.reverse(frames), &(&1 =~ "DemoWeb."))
+      assert last_host == 1
     end
 
     test "a render that raises keeps its stacktrace" do

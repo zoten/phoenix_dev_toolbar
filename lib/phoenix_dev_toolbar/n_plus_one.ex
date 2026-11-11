@@ -91,6 +91,7 @@ defmodule PhoenixDevToolbar.NPlusOne do
   defp key(%Event{data: data}), do: {data[:sql], origin(data)}
 
   defp origin(%{stacktrace: [first | _]}), do: first
+  defp origin(%{initial_call: initial_call}) when is_binary(initial_call), do: initial_call
   defp origin(_data), do: nil
 
   defp counts_in(%NPlusOne{spans: spans}, sid, span) do

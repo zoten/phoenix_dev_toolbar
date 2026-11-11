@@ -50,6 +50,7 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   # Task and LiveView async plumbing is hidden too: the user's `fn -> Repo.all(q) end`
   # tail calls the repo, so these are all that is left of it (ADR 08).
   @skip_frames [Ecto, DBConnection, Task.Supervised, :proc_lib, Phoenix.LiveView.Async]
+  @skip_names Enum.map(@skip_frames, &Atom.to_string/1)
   @times [:query_time, :queue_time, :decode_time, :idle_time, :total_time]
   @n_plus_one 5
 
@@ -227,14 +228,11 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   defp initial_call(module, fun, arity) do
     name = Atom.to_string(module)
 
-    case Enum.any?(@skip_frames, &skipped?(name, &1)) do
+    case Enum.any?(@skip_names, &(name == &1 or String.starts_with?(name, &1 <> "."))) do
       true -> nil
       false -> module |> Exception.format_mfa(fun, arity) |> Truncate.string()
     end
   end
-
-  defp skipped?(name, skip),
-    do: name == Atom.to_string(skip) or String.starts_with?(name, Atom.to_string(skip) <> ".")
 
   # Ecto derives the prefix from the repo name unless the repo config sets one;
   # `config/0` returns the resolved value. A repo that cannot be read is skipped.

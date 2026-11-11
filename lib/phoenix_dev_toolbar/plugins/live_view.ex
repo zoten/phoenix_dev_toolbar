@@ -165,7 +165,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
   end
 
   defp outcome(:exception, _callback, _socket, %{kind: kind, reason: reason} = metadata),
-    do: %{error: Truncate.banner(kind, reason), stacktrace: crash_stacktrace(metadata)}
+    do: Map.put(crash(metadata), :error, Truncate.banner(kind, reason))
 
   defp pushed({:ok, names}), do: names
   defp pushed(:unavailable), do: :unavailable
@@ -176,14 +176,22 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
 
   defp render(:exception, measurements, %{kind: kind, reason: reason} = metadata),
     do:
-      record_render(measurements, metadata, %{
-        error: Truncate.banner(kind, reason),
-        stacktrace: crash_stacktrace(metadata)
-      })
+      record_render(
+        measurements,
+        metadata,
+        Map.put(crash(metadata), :error, Truncate.banner(kind, reason))
+      )
 
-  # Exception path only (rare): host app frames first (ADR 07).
-  defp crash_stacktrace(metadata),
-    do: Truncate.exception_stacktrace(metadata[:stacktrace], Collector.host_apps())
+  # Exception path only (rare): the trace cut after the last host frame and the
+  # first host frame as `origin` (ADR 07).
+  defp crash(metadata) do
+    frames = metadata[:stacktrace]
+
+    %{
+      stacktrace: Truncate.exception_stacktrace(frames, &Collector.host_module?/1),
+      origin: Truncate.exception_origin(frames, &Collector.host_module?/1)
+    }
+  end
 
   defp record_render(measurements, %{socket: %Socket{} = socket} = metadata, extra) do
     data =
