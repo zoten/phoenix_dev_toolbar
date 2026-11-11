@@ -213,16 +213,18 @@ defmodule PhoenixDevToolbar.TruncateTest do
       far_deep = Enum.reduce(1..5_000, secret, fn _, acc -> [acc] end)
 
       # What each stays visible as: the walked secret redacted, or the cut.
-      for {value, visible} <- [
-            {deep, ~s(password: "[REDACTED]")},
-            {tuple, ~s(password: "[REDACTED]")},
-            {improper, ~s(password: "[REDACTED]")},
-            {wide, ~s(password: "[REDACTED]")},
-            {far_deep, "[[[["}
+      # Map order decides whether key 61 of `wide` is among the 50 kept (it
+      # differs between OTP releases): its cut entry is what always stays.
+      for {value, visible?} <- [
+            {deep, &(&1 =~ ~s(password: "[REDACTED]"))},
+            {tuple, &(&1 =~ ~s(password: "[REDACTED]"))},
+            {improper, &(&1 =~ ~s(password: "[REDACTED]"))},
+            {wide, fn _shown -> Truncate.redact(wide)["…"] == "…" end},
+            {far_deep, &(&1 =~ "[[[[")}
           ] do
         redacted = Truncate.redact(value)
 
-        assert Truncate.inspect_value(redacted) =~ visible
+        assert visible?.(Truncate.inspect_value(redacted))
         refute Truncate.inspect_value(redacted) =~ "hunter2"
         refute inspect(redacted, limit: :infinity, printable_limit: :infinity) =~ "hunter2"
       end

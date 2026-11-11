@@ -31,7 +31,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
     assert has_element?(panel, "#pdt-system-target", "PhoenixDevToolbar.Store")
     assert has_element?(panel, "#pdt-system-memory", ~r/Memory\s*\d+(\.\d+)? [KM]?B/)
     assert has_element?(panel, "#pdt-system-ancestors li", "PhoenixDevToolbar.Supervisor")
-    assert has_element?(panel, "#pdt-system-stacktrace li", ":gen_server.loop/5")
+    assert has_element?(panel, "#pdt-system-stacktrace li", ~r/:gen_server\.loop\/\d/)
     assert has_element?(panel, "#pdt-system-links", "Links (1)")
     assert has_element?(panel, "#pdt-system-links", "PhoenixDevToolbar.Supervisor")
     assert has_element?(panel, "#pdt-system-crumb-0[aria-current=true]")
