@@ -109,6 +109,9 @@ defmodule PhoenixDevToolbar.Truncate do
       iex> PhoenixDevToolbar.Truncate.stacktrace([{Ecto.Repo.Queryable, :all, 3, []}], [Ecto])
       []
 
+      iex> PhoenixDevToolbar.Truncate.stacktrace([{:proc_lib, :init_p, 3, []}], [:proc_lib])
+      []
+
       iex> PhoenixDevToolbar.Truncate.stacktrace(nil)
       []
 
@@ -116,6 +119,8 @@ defmodule PhoenixDevToolbar.Truncate do
   @spec stacktrace(Exception.stacktrace() | nil, [module()]) :: [String.t()]
   def stacktrace(frames, skip \\ [])
   def stacktrace(nil, _skip), do: []
+  # Ecto passes the `stacktrace: true` option through for raw `query/3`.
+  def stacktrace(true, _skip), do: []
 
   def stacktrace(frames, skip) when is_list(frames) do
     skip = @own_frames ++ skip

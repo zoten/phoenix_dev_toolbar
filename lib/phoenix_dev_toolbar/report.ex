@@ -94,7 +94,11 @@ defmodule PhoenixDevToolbar.Report do
   One Ecto query. `rows` is set on success, `error` on failure. `times` holds
   Ecto's measurements (`:query_time`, `:queue_time`, `:decode_time`, ...) in
   microseconds. `origin` is the first stacktrace frame outside Ecto (nil unless
-  the repo has `stacktrace: true`). `span` is the callback the query ran in:
+  the repo has `stacktrace: true`); when the stacktrace has no frame left (a
+  query inside `Task.async` or `start_async`, whose `fn -> Repo.all(q) end`
+  tail calls the repo) it is the task's function (`Mod.fun/arity`), else
+  `"task in View.callback"` (plus the event name) of the callback that started
+  the task, else nil. `span` is the callback the query ran in:
   see `callbacks/2`. `n_plus_one?` marks the query that reached the N+1
   threshold and every repetition after it, as the Ecto tab does.
   """
@@ -291,7 +295,7 @@ defmodule PhoenixDevToolbar.Report do
         nil
 
       {[first | _] = sessions, events} ->
-        queries = queries_of(events, threshold(opts))
+        queries = queries_of(events, sessions, threshold(opts))
         callbacks = callbacks_of(events)
         orphans = orphans_of(events, sessions)
         renders = for %Event{plugin: :live_view, kind: :render} = event <- events, do: event
@@ -328,8 +332,8 @@ defmodule PhoenixDevToolbar.Report do
   """
   @spec queries(target(), keyword()) :: [query()]
   def queries(target, opts \\ []) do
-    {_sessions, events} = read(target, opts)
-    queries_of(events, threshold(opts))
+    {sessions, events} = read(target, opts)
+    queries_of(events, sessions, threshold(opts))
   end
 
   @doc """
@@ -456,8 +460,9 @@ defmodule PhoenixDevToolbar.Report do
     }
   end
 
-  defp queries_of(events, threshold) do
+  defp queries_of(events, sessions, threshold) do
     flagged = flagged(events, threshold)
+    owners = owners(events, sessions)
 
     for %Event{plugin: :ecto, kind: :query, data: data} = event <- events do
       %{
@@ -473,7 +478,7 @@ defmodule PhoenixDevToolbar.Report do
         rows: rows(data[:result]),
         error: query_error(data[:result]),
         times: data[:times] || %{},
-        origin: List.first(data[:stacktrace] || []),
+        origin: origin(event, owners),
         stacktrace: data[:stacktrace] || [],
         n_plus_one?: MapSet.member?(flagged, event.seq)
       }
@@ -552,7 +557,7 @@ defmodule PhoenixDevToolbar.Report do
   defp unattributed(orphans) do
     origins =
       orphans
-      |> Enum.group_by(&origin/1)
+      |> Enum.group_by(&origin(&1, %{}))
       |> Enum.map(fn {origin, queries} ->
         %{origin: origin, count: length(queries), total_us: total(queries)}
       end)
@@ -562,7 +567,36 @@ defmodule PhoenixDevToolbar.Report do
     %{count: length(orphans), total_us: total(orphans), origins: origins}
   end
 
-  defp origin(%Event{data: data}), do: List.first(data[:stacktrace] || [])
+  # First stacktrace frame, else the task's function, else the callback that
+  # owns the query's `{sid, span}` (a Task child shares its caller's span), else
+  # the session's view for a task query no callback owns (`start_async` runs
+  # after its callback ended).
+  defp origin(%Event{data: data} = event, owners) do
+    List.first(data[:stacktrace] || []) || data[:initial_call] ||
+      task_origin(data[:caller?], Map.get(owners, {event.sid, event.span}) || owners[event.sid])
+  end
+
+  defp task_origin(false, _owner), do: nil
+  defp task_origin(_caller?, nil), do: nil
+  defp task_origin(_caller?, view) when is_atom(view), do: "task in #{inspect(view)}"
+
+  defp task_origin(_caller?, %{view: view, callback: callback} = data) do
+    base = "task in #{inspect(data[:component] || view)}.#{callback}"
+
+    case data[:event] do
+      event when is_binary(event) -> base <> ~s( "#{event}")
+      _none -> base
+    end
+  end
+
+  defp owners(events, sessions) do
+    views =
+      for %{sid: sid, view: view} <- sessions, view, into: %{}, do: {sid, view}
+
+    for %Event{plugin: :live_view, kind: :callback, data: data} = event <- events,
+        into: views,
+        do: {{event.sid, event.span}, data}
+  end
 
   # One `handle_info` stand-in per burst of orphan queries (a span, split on gaps).
   defp inferred_of(events, sessions) do

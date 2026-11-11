@@ -47,7 +47,9 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   alias PhoenixDevToolbar.Truncate
 
   # Frames hidden from the query origin: the caller's code is what matters.
-  @skip_frames [Ecto, DBConnection]
+  # Task and LiveView async plumbing is hidden too: the user's `fn -> Repo.all(q) end`
+  # tail calls the repo, so these are all that is left of it (ADR 08).
+  @skip_frames [Ecto, DBConnection, Task.Supervised, :proc_lib, Phoenix.LiveView.Async]
   @times [:query_time, :queue_time, :decode_time, :idle_time, :total_time]
   @n_plus_one 5
 
@@ -199,12 +201,40 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
       times: times(measurements),
       stacktrace: Truncate.stacktrace(metadata[:stacktrace], [metadata[:repo] | @skip_frames]),
       caller?: source == :caller,
+      initial_call: initial_call(source),
       # Raw params for EXPLAIN (ADR 08): never rendered.
       explain: Explain.capture(raw_sql, sql, metadata[:params])
     }
 
     {:record, Event.new(:ecto, :query, data, duration: total(measurements))}
   end
+
+  # The function a Task or start_async child was started with (ADR 08): its
+  # origin when the stacktrace has no app frame left. One pdict read, for
+  # caller-sourced queries only; nil for plumbing modules.
+  defp initial_call(:caller) do
+    case Process.get(:"$initial_call") do
+      {module, fun, arity} when is_atom(module) and is_atom(fun) and is_integer(arity) ->
+        initial_call(module, fun, arity)
+
+      _other ->
+        nil
+    end
+  end
+
+  defp initial_call(_source), do: nil
+
+  defp initial_call(module, fun, arity) do
+    name = Atom.to_string(module)
+
+    case Enum.any?(@skip_frames, &skipped?(name, &1)) do
+      true -> nil
+      false -> module |> Exception.format_mfa(fun, arity) |> Truncate.string()
+    end
+  end
+
+  defp skipped?(name, skip),
+    do: name == Atom.to_string(skip) or String.starts_with?(name, Atom.to_string(skip) <> ".")
 
   # Ecto derives the prefix from the repo name unless the repo config sets one;
   # `config/0` returns the resolved value. A repo that cannot be read is skipped.

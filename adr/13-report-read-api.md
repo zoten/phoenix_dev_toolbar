@@ -28,6 +28,9 @@ Store, built for IEx and agents:
   assigns changes, times or stacktrace; an error keeps its first frame as
   `origin`; LiveView crashes carry their stacktrace, host frames first, ADR 07): `verbose: true` returns the full items, `queries/2`, `callbacks/2`
   and `errors/2` the detail.
+- A query's `origin` (queries, briefs, `unattributed.origins`) is the first stacktrace
+  frame, else the task function (`initial_call`), else `task in View.callback "event"`
+  or `task in View` for a query run inside `Task.async` or `start_async` (ADR 08).
   `queries/2`, `callbacks/2`, `n_plus_one/2` and `errors/2` return the full lists.
 - LiveView emits no telemetry for `handle_info`, so a query of a `:live_view`
   session whose `{sid, span}` no `:callback` or `:render` event owns is

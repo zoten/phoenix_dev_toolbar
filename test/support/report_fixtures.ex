@@ -29,7 +29,8 @@ defmodule PhoenixDevToolbar.ReportFixtures do
       result: Keyword.get(opts, :result, {:ok, 1}),
       times: %{query_time: 90, queue_time: 10},
       stacktrace: Keyword.get(opts, :stacktrace, ["lib/app.ex:10: App.list/0"]),
-      caller?: false,
+      caller?: Keyword.get(opts, :caller?, false),
+      initial_call: Keyword.get(opts, :initial_call),
       explain: {:ok, ["raw-secret-param"]}
     }
 

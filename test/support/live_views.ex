@@ -4,6 +4,8 @@ defmodule DemoWeb.PageLive do
   # the telemetry event an Ecto query on DemoWeb.FakeRepo would.
   use Phoenix.LiveView
 
+  require Ecto.Query
+
   @impl Phoenix.LiveView
   def mount(_params, _session, socket), do: {:ok, socket}
 
@@ -48,6 +50,20 @@ defmodule DemoWeb.PageLive do
     {:noreply, socket}
   end
 
+  # A real query whose caller frame is gone (tail call) in a Task.async child.
+  def handle_event("task_query", _params, socket) do
+    fn -> DemoWeb.SQLiteRepo.all(users(1), stacktrace: true) end
+    |> Task.async()
+    |> Task.await()
+
+    {:noreply, socket}
+  end
+
+  def handle_event("async_query", _params, socket) do
+    {:noreply,
+     start_async(socket, :load, fn -> DemoWeb.SQLiteRepo.all(users(2), stacktrace: true) end)}
+  end
+
   # What a third party plugin would listen to (TestPlugins.Tabbed).
   def handle_event("echo", %{"value" => value}, socket) do
     :telemetry.execute([:pdt_test, :echo], %{}, %{value: value})
@@ -55,7 +71,12 @@ defmodule DemoWeb.PageLive do
   end
 
   @impl Phoenix.LiveView
+  def handle_async(:load, _result, socket), do: {:noreply, socket}
+
+  @impl Phoenix.LiveView
   def render(assigns), do: ~H"<p>page</p>"
+
+  defp users(n), do: Ecto.Query.from(u in "users", where: u.id == ^n, select: u.id)
 
   defp origin(nil), do: nil
   defp origin(file), do: [{DemoWeb.Posts, :load, 0, [file: String.to_charlist(file), line: 3]}]

@@ -81,6 +81,26 @@ defmodule PhoenixDevToolbar.ReportTest do
     end
   end
 
+  describe "query origin" do
+    test "falls back from the first frame to the task function to the owning callback" do
+      s = session(:live_view, view: DemoWeb.PageLive)
+      callback(s, :handle_event, event: "save", span: 3)
+      query(s, sql: "frame", span: 3, caller?: true, initial_call: "App.run/0")
+      query(s, sql: "initial", span: 3, caller?: true, stacktrace: [], initial_call: "App.run/0")
+      query(s, sql: "owner", span: 3, caller?: true, stacktrace: [])
+      query(s, sql: "view", span: 9, caller?: true, stacktrace: [])
+      query(s, sql: "inline", span: 9, stacktrace: [])
+
+      origins = Map.new(Report.queries(s.sid), &{&1.sql, &1.origin})
+
+      assert origins["frame"] == "lib/app.ex:10: App.list/0"
+      assert origins["initial"] == "App.run/0"
+      assert origins["owner"] == ~s(task in DemoWeb.PageLive.handle_event "save")
+      assert origins["view"] == "task in DemoWeb.PageLive"
+      assert origins["inline"] == nil
+    end
+  end
+
   describe "queries/2" do
     test "returns plain query maps in order, without raw EXPLAIN params" do
       s = session(:request, path: "/users")

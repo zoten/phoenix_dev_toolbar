@@ -142,5 +142,13 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
   - a render's components run in their own spans.
 
   The row tag says "in one callback (or between two callbacks)".
-- Queries run by Ecto's own tasks (parallel preloads) get a weak origin (a Task or
-  Enum frame).
+- Queries run by Ecto's own tasks (parallel preloads) get a weak origin (an Enum
+  frame).
+- Task plumbing (`Task.Supervised`, `:proc_lib`, `Phoenix.LiveView.Async`) is skipped
+  like Ecto frames. A `fn -> Repo.all(q) end` in `Task.async` or `start_async` tail
+  calls the repo, so no frame of it is left: a caller-sourced query also stores
+  `initial_call` (one `:"$initial_call"` read, `Mod.fun/arity`, nil for plumbing
+  modules). `Report` derives `origin` as the first stacktrace frame, else
+  `initial_call`, else `task in View.callback "event"` of the callback owning the
+  query's `{sid, span}`, else `task in View` (a `start_async` often runs after its
+  callback ended), else nil. N+1 keys stay on the stacktrace frame.
