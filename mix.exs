@@ -1,7 +1,7 @@
 defmodule PhoenixDevToolbar.MixProject do
   use Mix.Project
 
-  @version "0.0.3"
+  @version "0.0.4"
   @source_url "https://github.com/zoten/phoenix_dev_toolbar"
 
   def project do

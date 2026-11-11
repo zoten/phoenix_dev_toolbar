@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-11-11
+
 - One page root rule and one `since` meaning, page_sid, compare path warning (ADR 13, 15)
 - Closed LiveView sessions live until the TTL, no DOWN cleanup; `down_grace_ms` has no effect (ADR 03)
 - `since` cursor on Report.sessions and list_pages (ADR 13, 15)
