@@ -71,7 +71,9 @@ never a crash of the host's request process.
 - 2026-07-28: a request whose `params._meta` names
   `io.modelcontextprotocol/protocolVersion` is served statelessly.
   `server/discover` lists the supported versions. The `MCP-Protocol-Version`,
-  `Mcp-Method` and `Mcp-Name` headers must match the body (400 `-32020`
+  `Mcp-Method` and `Mcp-Name` headers must match the body (`Mcp-Name` may
+  arrive as `=?base64?<b64>?=`, decoded before comparing; invalid base64 is a
+  mismatch) (400 `-32020`
   otherwise); an unknown method gets 404 `-32601`. Results carry
   `resultType: "complete"`.
 

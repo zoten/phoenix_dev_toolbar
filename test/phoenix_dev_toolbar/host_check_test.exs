@@ -51,6 +51,7 @@ defmodule PhoenixDevToolbar.HostCheckTest do
     refute HostCheck.allowed?(conn("other.test"))
   end
 
+  @tag :capture_log
   test "the export path is refused for a refused host too" do
     conn =
       Phoenix.ConnTest.build_conn(:get, "/__pdt/export/ecto.json?format=short")
@@ -91,6 +92,7 @@ defmodule PhoenixDevToolbar.HostCheckTest do
     end
   end
 
+  @tag :capture_log
   test "the plug refuses the panel for a refused host, and says how to allow it" do
     conn =
       Phoenix.ConnTest.build_conn(:get, "/__pdt/panel?sid=x")

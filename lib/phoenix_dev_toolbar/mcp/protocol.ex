@@ -105,9 +105,28 @@ defmodule PhoenixDevToolbar.Mcp.Protocol do
       {"mcp-method", method} | name_header(method, params)
     ]
 
-    case Enum.find(expected, fn {header, value} -> Map.get(headers, header) != value end) do
+    case Enum.find(expected, fn {header, value} -> header_value(headers, header) != value end) do
       nil -> :ok
       {header, _value} -> {:error, {400, -32_020, "Header mismatch: #{header}", nil}}
+    end
+  end
+
+  # Mcp-Name may arrive as `=?base64?<b64>?=`; invalid base64 never matches.
+  defp header_value(headers, "mcp-name") do
+    case Map.get(headers, "mcp-name") do
+      "=?base64?" <> rest -> decode_name(rest)
+      value -> value
+    end
+  end
+
+  defp header_value(headers, header), do: Map.get(headers, header)
+
+  defp decode_name(rest) do
+    with true <- String.ends_with?(rest, "?="),
+         {:ok, decoded} <- rest |> String.replace_suffix("?=", "") |> Base.decode64() do
+      decoded
+    else
+      _invalid -> nil
     end
   end
 

@@ -34,7 +34,7 @@ defmodule PhoenixDevToolbar.Mcp.Prompts do
     with {:ok, path} <- path_arg(arguments) do
       {:ok,
        %{
-         "description" => "Audit " <> path,
+         "description" => "Audit " <> inspect(path),
          "messages" => [
            %{"role" => "user", "content" => %{"type" => "text", "text" => audit_text(path)}}
          ]
@@ -58,10 +58,10 @@ defmodule PhoenixDevToolbar.Mcp.Prompts do
     Audit the page #{quoted} of the running Phoenix dev app with the Phoenix Dev Toolbar tools. Load the page first (a browser, or curl with Accept: text/html) so it is captured.
 
     1. Call page_summary with path #{quoted}. Note its sid and panel_url.
-    2. Call page_n_plus_one for the same page: repeated queries that should be one query or a preload.
-    3. Call page_queries with sort slowest: the slowest queries and where they are called from.
-    4. Call page_errors: failures during the page's requests and callbacks.
-    5. If the page is a LiveView, call page_assigns_shape (the page must be open in a browser): look for large lists that should be streams.
+    2. Call page_n_plus_one with sid set to that sid: repeated queries that should be one query or a preload. Use the sid in every later call, so a reload in between does not switch captures.
+    3. Call page_queries with sid set to that sid and sort: "slowest": the slowest queries and where they are called from.
+    4. Call page_errors with sid set to that sid: failures during the page's requests and callbacks.
+    5. If the page is a LiveView, call page_assigns_shape with sid set to that sid (the page must be open in a browser): look for large lists that should be streams.
 
     Then report the findings, most important first, each with the evidence (query, count, duration, assign name) and a proposed fix, and end with the panel_url so the developer can open the page in the toolbar.
 

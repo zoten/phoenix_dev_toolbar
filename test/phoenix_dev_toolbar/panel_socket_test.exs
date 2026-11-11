@@ -411,6 +411,7 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
     end
   end
 
+  @tag :capture_log
   test "an endpoint without a LiveView socket gets a 404, never a crash" do
     conn =
       :get

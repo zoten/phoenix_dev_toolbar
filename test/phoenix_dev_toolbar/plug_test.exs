@@ -313,6 +313,7 @@ defmodule PhoenixDevToolbar.PlugTest do
       |> put_resp_header("vary", "origin")
     end
 
+    @tag :capture_log
     test "are stripped from the panel, the export and a refusal" do
       for {path, host} <- [
             {"/__pdt/panel?sid=x", "www.example.com"},

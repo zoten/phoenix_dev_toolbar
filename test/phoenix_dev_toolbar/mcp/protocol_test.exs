@@ -225,6 +225,26 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
       refute Map.has_key?(result, "resultType")
     end
 
+    test "prompts/get pins the sid, has a description and escapes the path" do
+      path = "/a\"b\nc"
+      params = %{"name" => "audit_page", "arguments" => %{"path" => path}}
+      result = result!(Protocol.handle(rpc("prompts/get", params), %{}, @opts))
+
+      assert result["description"] == "Audit " <> inspect(path)
+      [%{"content" => %{"text" => text}}] = result["messages"]
+      assert text =~ inspect(path)
+      refute text =~ "b\nc"
+      assert text =~ "page_n_plus_one with sid set to that sid"
+      assert text =~ "sort: \"slowest\""
+    end
+
+    test "prompts/get accepts a 2048-byte path" do
+      params = %{"name" => "audit_page", "arguments" => %{"path" => String.duplicate("a", 2048)}}
+
+      assert %{"messages" => [_]} =
+               result!(Protocol.handle(rpc("prompts/get", params), %{}, @opts))
+    end
+
     test "unknown prompt, missing, invalid and oversized path are -32_602" do
       bad = [
         %{"name" => "nope", "arguments" => %{"path" => "/"}},
@@ -274,6 +294,28 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
             Map.delete(good, "mcp-name"),
             Map.put(good, "mcp-method", "tools/call")
           ] do
+        assert {400, %{"error" => %{"code" => -32_020}}} =
+                 Protocol.handle(rpc("prompts/get", params), headers, @opts)
+      end
+    end
+
+    test "Mcp-Name may arrive base64 encoded (=?base64?...?=)" do
+      encode = fn name -> "=?base64?" <> Base.encode64(name) <> "?=" end
+      params = modern(%{"name" => "audit_page", "arguments" => %{"path" => "/"}})
+      good = modern_headers("prompts/get", encode.("audit_page"))
+
+      assert %{"messages" => [_]} =
+               result!(Protocol.handle(rpc("prompts/get", params), good, @opts))
+
+      tool = modern(%{"name" => "list_pages", "arguments" => %{}})
+      headers = modern_headers("tools/call", encode.("list_pages"))
+
+      assert %{"isError" => false} =
+               result!(Protocol.handle(rpc("tools/call", tool), headers, @opts))
+
+      for value <- [encode.("other"), "=?base64?!!!?=", "=?base64?YXVkaXRfcGFnZQ?="] do
+        headers = modern_headers("prompts/get", value)
+
         assert {400, %{"error" => %{"code" => -32_020}}} =
                  Protocol.handle(rpc("prompts/get", params), headers, @opts)
       end
