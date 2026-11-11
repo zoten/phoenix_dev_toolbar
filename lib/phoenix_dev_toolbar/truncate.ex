@@ -195,7 +195,8 @@ defmodule PhoenixDevToolbar.Truncate do
   def stack_args(_frames, _skip, _settings), do: nil
 
   defp frames_args(frames, settings) do
-    args = Enum.map(frames, &frame_args(&1, settings))
+    base = stack_keys(settings)
+    args = Enum.map(frames, &frame_args(&1, settings, base))
 
     case Enum.any?(args) do
       true -> args
@@ -205,24 +206,29 @@ defmodule PhoenixDevToolbar.Truncate do
     _ -> nil
   end
 
+  @stack_args_keys ["cookie", "authorization", "session"]
+
   # The redacted, bounded (`settings.bytes`) call arguments of one frame, or nil:
   # the frame has none (an arity), or a `:hide` rule matches. The most specific
   # rule wins: `{m, f, arity}`, `{m, f}`, then `m`; its keys come on top of the
   # defaults, `redact:` and `stack_args` `redact:`.
   @doc false
   @spec frame_args(tuple(), Config.stack_args()) :: String.t() | nil
-  def frame_args({module, fun, args, _location}, settings) when is_list(args) do
-    case rule(settings.rules, module, fun, length(args)) do
-      :hide ->
-        nil
+  def frame_args(frame, settings), do: frame_args(frame, settings, stack_keys(settings))
 
-      rule_keys ->
-        keys = lowered_redact_keys() ++ settings.redact ++ List.wrap(rule_keys)
-        preview(args, settings.bytes, keys)
+  defp frame_args({module, fun, args, _location}, settings, base) when is_list(args) do
+    case rule(settings.rules, module, fun, length(args)) do
+      :hide -> nil
+      rule_keys -> preview(args, settings.bytes, base ++ List.wrap(rule_keys))
     end
   end
 
-  def frame_args(_frame, _settings), do: nil
+  defp frame_args(_frame, _settings, _base), do: nil
+
+  # A conn argument carries cookies, headers and the session: always redacted
+  # on top of the defaults, `redact:` and `stack_args` `redact:`.
+  defp stack_keys(settings),
+    do: lowered_redact_keys() ++ @stack_args_keys ++ settings.redact
 
   defp rule(rules, module, fun, arity) do
     Map.get(rules, {module, fun, arity}) || Map.get(rules, {module, fun}) ||

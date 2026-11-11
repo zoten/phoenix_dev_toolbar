@@ -54,6 +54,15 @@ defmodule PhoenixDevToolbar.ReportFixtures do
       error: Keyword.get(opts, :error)
     }
 
+    data =
+      case Keyword.fetch(opts, :stack_args) do
+        {:ok, args} ->
+          Map.merge(data, %{stack_args: args, stacktrace: Keyword.fetch!(opts, :stacktrace)})
+
+        :error ->
+          data
+      end
+
     insert(session, :live_view, :callback, data, opts)
   end
 

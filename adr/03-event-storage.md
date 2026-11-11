@@ -92,10 +92,18 @@ serialize every query of the app behind one mailbox.
   (default 512, 64 to 8192) with the redact keys of this ADR plus `stack_args`
   `redact:` and the keys of the matching rule. `rules:` map a module, `{module, fun}`
   or `{module, fun, arity}` to `:hide` (never printed) or extra keys; the most specific
-  rule wins. They are stored beside the frames as `data.stack_args`, a list parallel
+  rule wins; a `{module, fun}` rule does not match the anonymous functions defined in
+  that function (they are separate frames: use a module rule). A conn's `cookie`,
+  `authorization` and `session` keys are always redacted on top (`cookies`, header
+  tuples, `plug_session`), `:crypto` is hidden by default (its calls carry keys and
+  data as bare binaries; a `:crypto` rule overrides), and empty or improper `redact:`
+  and `rules:` entries are dropped with a boot warning. They are stored beside the frames as `data.stack_args`, a list parallel
   to `stacktrace` (a string or nil per frame, in practice the top frame), and the panel
   shows them under the error. `Report` and MCP carry `stack_args` only with
-  `agents: true` (default `false`); error briefs never do. The settings are resolved
+  `agents: true` (default `false`); error briefs never do. The panel does show them,
+  its standalone URL (ADR 14, `list_pages`) included, and the opt-in Eval plugin can
+  read the Store: turn `stack_args` on only where that audience is acceptable. The worst
+  case per event is 10 frames times `bytes:`. The settings are resolved
   once at `Collector.attach/1` into a `:persistent_term` (a bad entry is a boot
   warning and falls back, never raises); the exception path costs one lookup. `origin`
   stays arity only.
@@ -135,5 +143,8 @@ serialize every query of the app behind one mailbox.
   not redacted.
 - `stack_args` redacts by key name like everything else: a secret positional in the
   arguments (a bare string argument) is not redacted, hide the function with a rule.
+  Erlang BIF errors (`:erlang.binary_to_integer(secret)`, a `badarg`) carry their
+  arguments in the top frame the same way: hide the modules whose positional arguments
+  are secrets (`:crypto` is by default).
 - Ecto params are positional: an INSERT shows a password hash column value, there is no
   key to match.

@@ -2,6 +2,7 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
   use ExUnit.Case, async: false
 
   import PhoenixDevToolbar.ReportFixtures
+  import PhoenixDevToolbar.StackArgsHelpers
 
   alias PhoenixDevToolbar.Mcp.Json
   alias PhoenixDevToolbar.Mcp.Tools
@@ -304,6 +305,26 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
 
       assert message =~ "boom"
       assert call_error("page_errors", %{"limit" => 101}) =~ "limit"
+    end
+
+    test "stack_args only with agents: true (ADR 03)" do
+      s = session(:request, path: "/e")
+
+      callback(s, :handle_event,
+        error: "boom",
+        us: 10,
+        stacktrace: ["MyLive.f/1"],
+        stack_args: ["[\"ann\"]"]
+      )
+
+      put_stack_args(true)
+      assert %{"errors" => [error]} = call!("page_errors", %{"sid" => s.sid})
+      refute Map.has_key?(error, "stack_args")
+
+      put_stack_args(agents: true)
+
+      assert %{"errors" => [%{"stack_args" => ["[\"ann\"]"]}]} =
+               call!("page_errors", %{"sid" => s.sid})
     end
   end
 end

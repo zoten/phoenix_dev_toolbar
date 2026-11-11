@@ -27,6 +27,9 @@ defmodule PhoenixDevToolbar.Config do
         }
 
   @stack_args_bytes 512
+  # `:crypto` calls carry keys and data as bare binaries, which no key name can
+  # redact: hidden unless the developer writes a `:crypto` rule (ADR 03).
+  @default_rules %{crypto: :hide}
 
   # Limits that may be 0 (expire at once); every other limit is a positive cap.
   @zero_limits [:ttl_ms, :down_grace_ms]
@@ -227,7 +230,24 @@ defmodule PhoenixDevToolbar.Config do
 
   # Lowered strings, as `Truncate` compares them.
   defp stack_args_keys(keys, where) when is_list(keys) do
-    {valid, dropped} = Enum.split_with(keys, &(is_binary(&1) or is_atom(&1)))
+    case proper_list?(keys) do
+      true -> lowered_keys(keys, where)
+      false -> stack_args_keys(:improper, where)
+    end
+  end
+
+  defp stack_args_keys(other, where) do
+    _ =
+      warn(
+        "`stack_args` #{where} must be a proper list, got #{inspect(other, limit: 5)}: ignored"
+      )
+
+    []
+  end
+
+  # An empty key would match every key name: dropped with the invalid ones.
+  defp lowered_keys(keys, where) do
+    {valid, dropped} = Enum.split_with(keys, &key_entry?/1)
 
     case dropped do
       [] -> :ok
@@ -237,12 +257,23 @@ defmodule PhoenixDevToolbar.Config do
     Enum.map(valid, &(&1 |> to_string() |> String.downcase()))
   end
 
-  defp stack_args_keys(other, where) do
-    _ = warn("`stack_args` #{where} must be a list, got #{inspect(other, limit: 5)}: ignored")
-    []
-  end
+  defp key_entry?(key) when is_binary(key), do: key != ""
+  defp key_entry?(key) when is_atom(key), do: key not in [nil, :""]
+  defp key_entry?(_key), do: false
 
   defp stack_args_rules(rules) when is_list(rules) do
+    case proper_list?(rules) do
+      true -> rules |> parsed_rules() |> then(&Map.merge(@default_rules, &1))
+      false -> stack_args_rules(:improper)
+    end
+  end
+
+  defp stack_args_rules(other) do
+    _ = warn("`stack_args` rules must be a proper list, got #{inspect(other, limit: 5)}: ignored")
+    @default_rules
+  end
+
+  defp parsed_rules(rules) do
     Enum.reduce(rules, %{}, fn rule, acc ->
       case stack_args_rule(rule) do
         {:ok, key, action} ->
@@ -258,11 +289,6 @@ defmodule PhoenixDevToolbar.Config do
           acc
       end
     end)
-  end
-
-  defp stack_args_rules(other) do
-    _ = warn("`stack_args` rules must be a list, got #{inspect(other, limit: 5)}: ignored")
-    %{}
   end
 
   defp stack_args_rule({key, action}) do
@@ -286,7 +312,7 @@ defmodule PhoenixDevToolbar.Config do
   defp rule_action(:hide), do: {:ok, :hide}
 
   defp rule_action(keys) when is_list(keys) do
-    case Enum.all?(keys, &(is_binary(&1) or is_atom(&1))) do
+    case proper_list?(keys) and Enum.all?(keys, &key_entry?/1) do
       true -> {:ok, Enum.map(keys, &(&1 |> to_string() |> String.downcase()))}
       false -> :error
     end

@@ -491,5 +491,39 @@ defmodule PhoenixDevToolbar.TruncateTest do
       assert [_] = Truncate.stack_args([call(["a"])], [], settings())
       assert Truncate.stack_args([{MyApp.Live, :f, 1, []}], [], settings()) == nil
     end
+
+    test "a conn argument never prints cookies, headers or the session" do
+      conn =
+        :post
+        |> Plug.Test.conn("/login", %{"password" => "pw1"})
+        |> Plug.Conn.put_req_header("authorization", "Bearer BEARERTOKEN")
+        |> Plug.Conn.put_req_header("cookie", "_app_key=COOKIEVALUE")
+        |> Plug.Test.init_test_session(%{"user_token" => "SESSIONTOKEN"})
+        |> Plug.Conn.fetch_cookies()
+
+      frame = {MyApp.Ctl, :create, [conn, conn.params], []}
+      args = Truncate.frame_args(frame, settings(bytes: 8192))
+
+      assert args =~ "Plug.Conn"
+
+      for secret <- ~w(BEARERTOKEN COOKIEVALUE SESSIONTOKEN pw1) do
+        refute args =~ secret
+      end
+    end
+
+    test "header tuples are redacted by their name" do
+      headers = [{"authorization", "Bearer BEARERTOKEN"}, {"accept", "text/html"}]
+      args = Truncate.frame_args({MyApp.Ctl, :f, [%{req_headers: headers}], []}, settings())
+
+      refute args =~ "BEARERTOKEN"
+      assert args =~ "text/html"
+    end
+
+    test ":crypto frames are hidden by default, unless the developer writes a rule" do
+      frame = {:crypto, :mac, [:hmac, :sha256, "SECRETKEY", "data"], []}
+
+      assert Truncate.frame_args(frame, settings()) == nil
+      assert Truncate.frame_args(frame, settings(rules: [{:crypto, []}])) =~ "data"
+    end
   end
 end

@@ -90,7 +90,8 @@ and compare the same fields. Report the delta: "/posts: 23 queries (21 ms) ->
 - `Report.queries(page)`: every query with SQL, params, rows and timings.
 - `Report.errors(page)`: request exceptions, failed callbacks and renders,
   failed queries. A crash's call arguments (`stack_args`) are absent unless the
-  developer enabled `stack_args: [agents: true]`: do not ask for them.
+  developer enabled `stack_args: [agents: true]`: do not ask for them. The panel, including
+  its standalone URL, shows them: do not open it to read them.
 
 ## Do not
 

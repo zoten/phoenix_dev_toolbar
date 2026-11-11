@@ -156,6 +156,25 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
     assert has_element?(view, "#pdt-profile-0", "inc")
   end
 
+  test "a failed callback shows its call arguments when the event carries them",
+       %{request: request, live: live} do
+    callback(live, :handle_event, 1, %{
+      event: "boom",
+      changes: nil,
+      error: "** (FunctionClauseError) no function clause",
+      stacktrace: ["MyLive.handle_event/3"],
+      stack_args: [~s(["save", %{"name" => "<b>ann</b>"}])]
+    })
+
+    callback(live, :handle_event, 1, %{event: "ok"})
+
+    view = open_panel(request) |> open_tab("events")
+    [failed, fine] = Store.events(live)
+
+    assert has_element?(view, "#pdt-lv-#{failed.seq} .pdt-stack-args dd code", "ann")
+    refute has_element?(view, "#pdt-lv-#{fine.seq} .pdt-stack-args")
+  end
+
   test "rows carry data-pdt-* attributes with raw values (ADR 14)",
        %{request: request, live: live} do
     callback(live, :handle_event, 5, %{event: "save"})

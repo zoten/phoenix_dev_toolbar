@@ -14,6 +14,7 @@ defmodule DemoWeb.Router do
 
   get "/hello/:name", DemoWeb.HelloPlug, greeting: "hi"
   get "/boom", DemoWeb.BoomPlug, []
+  get "/clause", DemoWeb.ClausePlug, []
   get "/throw", DemoWeb.ThrowPlug, []
   get "/big-opts", DemoWeb.HelloPlug, greeting: "hi", payload: Enum.to_list(1..10_000)
 

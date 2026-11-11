@@ -250,7 +250,7 @@ plug PhoenixDevToolbar.Plug, nonce_assign: :csp_nonce # the default key; change 
 
 A `frame-src` or `child-src` that excludes your own origin still blocks the panel frame.
 
-**A crash stacktrace shows the arity, not the call's arguments.** Arguments can hold params, a socket or a conn, so they are off. `config :phoenix_dev_toolbar, stack_args: true` shows them in the panel, redacted by key name and cut per frame (a bare secret argument is not recognised: hide it with `rules: [{MyApp.Auth, :hide}]`). Agents never get them unless `stack_args: [agents: true]`.
+**A crash stacktrace shows the arity, not the call's arguments.** Arguments can hold params, a socket or a conn, so they are off. `config :phoenix_dev_toolbar, stack_args: true` shows them in the panel, redacted by key name and cut per frame (a bare secret argument is not recognised: hide it with `rules: [{MyApp.Auth, :hide}]`, and Erlang BIF errors such as `badarg` carry their arguments too; `:crypto` is hidden by default). Report and MCP never return them unless `stack_args: [agents: true]`; the panel, including its standalone URL, shows them.
 
 **The panel answers 403.** The host name you use is not allowed (a DNS rebinding guard). The panel answers IP addresses, `localhost` and your endpoint's url host; add other names with `allowed_hosts: ["myapp.test"]`.
 

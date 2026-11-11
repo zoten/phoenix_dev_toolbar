@@ -179,7 +179,12 @@ defmodule PhoenixDevToolbar.ConfigTest do
     end
 
     test "true means the defaults" do
-      assert Config.stack_args(true) == %{bytes: 512, redact: [], rules: %{}, agents: false}
+      assert Config.stack_args(true) == %{
+               bytes: 512,
+               redact: [],
+               rules: %{crypto: :hide},
+               agents: false
+             }
     end
 
     test "valid options are kept, keys lowered" do
@@ -191,7 +196,12 @@ defmodule PhoenixDevToolbar.ConfigTest do
              ) == %{
                bytes: 1024,
                redact: ["card_number", "pin"],
-               rules: %{Mod => :hide, {Mod, :f} => ["pin"], {Mod, :f, 2} => :hide},
+               rules: %{
+                 :crypto => :hide,
+                 Mod => :hide,
+                 {Mod, :f} => ["pin"],
+                 {Mod, :f, 2} => :hide
+               },
                agents: true
              }
     end
@@ -210,16 +220,43 @@ defmodule PhoenixDevToolbar.ConfigTest do
                      {Mod, [1]}
                    ],
                    agents: :yes
-                 ) == %{bytes: 512, redact: ["ok"], rules: %{}, agents: false}
+                 ) == %{bytes: 512, redact: ["ok"], rules: %{crypto: :hide}, agents: false}
 
           assert Config.stack_args("yes") == nil
           assert Config.stack_args(bytes: 9000).bytes == 512
-          assert Config.stack_args(rules: :x).rules == %{}
+          assert Config.stack_args(rules: :x).rules == %{crypto: :hide}
         end)
 
       assert log =~ "bytes"
       assert log =~ "rule"
       assert log =~ "agents"
+    end
+
+    test "improper lists warn and fall back, never raise" do
+      log =
+        capture_log(fn ->
+          assert Config.stack_args(redact: ["a" | "b"]).redact == []
+          assert Config.stack_args(rules: [{Mod, :hide} | :x]).rules == %{crypto: :hide}
+          assert Config.stack_args(rules: [{Mod, ["a" | "b"]}]).rules == %{crypto: :hide}
+        end)
+
+      assert log =~ "proper list"
+      assert log =~ "rule"
+    end
+
+    test "empty keys are dropped with a warning, they would match every key" do
+      log =
+        capture_log(fn ->
+          assert Config.stack_args(redact: ["", "ok", :""]).redact == ["ok"]
+          assert Config.stack_args(rules: [{Mod, [""]}]).rules == %{crypto: :hide}
+        end)
+
+      assert log =~ "ignoring"
+    end
+
+    test ":crypto is hidden unless the developer writes a rule for it" do
+      assert Config.stack_args(true).rules == %{crypto: :hide}
+      assert Config.stack_args(rules: [{:crypto, ["key"]}]).rules == %{crypto: ["key"]}
     end
   end
 end

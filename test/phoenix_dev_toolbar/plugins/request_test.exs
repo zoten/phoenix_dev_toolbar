@@ -4,12 +4,14 @@ defmodule PhoenixDevToolbar.Plugins.RequestTest do
 
   import PhoenixDevToolbar.PageHelpers, only: [attach_plugins: 0]
   import PhoenixDevToolbar.ProcessHelpers
+  import PhoenixDevToolbar.StackArgsHelpers
   import Plug.Test
 
   alias PhoenixDevToolbar.Attribution
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Plugins.Request
+  alias PhoenixDevToolbar.Report
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
 
@@ -77,5 +79,35 @@ defmodule PhoenixDevToolbar.Plugins.RequestTest do
     assert data.error =~ "boom"
     assert [origin | _] = data.stacktrace
     assert origin =~ "DemoWeb.BoomPlug.call/2"
+  end
+
+  describe "call arguments of a crash (stack_args, ADR 03)" do
+    defp clause_errors(sid, config) do
+      put_stack_args(config, [Request])
+      dispatch(sid, :get, "/clause")
+      Store.events(sid)
+    end
+
+    test "off by default: arity only, nothing for agents", %{sid: sid} do
+      assert [%Event{kind: :exception, data: data}] = clause_errors(sid, false)
+      assert [first | _] = data.stacktrace
+      assert first =~ "DemoWeb.ClausePlug.strict/2"
+      refute Map.has_key?(data, :stack_args)
+      assert [error] = Report.errors(sid)
+      refute Map.has_key?(error, :stack_args)
+    end
+
+    test "opted in: stored redacted, hidden from the report unless agents: true", %{sid: sid} do
+      assert [%Event{kind: :exception, data: data}] = clause_errors(sid, true)
+      assert [args | _] = data.stack_args
+      assert args =~ "Plug.Conn"
+      assert args =~ "[REDACTED]"
+      refute args =~ "hunter2"
+      assert [error] = Report.errors(sid)
+      refute Map.has_key?(error, :stack_args)
+
+      put_stack_args([agents: true], [Request])
+      assert [%{stack_args: [^args | _]}] = Report.errors(sid)
+    end
   end
 end

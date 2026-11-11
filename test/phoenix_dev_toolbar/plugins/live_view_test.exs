@@ -7,6 +7,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
   import Phoenix.LiveViewTest
   import PhoenixDevToolbar.PageHelpers, only: [attach_plugins: 0, ms: 1]
   import PhoenixDevToolbar.ProcessHelpers
+  import PhoenixDevToolbar.StackArgsHelpers
 
   alias Phoenix.LiveView.Socket
   alias PhoenixDevToolbar.Attribution
@@ -371,19 +372,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
     end
 
     defp strict_crash(config) do
-      previous = Application.fetch_env(:phoenix_dev_toolbar, :stack_args)
-
-      on_exit(fn ->
-        case previous do
-          {:ok, value} -> Application.put_env(:phoenix_dev_toolbar, :stack_args, value)
-          :error -> Application.delete_env(:phoenix_dev_toolbar, :stack_args)
-        end
-
-        Collector.attach([LiveViewPlugin])
-      end)
-
-      Application.put_env(:phoenix_dev_toolbar, :stack_args, config)
-      Collector.attach([LiveViewPlugin])
+      put_stack_args(config, [LiveViewPlugin])
       view = boom_view()
       params = %{"user" => %{"password" => "hunter2", "name" => "ann"}}
       crash(fn -> render_hook(view, "strict", params) end)
@@ -402,7 +391,15 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
 
     test "default off: nothing stored" do
       session = strict_crash(false)
+
+      assert Enum.any?(
+               Store.events(session.sid),
+               &match?(%Event{data: %{stacktrace: [_ | _]}}, &1)
+             )
+
       assert stored_stack_args(session) == nil
+      assert [error] = for(%{source: :live_view} = e <- Report.errors(session.sid), do: e)
+      refute Map.has_key?(error, :stack_args)
     end
 
     test "opted in: stored redacted, hidden from agents by default" do
