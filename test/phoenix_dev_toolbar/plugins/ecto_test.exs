@@ -170,7 +170,7 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
              caller?: false
            } = data
 
-    assert data.sql =~ ~s(FROM "users")
+    assert data.sql == ~s|SELECT u0."id" FROM "users" AS u0 WHERE (u0."email" = $1)|
   end
 
   test "marks queries run by Task.async children of the page", %{sid: sid} do
@@ -200,8 +200,9 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
     run_query(sid, query_metadata(%{cast_params: [creds]}))
 
     assert [%Event{data: %{params: stored}}] = Store.events(sid)
-    assert stored =~ "[REDACTED]"
-    refute stored =~ "sk_live"
+
+    assert stored ==
+             ~s([%PhoenixDevToolbar.TestCreds{secret_key: "[REDACTED]", user: "ada"}])
   end
 
   test "stores huge params within a byte cap and still redacts", %{sid: sid} do

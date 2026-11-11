@@ -20,8 +20,8 @@ defmodule PhoenixDevToolbar.ComponentsTest do
         })
 
       document = LazyHTML.from_fragment(html)
-      assert [_] = Enum.to_list(LazyHTML.query(document, "details.pdt-stack-args"))
-      assert [_] = Enum.to_list(LazyHTML.query(document, "details.pdt-stack-args dd"))
+      assert [_] = Enum.to_list(LazyHTML.query(document, "details[data-pdt-stack-args]"))
+      assert [_] = Enum.to_list(LazyHTML.query(document, "details[data-pdt-stack-args] dd"))
       refute html =~ "<script>"
       assert html =~ "&lt;script&gt;x&lt;/script&gt;"
     end

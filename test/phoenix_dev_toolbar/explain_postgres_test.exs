@@ -67,8 +67,9 @@ defmodule PhoenixDevToolbar.ExplainPostgresTest do
     ]
 
     assert {:ok, plan} = explain(sql, params)
-    assert plan =~ "on users"
-    assert length(String.split(plan, "\n")) > 1
+    assert [node | details] = String.split(plan, "\n")
+    assert node =~ ~r/^(Seq Scan on|Index Scan using \w+ on|Bitmap Heap Scan on) users /
+    assert Enum.any?(details, &(&1 =~ ~r/^\s+(Filter|Index Cond): /))
     refute plan =~ "+--"
   end
 

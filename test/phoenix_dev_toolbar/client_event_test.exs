@@ -19,7 +19,7 @@ defmodule PhoenixDevToolbar.ClientEventTest do
                ClientEvent.build(payload, 3)
 
       assert %{type: "phx:navigate", n: 3, fields: [{"href", href}, {"patch", true}]} = data
-      assert byte_size(href) < 300
+      assert href == String.duplicate("a", 260) <> " [truncated]"
     end
 
     test "ignores unknown types and non maps, replaces out of range timestamps" do

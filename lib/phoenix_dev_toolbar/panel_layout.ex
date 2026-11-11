@@ -113,6 +113,9 @@ defmodule PhoenixDevToolbar.PanelLayout do
               @tab == tab.id && "pdt-tab--active",
               tab_error(@quarantined, @shell, @panel_errors, tab.id) && "pdt-tab--error"
             ]}
+            data-pdt-error={
+              tab_error(@quarantined, @shell, @panel_errors, tab.id) not in [nil, false]
+            }
             phx-click="tab"
             phx-value-tab={tab.id}
           >

@@ -87,7 +87,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
     render_hook(host, "echo", %{"value" => "x"})
     panel = open_panel(sid)
 
-    assert attribute(panel, "#pdt-summary .pdt-badge", "id") == [
+    assert attribute(panel, "#pdt-summary [data-pdt-level]", "id") == [
              "pdt-badge-ecto-queries",
              "pdt-badge-response",
              "pdt-badge-live",
@@ -95,7 +95,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
              "pdt-badge-tabbed"
            ]
 
-    assert has_element?(panel, "#pdt-badge-badge_only.pdt-badge--warn", "1 seen")
+    assert has_element?(panel, "#pdt-badge-badge_only[data-pdt-level=warn]", "1 seen")
     refute has_element?(panel, "#pdt-tab-badge_only")
   end
 
@@ -145,7 +145,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
 
     _ = render(panel)
     assert has_element?(panel, "#tabbed-list li", "echo 20-10")
-    %{socket: %{assigns: %{seen: seen}}} = :sys.get_state(panel.pid)
+    seen = panel_seen(panel)
     # 400 events shown; each sid keeps its re-read window (64 seqs) plus the
     # last flush's events (20).
     assert seen |> Map.values() |> Enum.map(&MapSet.size/1) |> Enum.max() <= 64 + 20 + 1

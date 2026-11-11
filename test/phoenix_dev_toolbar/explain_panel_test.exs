@@ -45,7 +45,7 @@ defmodule PhoenixDevToolbar.ExplainPanelTest do
 
     refute has_element?(panel, "#pdt-explain-#{seq}")
     panel |> element("#pdt-details-toggle-#{seq}") |> render_click()
-    assert has_element?(panel, "#pdt-query-#{seq} .pdt-details", "the query itself failed")
+    assert has_element?(panel, "#pdt-details-#{seq}", "the query itself failed")
   end
 
   test "malformed clicks are ignored, never break the tab", %{host: host, panel: panel} do
@@ -73,7 +73,7 @@ defmodule PhoenixDevToolbar.ExplainPanelTest do
 
     assert has_element?(
              panel,
-             "#pdt-query-#{seq} .pdt-details",
+             "#pdt-details-#{seq}",
              "only SELECT queries are explained"
            )
   end

@@ -42,7 +42,8 @@ defmodule PhoenixDevToolbar.ExplainTest do
   test "params: up to 50 scalars, 4 KB of binaries in all, arrays counted with their elements" do
     scalars = [1, 2.5, true, nil, "ada", <<0::128>>, ~D[2026-01-01], ~U[2026-01-01 00:00:00Z]]
     assert {:ok, ^scalars} = capture("SELECT 1", scalars)
-    assert {:ok, _params} = capture("SELECT 1", [Enum.to_list(1..48), 1])
+    params = [Enum.to_list(1..48), 1]
+    assert {:ok, ^params} = capture("SELECT 1", params)
     assert {:no, :params} = capture("SELECT 1", [Enum.to_list(1..49), 1])
 
     assert {:no, :params} = capture("SELECT 1", Enum.to_list(1..51))
@@ -57,7 +58,8 @@ defmodule PhoenixDevToolbar.ExplainTest do
   end
 
   test "arrays are one level of scalars, and count against the budget themselves" do
-    assert {:ok, _params} = capture("SELECT 1", [[1, 2], [3]])
+    params = [[1, 2], [3]]
+    assert {:ok, ^params} = capture("SELECT 1", params)
     assert {:no, :params} = capture("SELECT 1", List.duplicate([], 51))
     assert {:no, :params} = capture("SELECT 1", [[[1]]])
   end
@@ -74,8 +76,9 @@ defmodule PhoenixDevToolbar.ExplainTest do
 
   test "big integers and Decimal coefficients count their bytes" do
     big = Integer.pow(2, 8 * 3000)
-    assert {:ok, _params} = capture("SELECT 1", [Integer.pow(2, 62), -Integer.pow(2, 62)])
-    assert {:ok, _params} = capture("SELECT 1", [big])
+    small = [Integer.pow(2, 62), -Integer.pow(2, 62)]
+    assert {:ok, ^small} = capture("SELECT 1", small)
+    assert {:ok, [^big]} = capture("SELECT 1", [big])
     assert {:no, :params} = capture("SELECT 1", [big, big])
     assert {:no, :params} = capture("SELECT 1", [Decimal.new(1, big, 0), big])
   end

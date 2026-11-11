@@ -105,9 +105,9 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
     view = open_lv(request, "profiler")
 
     assert has_element?(view, "#pdt-profile-0", ~s(handle_event "save"))
-    assert has_element?(view, "#pdt-profile-0 .pdt-count", "2")
+    assert has_element?(view, ~s(#pdt-profile-0[data-pdt-count="2"]))
     assert has_element?(view, "#pdt-profile-1", "mount")
-    assert has_element?(view, "#pdt-profile-1 .pdt-count", "2")
+    assert has_element?(view, ~s(#pdt-profile-1[data-pdt-count="2"]))
     assert has_element?(view, "#pdt-profiler-table", "DemoWeb.CounterComponent")
     assert has_element?(view, "#pdt-badge-live", "4 callbacks")
   end
@@ -133,12 +133,17 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
     [save, boom, params] = Store.events(live)
 
     assert has_element?(view, "#pdt-lv-#{save.seq}", ~s(handle_event "save"))
-    assert has_element?(view, "#pdt-lv-#{save.seq} .pdt-changed", "count")
-    assert has_element?(view, "#pdt-lv-#{save.seq} .pdt-changed", "+3 more")
-    assert has_element?(view, "#pdt-lv-#{save.seq} .pdt-pushed", "highlight")
+    assert has_element?(view, "#pdt-lv-#{save.seq} [data-pdt-changed=count]")
+    assert has_element?(view, ~s(#pdt-lv-#{save.seq} [data-pdt-changed-more="3"]), "+3 more")
+    assert has_element?(view, "#pdt-lv-#{save.seq} [data-pdt-pushed=highlight]")
     assert has_element?(view, "#pdt-lv-#{save.seq} dd", ~s("Ada"))
-    assert has_element?(view, "#pdt-lv-#{boom.seq}.pdt-row--error", "RuntimeError")
-    assert has_element?(view, "#pdt-lv-#{params.seq} .pdt-pushed", "unavailable")
+    assert has_element?(view, "#pdt-lv-#{boom.seq}[data-pdt-error]", "RuntimeError")
+
+    assert has_element?(
+             view,
+             "#pdt-lv-#{params.seq} [data-pdt-pushed-unavailable]",
+             "unavailable"
+           )
   end
 
   test "new callbacks reach the profiler and the log live", %{request: request, live: live} do
@@ -172,8 +177,8 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
     view = open_lv(request, "events")
     [failed, fine] = Store.events(live)
 
-    assert has_element?(view, "#pdt-lv-#{failed.seq} .pdt-stack-args dd code", "ann")
-    refute has_element?(view, "#pdt-lv-#{fine.seq} .pdt-stack-args")
+    assert has_element?(view, "#pdt-lv-#{failed.seq} [data-pdt-stack-args] dd code", "ann")
+    refute has_element?(view, "#pdt-lv-#{fine.seq} [data-pdt-stack-args]")
   end
 
   test "rows carry data-pdt-* attributes with raw values (ADR 14)",
@@ -266,8 +271,8 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       })
 
       assert has_element?(view, "#pdt-lv-client-1", "phx:page-loading-start")
-      assert has_element?(view, "#pdt-lv-client-1 .pdt-tag", "/posts")
-      assert has_element?(view, "#pdt-lv-client-1 .pdt-tag--client")
+      assert has_element?(view, "#pdt-lv-client-1 [data-pdt-field=to]", "/posts")
+      assert has_element?(view, "#pdt-lv-client-1 [data-pdt-phase=client]")
 
       assert has_element?(
                view,
@@ -349,7 +354,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       assert has_element?(panel, "#pdt-profiler-table", "mount")
 
       panel |> element("#pdt-lv-tab-events") |> render_click()
-      assert has_element?(panel, "#pdt-lv-events .pdt-changed", "count")
+      assert has_element?(panel, "#pdt-lv-events [data-pdt-changed=count]")
     end
 
     test "snapshots the host LiveView's assigns, redacted, and refreshes after callbacks" do
@@ -370,7 +375,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       _ = render_async(panel)
 
       assert has_element?(panel, "#pdt-snapshot-clicks", "1")
-      assert has_element?(panel, "#pdt-snapshot-clicks.pdt-snapshot--changed")
+      assert has_element?(panel, "#pdt-snapshot-clicks[data-pdt-snapshot-changed]")
     end
 
     test "shows the component tree, polling only while open and visible" do
@@ -422,7 +427,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       open_panel_tab(panel, "live_view")
       refute has_element?(panel, "#pdt-snapshot-clicks", "1")
       # What stays shown is the last snapshot taken before the page changed.
-      assert has_element?(panel, "#pdt-snapshot-clicks code", "0")
+      assert has_element?(panel, "#pdt-snapshot-clicks code", ~r/^\s*0\s*$/)
     end
 
     test "a poll reads the host only while visible" do

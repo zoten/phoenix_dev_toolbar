@@ -93,7 +93,10 @@ defmodule PhoenixDevToolbar.LiveViewCompatTest do
         end)
 
       assert [_one] = Regex.scan(~r/push_event names unavailable/, log)
-      assert log =~ "phoenix_live_view"
+
+      assert log =~
+               "[phoenix_dev_toolbar] push_event names unavailable: phoenix_live_view " <>
+                 "#{Application.spec(:phoenix_live_view, :vsn)} changed socket.private.live_temp"
     end
   end
 

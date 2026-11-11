@@ -32,6 +32,8 @@ defmodule PhoenixDevToolbar.Plugins.ProcessTest do
 
   test "it is a tab only: no telemetry, no summary" do
     assert ProcessPlugin.telemetry_events(%{}) == []
-    refute function_exported?(ProcessPlugin, :summary_init, 1)
+
+    shell = PhoenixDevToolbar.Shell.new([{ProcessPlugin, %{}}])
+    assert PhoenixDevToolbar.Shell.badges(shell) == []
   end
 end

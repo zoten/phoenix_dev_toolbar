@@ -50,7 +50,7 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
     echo(host, panel, "ignored while disabled")
 
     assert has_element?(panel, "#pdt-disabled-fragile", "collect boom")
-    assert has_element?(panel, "#pdt-tab-fragile.pdt-tab--error")
+    assert has_element?(panel, "#pdt-tab-fragile[data-pdt-error]")
     refute has_element?(panel, "#fragile .fragile-value", "ignored while disabled")
     still_works(host, panel)
 
@@ -154,7 +154,7 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
     assert log =~ "mount boom"
 
     capture_log(fn ->
-      view = open_panel(query: "?sid=missing")
+      view = open_panel_at("?sid=missing")
       _ = render(view)
       assert has_element?(view, "#pdt-disabled-mount_boom", "mount boom")
     end)

@@ -66,6 +66,11 @@ defmodule PhoenixDevToolbar.Plug do
   | `request` row | `data-pdt-kind`, `data-pdt-method`, `data-pdt-status`, `data-pdt-error` |
   | `profile` row | `data-pdt-callback`, `data-pdt-count`, `data-pdt-total-us`, `data-pdt-max-us` |
   | `#pdt-empty` | `data-pdt-lookup`: `sid`, `path`, `newest` or `gated` |
+  | phase tag in a row | `data-pdt-phase`: `http`, `live` or `client` |
+  | `callback` row parts | `data-pdt-changed`, `data-pdt-changed-more`, `data-pdt-pushed`, `data-pdt-pushed-unavailable`; `data-pdt-field` on client fields, `data-pdt-origin` on `n-plus-one` rows |
+  | query details, snapshot entry | `data-pdt-stack-args`, `data-pdt-snapshot-changed` |
+  | tab button, summary badge | `data-pdt-error`, `data-pdt-level` |
+  | Eval run output | `data-pdt-eval`: `output`, `result` or `error` |
 
   The decision is [ADR 14](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/14-standalone-panel-and-row-attributes.md).
 

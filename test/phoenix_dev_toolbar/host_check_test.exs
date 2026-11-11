@@ -63,11 +63,9 @@ defmodule PhoenixDevToolbar.HostCheckTest do
   end
 
   describe "log_refused/1" do
-    @key {PhoenixDevToolbar.HostCheck, :logged}
-
     setup do
-      :persistent_term.erase(@key)
-      on_exit(fn -> :persistent_term.erase(@key) end)
+      HostCheck.reset_logged()
+      on_exit(&HostCheck.reset_logged/0)
     end
 
     test "logs each host once" do

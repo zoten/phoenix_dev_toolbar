@@ -148,6 +148,8 @@ defmodule PdtTooling.ReleaseTest do
 
   describe "tag/1" do
     test "matches the docs source_ref" do
+      config = Mix.Project.config()
+      assert Release.tag(config[:version]) == config[:docs][:source_ref]
       assert Release.tag("0.0.1") == "0.0.1"
     end
   end

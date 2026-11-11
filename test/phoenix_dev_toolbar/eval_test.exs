@@ -104,14 +104,14 @@ defmodule PhoenixDevToolbar.EvalTest do
       end
 
       run.(~s|IO.puts("hello"); 40 + 2|)
-      assert has_element?(panel, "#pdt-eval-run-0 .pdt-eval__result", "42")
-      assert has_element?(panel, "#pdt-eval-run-0 .pdt-eval__output", "hello")
+      assert has_element?(panel, "#pdt-eval-run-0 [data-pdt-eval=result]", "42")
+      assert has_element?(panel, "#pdt-eval-run-0 [data-pdt-eval=output]", "hello")
 
       run.(~s|raise "boom"|)
-      assert has_element?(panel, "#pdt-eval-run-0 .pdt-error", "boom")
+      assert has_element?(panel, "#pdt-eval-run-0 [data-pdt-eval=error]", "boom")
 
       run.("Process.sleep(:infinity)")
-      assert has_element?(panel, "#pdt-eval-run-0 .pdt-error", "stopped")
+      assert has_element?(panel, "#pdt-eval-run-0 [data-pdt-eval=error]", "stopped")
       assert has_element?(panel, "#pdt-eval-run-2", "42")
     end
 

@@ -128,13 +128,13 @@ defmodule PhoenixDevToolbar.StoreTest do
       for n <- 4..7, do: Store.insert(sid, Event.new(:b, :ping, %{n: n}))
       sync_store()
 
-      assert {:ok, %Session{count: count, trimmed: trimmed}} = Store.session(sid)
-      counts = Store.plugin_counts(sid)
+      assert {:ok, %Session{count: 4, trimmed: 3}} = Store.session(sid)
+      assert Enum.map(Store.events(sid), &{&1.plugin, &1.data.n}) == [a: 3, b: 5, b: 6, b: 7]
 
-      assert count == length(Store.events(sid))
-      assert count <= 5
-      assert trimmed == counts |> Map.values() |> Enum.map(& &1.trimmed) |> Enum.sum()
-      assert counts.b.count == 3
+      assert Store.plugin_counts(sid) == %{
+               a: %{count: 1, trimmed: 2},
+               b: %{count: 3, trimmed: 1}
+             }
     end
 
     test "the sweep deletes counter rows whose session is gone" do

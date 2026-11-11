@@ -36,7 +36,8 @@ defmodule PhoenixDevToolbar.QueryFramesTest do
         "lib/demo/b.ex:2: anonymous fn/1 in Demo.Page.handle_event/3"
       ]
 
-      assert QueryFrames.caller(anonymous, @patterns) =~ "Demo.Page.handle_event/3"
+      assert QueryFrames.caller(anonymous, @patterns) ==
+               "lib/demo/b.ex:2: anonymous fn/1 in Demo.Page.handle_event/3"
     end
 
     test "never a framework frame, nor a context function that shares a callback name" do
@@ -62,7 +63,8 @@ defmodule PhoenixDevToolbar.QueryFramesTest do
       assert QueryFrames.caller(@policy_stack, ["Demo.Policy."]) ==
                "lib/demo/policy/helpers.ex:25: Demo.Policy.Helpers.check/2"
 
-      assert QueryFrames.caller(@policy_stack, [~r/EventTeam\z/]) =~ "EventTeam.can?/3"
+      assert QueryFrames.caller(@policy_stack, [~r/EventTeam\z/]) ==
+               "lib/demo/events/event_team.ex:149: Demo.Events.EventTeam.can?/3"
     end
   end
 

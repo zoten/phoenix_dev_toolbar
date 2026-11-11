@@ -60,6 +60,11 @@ true, missing values are omitted.
 | `request` | `data-pdt-kind` (`response`, `dispatch`, `exception`), `data-pdt-method`, `data-pdt-status`, `data-pdt-error` |
 | `profile` (no sid, seq, duration) | `data-pdt-callback` (the row label), `data-pdt-count`, `data-pdt-total-us`, `data-pdt-max-us` |
 | `#pdt-empty` | `data-pdt-lookup`: `sid`, `path`, `newest` or `gated` (why there is no page) |
+| phase tag in a row | `data-pdt-phase`: `http`, `live` or `client` (where the event ran) |
+| `callback` row parts | `data-pdt-changed` (an assign key), `data-pdt-changed-more` (omitted count), `data-pdt-pushed` (a push_event name), `data-pdt-pushed-unavailable`; client rows tag each field `data-pdt-field`; `n-plus-one` rows tag the origin `data-pdt-origin` |
+| query details, snapshot entry | `data-pdt-stack-args` (call arguments block), `data-pdt-snapshot-changed` (assign changed by the last callback) |
+| tab button, summary badge | `data-pdt-error` (the tab is quarantined or broken), `data-pdt-level` (`ok`, `warn`, `error`, `info`) |
+| Eval run output | `data-pdt-eval`: `output`, `result` or `error` |
 
 The names are a contract, like `Report`'s keys: adding one is not a breaking
 change, renaming or removing one is (a CHANGELOG line). Tests pin them.
@@ -79,8 +84,8 @@ Summary badges keep their stable ids (`#pdt-badge-<id>`).
 
 ## Open limits
 
-- Process, System, Cluster, Eval and third-party plugin tabs have ids but no
-  `data-pdt-*` attributes.
+- Process, System, Cluster and third-party plugin tabs have ids but no
+  `data-pdt-*` attributes (Eval marks its run output only).
 - Rows are bounded by the tabs' DOM caps: the full lists are in `Report`.
 - The standalone panel follows live navigation of its page, but a new page load
   in the host's tab is another page: reload the panel to see it.

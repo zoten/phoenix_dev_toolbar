@@ -46,17 +46,18 @@ defmodule PhoenixDevToolbar.PageHelpers do
   end
 
   @doc """
-  Connects the panel LiveView for `sid`, or at `:query` (a query string such as
-  `"?path=/users"`, with the sid left out) when given. `:conn` is the conn to
-  connect with (default `build_conn()`, e.g. for a custom `peer_data`).
+  Connects the panel LiveView for `sid`. `:conn` is the conn to connect with
+  (default `build_conn()`, e.g. for a custom `peer_data`).
   """
-  @spec open_panel(String.t() | keyword(), keyword()) :: struct()
-  def open_panel(sid_or_opts, opts \\ [])
+  @spec open_panel(String.t(), keyword()) :: struct()
+  def open_panel(sid, opts \\ []) when is_binary(sid), do: open_panel_at("?sid=#{sid}", opts)
 
-  def open_panel(opts, []) when is_list(opts), do: connect_panel(opts[:query], opts)
-  def open_panel(sid, opts), do: connect_panel(Keyword.get(opts, :query, "?sid=#{sid}"), opts)
-
-  defp connect_panel(query, opts) do
+  @doc """
+  Connects the panel LiveView at `query`, a query string such as
+  `"?path=/users"` or `""` (the newest page). `:conn` as for `open_panel/2`.
+  """
+  @spec open_panel_at(String.t(), keyword()) :: struct()
+  def open_panel_at(query, opts \\ []) when is_binary(query) do
     conn = Keyword.get_lazy(opts, :conn, &build_conn/0)
     {:ok, panel, _html} = live(conn, "/__pdt/panel" <> query)
     panel
@@ -142,13 +143,6 @@ defmodule PhoenixDevToolbar.PageHelpers do
     end)
   end
 
-  @doc "Loads `/demo/boom` and connects its LiveView, whose events raise."
-  @spec boom_view() :: struct()
-  def boom_view do
-    {view, _sid} = visit("/demo/boom")
-    view
-  end
-
   @doc """
   Has the panel handle everything the Store sent it (`:pdt_flush`) and renders.
   """
@@ -177,6 +171,14 @@ defmodule PhoenixDevToolbar.PageHelpers do
     PhoenixDevToolbar.Panel.send_now(view.pid, module, id, {kind, token})
     render(view)
   end
+
+  @doc """
+  The seqs the panel LiveView remembers having shown, per sid. A private assign
+  of `PhoenixDevToolbar.PanelLive`, read from the LiveView process state
+  (Phoenix LiveView 1.2.13: `socket.assigns`). Isolated here on purpose.
+  """
+  @spec panel_seen(struct()) :: %{String.t() => MapSet.t(non_neg_integer())}
+  def panel_seen(view), do: :sys.get_state(view.pid).socket.assigns.seen
 
   @doc "Milliseconds as native time units (event timestamps)."
   @spec ms(integer()) :: integer()
@@ -209,8 +211,8 @@ defmodule PhoenixDevToolbar.PageHelpers do
   @doc """
   Resets the Store and attaches exactly `plugins` for this test; on exit the
   configured plugins are attached again and the Store reset. `env` is
-  application env set for the test (restored after the plugins, so plugins that
-  read it at attach see it).
+  application env set before the attach; on exit it is restored before the
+  configured plugins are attached again, so they read the original env.
   """
   @spec with_plugins([module() | PhoenixDevToolbar.Config.entry()], keyword()) :: :ok
   def with_plugins(plugins, env \\ []) do

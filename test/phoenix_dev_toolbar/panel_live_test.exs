@@ -83,8 +83,8 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     assert has_element?(view, "#pdt-query-#{dead.seq}", "SELECT 1")
     assert has_element?(view, "#pdt-query-#{connected.seq}", "SELECT 2")
     # Which phase ran each query: the HTTP dead render or the connected LiveView.
-    assert has_element?(view, "#pdt-query-#{dead.seq} .pdt-tag--http")
-    assert has_element?(view, "#pdt-query-#{connected.seq} .pdt-tag--live")
+    assert has_element?(view, "#pdt-query-#{dead.seq} [data-pdt-phase=http]")
+    assert has_element?(view, "#pdt-query-#{connected.seq} [data-pdt-phase=live]")
   end
 
   test "dims framework queries and leaves them out of the query count",
@@ -98,11 +98,11 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
 
     assert has_element?(
              view,
-             ~s(#pdt-query-#{noise.seq}.pdt-row--noise[data-pdt-noise="check_repo_status"])
+             ~s(#pdt-query-#{noise.seq}[data-pdt-noise="check_repo_status"])
            )
 
     assert has_element?(view, "#pdt-noise-#{noise.seq}", "framework")
-    refute has_element?(view, "#pdt-query-#{app.seq}.pdt-row--noise")
+    refute has_element?(view, "#pdt-query-#{app.seq}[data-pdt-noise]")
     refute has_element?(view, "#pdt-noise-#{app.seq}")
   end
 
@@ -157,8 +157,8 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
 
     view |> element("#pdt-details-toggle-#{event.seq}") |> render_click()
 
-    assert has_element?(view, "#pdt-query-#{event.seq} .pdt-hint", "stacktrace: true")
-    assert has_element?(view, "#pdt-query-#{event.seq} .pdt-timings", "queue")
+    assert has_element?(view, "#pdt-stacktrace-hint-#{event.seq}", "stacktrace: true")
+    assert has_element?(view, "#pdt-timings-#{event.seq}", "queue")
   end
 
   test "ties tabs to their panels for assistive technology", %{conn: conn, request: request} do
@@ -376,7 +376,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
       newer = page(:request, [path: "/users"], 1_000)
       _other = page(:request, [path: "/users/1"], 2_000)
 
-      view = open_panel(conn: conn, query: "?path=/users")
+      view = open_panel_at("?path=/users", conn: conn)
 
       assert has_element?(view, ~s(#pdt-panel[data-pdt-root="#{newer.sid}"]))
       refute has_element?(view, ~s(#pdt-panel[data-pdt-root="#{older}"]))
@@ -385,7 +385,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     test "without a parameter it opens the newest page", %{conn: conn} do
       newest = page(:request, [path: "/latest"], 1_000)
 
-      view = open_panel(conn: conn, query: "")
+      view = open_panel_at("", conn: conn)
 
       assert has_element?(view, ~s(#pdt-panel[data-pdt-root="#{newest.sid}"]))
     end
@@ -395,7 +395,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
       opts = [parent: request, path: "/users", owner: idle_process(), transport: transport]
       live = page(:live_view, opts, 1_000)
 
-      view = open_panel(conn: conn, query: "?path=/users")
+      view = open_panel_at("?path=/users", conn: conn)
 
       assert has_element?(view, ~s(#pdt-panel[data-pdt-root="#{request}"]))
       assert has_element?(view, ~s(#pdt-panel[data-pdt-sids="#{request},#{live.sid}"]))
@@ -407,13 +407,13 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
       opts = [parent: first.sid, path: "/next", owner: idle_process(), transport: transport]
       navigated = page(:live_view, opts, 1_000)
 
-      view = open_panel(conn: conn, query: "?path=/next")
+      view = open_panel_at("?path=/next", conn: conn)
 
       assert has_element?(view, ~s(#pdt-panel[data-pdt-root="#{navigated.sid}"]))
     end
 
     test "an unknown path says what was asked", %{conn: conn} do
-      view = open_panel(conn: conn, query: "?path=/nowhere")
+      view = open_panel_at("?path=/nowhere", conn: conn)
 
       assert has_element?(view, ~s(#pdt-empty[data-pdt-lookup="path"]))
       assert element(view, "#pdt-empty") |> render() =~ "No captured page at /nowhere."
@@ -421,7 +421,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     end
 
     test "a path is shown as text, never as markup", %{conn: conn} do
-      view = open_panel(conn: conn, query: "?path=<script>alert(1)</script>")
+      view = open_panel_at("?path=<script>alert(1)</script>", conn: conn)
 
       assert element(view, "#pdt-empty") |> render() =~ "&lt;script&gt;alert(1)&lt;/script&gt;"
       refute has_element?(view, "#pdt-empty script")
@@ -430,7 +430,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     test "a non string path is the empty state, never the newest page", %{conn: conn} do
       _newest = page(:request, [path: "/latest"], 1_000)
 
-      view = open_panel(conn: conn, query: "?path[]=/latest")
+      view = open_panel_at("?path[]=/latest", conn: conn)
 
       assert has_element?(view, ~s(#pdt-empty[data-pdt-lookup="path"]))
       refute has_element?(view, "#pdt-panel[data-pdt-root]")
@@ -439,14 +439,14 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     test "newest with nothing captured says so", %{conn: conn} do
       Store.reset()
 
-      view = open_panel(conn: conn, query: "")
+      view = open_panel_at("", conn: conn)
 
       assert has_element?(view, ~s(#pdt-empty[data-pdt-lookup="newest"]))
       assert element(view, "#pdt-empty") |> render() =~ "Nothing captured yet"
     end
 
     test "a sid that is gone keeps the expired text", %{conn: conn} do
-      view = open_panel(conn: conn, query: "?sid=gone")
+      view = open_panel_at("?sid=gone", conn: conn)
 
       assert has_element?(view, ~s(#pdt-empty[data-pdt-lookup="sid"]))
       assert element(view, "#pdt-empty") |> render() =~ "expired or the toolbar restarted"
@@ -508,7 +508,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
 
     test "the gate hint says MCP is off when mcp: false", %{conn: conn} do
       put_app_env(:mcp, false)
-      view = open_panel(conn: from(conn, @lan), query: "?path=/users")
+      view = open_panel_at("?path=/users", conn: from(conn, @lan))
 
       assert has_element?(view, ~s(#pdt-empty[data-pdt-lookup="gated"]))
       assert element(view, "#pdt-empty") |> render() =~ "MCP is off"
@@ -524,7 +524,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     end
 
     test "a gated client gets the panel with the reason", %{conn: conn, request: request} do
-      view = open_panel(conn: from(conn, @lan), query: "?path=/users")
+      view = open_panel_at("?path=/users", conn: from(conn, @lan))
 
       assert has_element?(view, ~s(#pdt-empty[data-pdt-lookup="gated"]))
       assert element(view, "#pdt-empty") |> render() =~ "limited to this machine"
@@ -537,7 +537,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     test "an allowed LAN client opens the page", %{conn: conn, request: request} do
       put_app_env(:mcp, clients: ["203.0.113.0/24"])
 
-      view = open_panel(conn: from(conn, @lan), query: "?path=/users")
+      view = open_panel_at("?path=/users", conn: from(conn, @lan))
 
       assert has_element?(view, ~s(#pdt-panel[data-pdt-root="#{request}"]))
     end
@@ -571,7 +571,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     end
 
     test "a panel without a page pushes the error without a page", %{conn: conn} do
-      view = open_panel(conn: conn, query: "?path=/nowhere")
+      view = open_panel_at("?path=/nowhere", conn: conn)
 
       view |> element("#pdt-markdown-copy") |> render_click()
 

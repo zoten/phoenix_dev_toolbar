@@ -78,7 +78,8 @@ defmodule PhoenixDevToolbar.ProcessActionsTest do
     assert Process.info(pid, :status) == {:status, :suspended}
 
     assert ProcessActions.resume(pid) == :ok
-    refute Process.info(pid, :status) == {:status, :suspended}
+    assert {:status, status} = Process.info(pid, :status)
+    assert status in [:waiting, :runnable, :running]
   end
 
   test "a suspended process can still be killed", %{context: context} do

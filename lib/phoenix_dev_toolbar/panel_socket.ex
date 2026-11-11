@@ -206,6 +206,14 @@ defmodule PhoenixDevToolbar.PanelSocket do
       match?({Phoenix.LiveView.Channel, _opts}, module.__channel__("lv:pdt"))
   end
 
+  @doc false
+  # Forgets the logged refusals, so a test sees the first one of each pair again.
+  @spec reset_logged_refusals() :: :ok
+  def reset_logged_refusals do
+    _ = :persistent_term.erase(@logged)
+    :ok
+  end
+
   defp log_once(endpoint) do
     key = {PanelSocket, :no_live_socket, endpoint}
 

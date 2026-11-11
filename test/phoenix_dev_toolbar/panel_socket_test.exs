@@ -9,6 +9,7 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
   import PhoenixDevToolbar.EnvHelpers
   import PhoenixDevToolbar.PageHelpers
 
+  alias PhoenixDevToolbar.PanelSocket
   alias PhoenixDevToolbar.Store
   alias PhoenixDevToolbar.WebSocketClient
 
@@ -232,12 +233,10 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
   end
 
   describe "origin (the panel is always same origin with its page)" do
-    @refusals_key {PhoenixDevToolbar.PanelSocket, :logged_refusals}
-
     # Refusals are logged once per pair: start each test with none logged.
     setup do
-      :persistent_term.erase(@refusals_key)
-      on_exit(fn -> :persistent_term.erase(@refusals_key) end)
+      PanelSocket.reset_logged_refusals()
+      on_exit(&PanelSocket.reset_logged_refusals/0)
     end
 
     # Direct calls to upgrade/1: a Plug.Test conn has no Host header, so the

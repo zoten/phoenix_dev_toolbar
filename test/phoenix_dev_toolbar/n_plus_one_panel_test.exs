@@ -54,7 +54,7 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
       panel
       |> render()
       |> LazyHTML.from_fragment()
-      |> LazyHTML.query("#pdt-queries .pdt-tag--warn")
+      |> LazyHTML.query("#pdt-queries li[data-pdt-n-plus-one]")
 
     assert Enum.count(tags) == 2
     # FakeRepo queries have no stacktrace: the hint explains the coarser grouping.
@@ -70,8 +70,8 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
     settle(panel)
 
     assert has_element?(panel, "#pdt-badge-ecto-n-plus-one", "N+1 ×2")
-    assert has_element?(panel, "#pdt-n-plus-one li .pdt-origin", "lib/a.ex:3")
-    assert has_element?(panel, "#pdt-n-plus-one li .pdt-origin", "lib/b.ex:3")
+    assert has_element?(panel, "#pdt-n-plus-one li [data-pdt-origin]", "lib/a.ex:3")
+    assert has_element?(panel, "#pdt-n-plus-one li [data-pdt-origin]", "lib/b.ex:3")
     refute has_element?(panel, "#pdt-n-plus-one-hint")
   end
 
@@ -111,7 +111,7 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
     {host, panel} = start([{Plugins.Ecto, n_plus_one: 2}, Plugins.LiveView])
     render_hook(host, "queries", %{"sql" => "SELECT 2", "count" => 2})
     settle(panel)
-    assert has_element?(panel, "#pdt-badge-ecto-n-plus-one")
+    assert has_element?(panel, "#pdt-badge-ecto-n-plus-one", "N+1 ×1")
 
     {host, panel} = start([{Plugins.Ecto, n_plus_one: false}, Plugins.LiveView])
     render_hook(host, "queries", %{"sql" => "SELECT 3", "count" => 9})
@@ -146,7 +146,7 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
     assert panel
            |> render()
            |> LazyHTML.from_fragment()
-           |> LazyHTML.query("#pdt-queries li.pdt-row")
+           |> LazyHTML.query("#pdt-queries li[data-pdt-row]")
            |> Enum.count() == 3
 
     refute has_element?(panel, "#pdt-n-plus-one")

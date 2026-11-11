@@ -65,8 +65,8 @@ defmodule PhoenixDevToolbar.ReportPageTest do
 
     assert %{"sid" => ^before_sid, "panel_url" => before_url} = result["before"]
     assert %{"sid" => ^after_sid, "panel_url" => after_url} = result["after"]
-    assert before_url =~ "/__pdt/panel?sid=" <> before_sid
-    assert after_url =~ "/__pdt/panel?sid=" <> after_sid
+    assert before_url == "http://localhost/__pdt/panel?sid=" <> before_sid
+    assert after_url == "http://localhost/__pdt/panel?sid=" <> after_sid
     assert %{"delta" => %{"count" => 1}} = result["queries"]
   end
 
@@ -80,7 +80,7 @@ defmodule PhoenixDevToolbar.ReportPageTest do
 
     assert %{"errors" => errors} = mcp_call("recent_errors", %{})
     assert %{"page_sid" => ^sid, "path" => "/demo/boom", "panel_url" => url} = hd(errors)
-    assert url =~ "/__pdt/panel?sid=" <> sid
+    assert url == "http://localhost/__pdt/panel?sid=" <> sid
   end
 
   test "page_assigns_shape over HTTP reads the connected LiveView through its owner pid" do
@@ -94,7 +94,9 @@ defmodule PhoenixDevToolbar.ReportPageTest do
     assert shape["view"] == "DemoWeb.PageLive"
     assert shape["live_view_path"] == "/demo"
     refute Map.has_key?(shape, "warning")
-    assert %{"key" => _key, "words" => _words} = hd(shape["assigns"])
+
+    assert %{"key" => ":live_action", "type" => "atom", "words" => 0} =
+             Enum.find(shape["assigns"], &(&1["key"] == ":live_action"))
   end
 
   test "page_report over HTTP ends with the sid and panel link" do
@@ -140,7 +142,7 @@ defmodule PhoenixDevToolbar.ReportPageTest do
       open_panel_tab(panel, "ecto")
 
       for %{seq: seq} <- noise do
-        assert has_element?(panel, "#pdt-query-#{seq}.pdt-row--noise #pdt-noise-#{seq}")
+        assert has_element?(panel, "#pdt-query-#{seq}[data-pdt-noise] #pdt-noise-#{seq}")
       end
     end
   end

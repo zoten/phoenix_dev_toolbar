@@ -26,16 +26,16 @@ defmodule PhoenixDevToolbar.EctoDetailsPanelTest do
     toggle = "#pdt-details-toggle-#{seq}"
 
     assert has_element?(panel, "#{row} #{toggle}[aria-expanded=false]")
-    refute has_element?(panel, "#{row} .pdt-details pre")
-    refute has_element?(panel, "#{row} .pdt-details dl")
+    refute has_element?(panel, "#pdt-details-#{seq} pre")
+    refute has_element?(panel, "#pdt-details-#{seq} dl")
 
     panel |> element(toggle) |> render_click()
     assert has_element?(panel, "#{row} #{toggle}[aria-expanded=true]")
-    assert has_element?(panel, "#{row} .pdt-details pre", "Demo.Thing.run/0")
-    assert has_element?(panel, "#{row} .pdt-details dd code")
+    assert has_element?(panel, "#pdt-details-#{seq} pre", "Demo.Thing.run/0")
+    assert has_element?(panel, "#pdt-details-#{seq} dd code", ~r/^\[1\]$/)
 
     panel |> element(toggle) |> render_click()
-    refute has_element?(panel, "#{row} .pdt-details pre")
+    refute has_element?(panel, "#pdt-details-#{seq} pre")
     assert has_element?(panel, "#{row} #{toggle}[aria-expanded=false]")
   end
 

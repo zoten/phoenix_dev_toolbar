@@ -41,7 +41,7 @@ defmodule PhoenixDevToolbar.ConfigMcpTest do
 
   test "a clients list keeps the valid entries and ignores the rest" do
     put_app_env(:mcp, clients: ["10.0.0.0/8", "nope", 5, "fd00::/8"])
-    assert {:list, [{{10, 0, 0, 0}, 8}, {_v6, 8}]} = Config.mcp()
+    assert {:list, [{{10, 0, 0, 0}, 8}, {{0xFD00, 0, 0, 0, 0, 0, 0, 0}, 8}]} = Config.mcp()
     assert Config.mcp?()
   end
 

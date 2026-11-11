@@ -26,6 +26,7 @@ defmodule PhoenixDevToolbar.Components do
         :for={badge <- @badges}
         id={"pdt-badge-" <> badge.id}
         class={["pdt-badge", level_class(badge.level)]}
+        data-pdt-level={badge.level}
         title={badge[:title]}
       >
         {badge.text}
@@ -34,6 +35,7 @@ defmodule PhoenixDevToolbar.Components do
         :if={@dropped > 0}
         id="pdt-badge-dropped"
         class="pdt-badge pdt-badge--warn"
+        data-pdt-level="warn"
         title="Events over the per second limit were not recorded: counts are lower than reality"
       >
         +{@dropped} dropped
@@ -42,6 +44,7 @@ defmodule PhoenixDevToolbar.Components do
         :if={@trimmed > 0}
         id="pdt-badge-trimmed"
         class="pdt-badge pdt-badge--warn"
+        data-pdt-level="warn"
         title="The oldest events were removed past the per session limits: lists start later than the page"
       >
         {@trimmed} older trimmed
@@ -120,7 +123,7 @@ defmodule PhoenixDevToolbar.Components do
         plan={@event.data.plan}
         target={@target}
       />
-      <div class="pdt-details">
+      <div id={"pdt-details-#{@event.seq}"} class="pdt-details">
         <button
           id={"pdt-details-toggle-#{@event.seq}"}
           type="button"
@@ -140,7 +143,7 @@ defmodule PhoenixDevToolbar.Components do
           <dt>repo</dt>
           <dd><code>{inspect(@event.data.repo)}</code></dd>
           <dt>timings</dt>
-          <dd class="pdt-timings">
+          <dd id={"pdt-timings-#{@event.seq}"} class="pdt-timings">
             <span :for={{key, us} <- timings(@event.data.times)}>{key} {duration(us)}</span>
           </dd>
           <dt :if={not Explain.explainable?(@event)}>explain</dt>
@@ -151,7 +154,11 @@ defmodule PhoenixDevToolbar.Components do
           <dd :if={@event.data.stacktrace != []}>
             <pre>{Enum.join(@event.data.stacktrace, "\n")}</pre>
           </dd>
-          <dd :if={@event.data.stacktrace == []} class="pdt-hint">
+          <dd
+            :if={@event.data.stacktrace == []}
+            id={"pdt-stacktrace-hint-#{@event.seq}"}
+            class="pdt-hint"
+          >
             Unknown: set <code>stacktrace: true</code>
             in your repo config to see where queries come from.
           </dd>
@@ -250,7 +257,7 @@ defmodule PhoenixDevToolbar.Components do
             <span :if={group.at} class="pdt-time" title="Last time it repeated">
               last {clock(group.at)}
             </span>
-            <span :if={group.origin} class="pdt-origin">{group.origin}</span>
+            <span :if={group.origin} class="pdt-origin" data-pdt-origin>{group.origin}</span>
           </div>
         </li>
       </ul>
@@ -284,13 +291,21 @@ defmodule PhoenixDevToolbar.Components do
 
   defp phase_tag(%{sid: sid, root: sid} = assigns) do
     ~H"""
-    <span class="pdt-tag pdt-tag--http" title="Ran during the HTTP request (dead render)">HTTP</span>
+    <span
+      class="pdt-tag pdt-tag--http"
+      data-pdt-phase="http"
+      title="Ran during the HTTP request (dead render)"
+    >
+      HTTP
+    </span>
     """
   end
 
   defp phase_tag(assigns) do
     ~H"""
-    <span class="pdt-tag pdt-tag--live" title="Ran in the connected LiveView">live</span>
+    <span class="pdt-tag pdt-tag--live" data-pdt-phase="live" title="Ran in the connected LiveView">
+      live
+    </span>
     """
   end
 
@@ -350,7 +365,7 @@ defmodule PhoenixDevToolbar.Components do
     assigns = assign(assigns, :frames, stack_arg_frames(assigns.data))
 
     ~H"""
-    <details :if={@frames != []} class="pdt-details pdt-stack-args">
+    <details :if={@frames != []} class="pdt-details pdt-stack-args" data-pdt-stack-args>
       <summary>call arguments</summary>
       <dl>
         <%= for {frame, args} <- @frames do %>

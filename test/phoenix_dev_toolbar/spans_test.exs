@@ -89,10 +89,13 @@ defmodule PhoenixDevToolbar.SpansTest do
             %{socket: %Phoenix.LiveView.Socket{view: DemoWeb.PageLive}, event: "x", params: %{}}
           )
 
-          {Attribution.current(), Process.get(:pdt_span)}
+          # No span was started: tracking afterwards begins at span 0.
+          untracked = Attribution.current()
+          Attribution.track("later")
+          {untracked, Attribution.current()}
         end)
 
-      assert result == {nil, nil}
+      assert result == {nil, {"later", :self, 0}}
     end
   end
 end

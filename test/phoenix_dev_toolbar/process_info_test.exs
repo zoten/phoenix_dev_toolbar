@@ -38,10 +38,14 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
 
     assert {:ok, sample} = ProcessInfo.sample(pid)
     assert sample.message_queue_len == 1000
-    assert sample.memory > 0 and sample.reductions > 0
-    assert is_integer(sample.minor_gcs)
+    # The process only runs a selective receive: its own numbers do not move.
+    assert {:memory, memory} = Process.info(pid, :memory)
+    assert sample.memory == memory
+    assert sample.reductions > 0
+    assert {:garbage_collection, gc} = Process.info(pid, :garbage_collection)
+    assert sample.minor_gcs == gc[:minor_gcs]
     assert sample.status in [:waiting, :running, :runnable]
-    assert sample.current_function =~ "/"
+    assert sample.current_function == "PhoenixDevToolbar.ProcessInfoTest.idle/0"
   end
 
   test "reductions per second come from two samples" do
@@ -70,9 +74,8 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
              Enum.find(monitors, &(&1.id == inspect(stranger)))
 
     # A Task is named after its function, a plain spawn after what it runs now.
-    assert name =~ "ProcessInfoTest"
-    refute name =~ "Task.Supervised"
-    refute stranger_name == ":erlang.apply/2"
+    assert name == "anonymous fn/0 in PhoenixDevToolbar.ProcessInfoTest.subject/0"
+    assert stranger_name == "PhoenixDevToolbar.ProcessInfoTest.idle/0"
   end
 
   test "a GenServer is named after $initial_call, not proc_lib" do

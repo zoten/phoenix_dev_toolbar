@@ -51,7 +51,9 @@ defmodule PhoenixDevToolbar.Mcp.AssignsShapeTest do
     assert %{"stream?" => true, "type" => "struct Phoenix.LiveView.LiveStream"} =
              entry(result, ":posts")
 
-    assert result["total_words"] >= words
+    words_by_rank = Enum.map(result["assigns"], & &1["words"])
+    assert words_by_rank == Enum.sort(words_by_rank, :desc)
+    assert result["total_words"] == Enum.sum(words_by_rank)
     refute Enum.any?(result["assigns"], &(&1["key"] in [":__changed__", ":streams"]))
 
     json = Json.encode!(result)

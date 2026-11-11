@@ -238,9 +238,9 @@ defmodule PhoenixDevToolbar.Panels.Eval do
             <code>{run.label}</code>
             <span class="pdt-time">{run.ms} ms</span>
           </div>
-          <pre :if={run.output != ""} class="pdt-eval__output">{run.output}</pre>
-          <pre :if={run.result} class="pdt-eval__result">{run.result}</pre>
-          <pre :if={run.error} class="pdt-error">{run.error}</pre>
+          <pre :if={run.output != ""} class="pdt-eval__output" data-pdt-eval="output">{run.output}</pre>
+          <pre :if={run.result} class="pdt-eval__result" data-pdt-eval="result">{run.result}</pre>
+          <pre :if={run.error} class="pdt-error" data-pdt-eval="error">{run.error}</pre>
         </li>
       </ol>
     </div>

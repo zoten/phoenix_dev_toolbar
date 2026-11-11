@@ -62,19 +62,24 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     assert has_element?(panel, "#pdt-process-memory", "B")
     assert has_element?(panel, "#pdt-process-queue", "0")
     assert has_element?(panel, "#pdt-process-details", "waiting")
-    assert has_element?(panel, "#pdt-process-links")
-    assert has_element?(panel, "#pdt-process-monitored-by")
+    assert has_element?(panel, "#pdt-process-links", "Links (1)")
+
+    assert has_element?(
+             panel,
+             "#pdt-process-monitored-by",
+             ~r/Monitored by \(1\).*Phoenix\.LiveViewTest\.ClientProxy/s
+           )
   end
 
   test "it samples only while shown and visible, one loop at a time" do
     panel = open_tab("/demo", "process")
     visible(panel)
     assert samples(panel) == 1
-    assert has_element?(panel, "#pdt-process-memory .pdt-vital__peak", "over 1 sample")
+    assert has_element?(panel, "#pdt-process-memory-peak", "over 1 sample")
 
     reshow(panel)
     assert samples(panel) == 2
-    assert has_element?(panel, "#pdt-process-memory .pdt-vital__peak", "over 2 samples")
+    assert has_element?(panel, "#pdt-process-memory-peak", "over 2 samples")
 
     stale_tick(panel)
     assert samples(panel) == 2

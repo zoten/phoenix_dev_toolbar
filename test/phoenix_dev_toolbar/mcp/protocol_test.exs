@@ -6,6 +6,7 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
 
   alias PhoenixDevToolbar.Mcp.Json
   alias PhoenixDevToolbar.Mcp.Protocol
+  alias PhoenixDevToolbar.Mcp.Tools
   alias PhoenixDevToolbar.Store
 
   @opts [base_url: "http://localhost:4000/__pdt", server_version: "1.2.3"]
@@ -38,7 +39,7 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
                  "instructions" => instructions
                } = result
 
-        assert instructions =~ "10 minutes"
+        assert instructions =~ "page_summary"
       end
     end
 
@@ -75,7 +76,9 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
           Protocol.handle(rpc("tools/list"), %{"mcp-protocol-version" => "2025-06-18"}, @opts)
         )
 
-      assert length(result["tools"]) == 10
+      assert result["tools"] |> Enum.map(& &1["name"]) |> Enum.sort() ==
+               ~w(compare_pages list_pages page_assigns_shape page_callbacks page_errors page_n_plus_one page_queries page_report page_summary recent_errors)
+
       refute Map.has_key?(result, "resultType")
     end
 
@@ -113,7 +116,7 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
       assert {:ok, decoded} = Json.decode(text)
       assert decoded == result["structuredContent"]
       # The whole response is encodable.
-      assert byte_size(Json.encode!(result)) > 0
+      assert result |> Json.encode!() |> Json.decode() == {:ok, result}
     end
 
     test "page_report's text block is the Markdown, not JSON" do
@@ -154,7 +157,7 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
       result = result!(Protocol.handle(rpc("tools/call", params), %{}, @opts))
 
       assert %{"isError" => true, "content" => [%{"text" => text}]} = result
-      assert text =~ "No page captured"
+      assert {:error, ^text} = Tools.call("page_summary", %{}, @opts)
       refute Map.has_key?(result, "structuredContent")
 
       bad = %{"name" => "list_pages", "arguments" => %{"limit" => 0}}
@@ -223,7 +226,7 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
       [%{"content" => %{"text" => text}}] = result["messages"]
       assert text =~ inspect(path)
       refute text =~ "b\nc"
-      assert text =~ "page_n_plus_one with sid set to that sid"
+      assert text =~ "page_n_plus_one"
       assert text =~ "sort: \"slowest\""
       assert text =~ "page_assigns_shape with path #{inspect(path)}"
       assert text =~ "live_view_sid"

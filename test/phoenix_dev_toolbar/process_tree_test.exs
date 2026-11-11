@@ -18,9 +18,11 @@ defmodule PhoenixDevToolbar.ProcessTreeTest do
     assert {:ok, %{specs: 2, active: 2, workers: 1, supervisors: 1}, children} =
              ProcessTree.children(sup, 1000)
 
-    assert [%{id: ":one", type: :worker, pid: agent} | _rest] = Enum.sort_by(children, & &1.id)
-    assert is_pid(agent)
-    assert Enum.any?(children, &(&1.type == :supervisor))
+    assert [%{id: ":one", type: :worker, pid: agent}, %{id: "Task.Supervisor", type: :supervisor}] =
+             Enum.sort_by(children, & &1.id)
+
+    assert {:one, ^agent, :worker, _modules} =
+             List.keyfind(Supervisor.which_children(sup), :one, 0)
   end
 
   test "a DynamicSupervisor above the cap gives its counts only" do

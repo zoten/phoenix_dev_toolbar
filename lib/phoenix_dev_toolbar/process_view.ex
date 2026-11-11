@@ -124,7 +124,9 @@ defmodule PhoenixDevToolbar.ProcessView do
       <span class="pdt-vital__label" title={@title}>{@label}</span>
       <span class="pdt-vital__value">{@value}</span>
       <.sparkline values={@values} label={sparkline_label(@label, @peak, length(@values))} />
-      <span :if={@peak} class="pdt-vital__peak">peak {@peak} over {samples(length(@values))}</span>
+      <span :if={@peak} id={@id <> "-peak"} class="pdt-vital__peak">peak {@peak} over {samples(
+        length(@values)
+      )}</span>
     </div>
     """
   end

@@ -1,6 +1,7 @@
 defmodule PhoenixDevToolbar.Mcp.ToolsTest do
   use ExUnit.Case, async: false
 
+  import PhoenixDevToolbar.ProcessHelpers, only: [stop_store!: 0]
   import PhoenixDevToolbar.ReportFixtures
   import PhoenixDevToolbar.StackArgsHelpers
 
@@ -128,8 +129,7 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
     end
 
     test "a missing Store gives an empty list, not a crash" do
-      :ok = Supervisor.terminate_child(PhoenixDevToolbar.Supervisor, Store)
-      on_exit(fn -> Supervisor.restart_child(PhoenixDevToolbar.Supervisor, Store) end)
+      stop_store!()
 
       assert %{"pages" => []} = call!("list_pages")
     end
@@ -139,12 +139,21 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
     end
 
     test "rejects invalid arguments" do
-      assert call_error("list_pages", %{"limit" => 0}) =~ "limit"
-      assert call_error("list_pages", %{"limit" => 51}) =~ "limit"
-      assert call_error("list_pages", %{"limit" => "5"}) =~ "limit"
-      assert call_error("list_pages", %{"path" => 1}) =~ "path"
-      assert call_error("list_pages", %{"bogus" => 1}) =~ "bogus"
-      assert call_error("list_pages", [1]) =~ "object"
+      assert call_error("list_pages", %{"limit" => 0}) == "limit: an integer from 1 to 50, got 0."
+
+      assert call_error("list_pages", %{"limit" => 51}) ==
+               "limit: an integer from 1 to 50, got 51."
+
+      assert call_error("list_pages", %{"limit" => "5"}) ==
+               "limit: an integer from 1 to 50, got a string."
+
+      assert call_error("list_pages", %{"path" => 1}) ==
+               "path: an exact request path string, such as \"/posts\", got a number."
+
+      assert call_error("list_pages", %{"bogus" => 1}) ==
+               "Unknown argument(s): \"bogus\". Accepted: limit, path, path_prefix, since."
+
+      assert call_error("list_pages", [1]) == "arguments must be an object"
     end
   end
 
@@ -284,7 +293,9 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
     end
 
     test "invalid limit and sort", %{sid: sid} do
-      assert call_error("page_queries", %{"sid" => sid, "limit" => 201}) =~ "limit"
+      assert call_error("page_queries", %{"sid" => sid, "limit" => 201}) ==
+               "limit: an integer from 1 to 200, got 201."
+
       assert call_error("page_queries", %{"sid" => sid, "sort" => "fastest"}) =~ "sort"
     end
 
@@ -388,7 +399,7 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
              } =
                call!("page_n_plus_one", %{"sid" => s.sid})
 
-      assert count >= 5
+      assert count == 12
     end
 
     test "each group lists the callbacks it ran in and its callers" do
@@ -486,7 +497,9 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       assert %{"total" => 3, "returned" => 1, "errors" => [%{"message" => "c"}]} =
                call!("recent_errors", %{"limit" => 1})
 
-      assert call_error("recent_errors", %{"limit" => 101}) =~ "limit"
+      assert call_error("recent_errors", %{"limit" => 101}) ==
+               "limit: an integer from 1 to 100, got 101."
+
       assert call_error("recent_errors", %{"since" => "not a time"}) =~ "since"
       assert call_error("recent_errors", %{"since" => 5}) =~ "since"
     end
@@ -551,7 +564,7 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       refute Map.has_key?(result, "before_panel_url")
 
       assert {b, a} == {before.sid, after_.sid}
-      assert message =~ "boom"
+      assert message == "boom"
       assert before_url == "http://localhost:4000/__pdt/panel?sid=" <> before.sid
       assert after_url == "http://localhost:4000/__pdt/panel?sid=" <> after_.sid
     end
@@ -597,15 +610,20 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
     test "a missing, gone or malformed side is a tool error" do
       before = slow_page("/posts", @t0)
 
-      assert call_error("compare_pages", %{}) =~ "before"
-      assert call_error("compare_pages", %{"before" => "gone"}) =~ "before"
+      assert call_error("compare_pages", %{}) ==
+               "before is required: the sid of the earlier capture (page_summary or list_pages)."
+
+      assert call_error("compare_pages", %{"before" => "gone"}) ==
+               "before: no captured page with that sid (sessions are capped and expire after 10 minutes). Reload the page, then call page_summary for a new sid."
 
       assert call_error("compare_pages", %{"before" => "gone"}) =~
                "Reload the page, then call page_summary for a new sid"
 
-      assert call_error("compare_pages", %{"before" => "bad sid!"}) =~ "before"
-      assert call_error("compare_pages", %{"before" => 5}) =~ "before"
-      assert call_error("compare_pages", %{"before" => before.sid, "after" => "gone"}) =~ "after"
+      assert call_error("compare_pages", %{"before" => "bad sid!"}) =~ "before: no captured page"
+      assert call_error("compare_pages", %{"before" => 5}) =~ "before: a page sid string"
+
+      assert call_error("compare_pages", %{"before" => before.sid, "after" => "gone"}) ==
+               "after: no captured page with that sid (sessions are capped and expire after 10 minutes). Reload the page, then call page_summary for a new sid."
     end
 
     test "a wrong argument type says what is expected and how to get it" do
@@ -650,7 +668,7 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
                call!("compare_pages", %{"before" => mount.sid, "after" => after_.sid})
 
       assert sid == req.sid
-      assert url =~ req.sid
+      assert url == "http://localhost:4000/__pdt/panel?sid=" <> req.sid
     end
 
     test "after and path together is a tool error" do
@@ -663,7 +681,7 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
           "path" => "/posts"
         })
 
-      assert msg =~ "after" and msg =~ "path"
+      assert msg == "Use after or path, not both."
     end
   end
 
@@ -676,8 +694,10 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       assert %{"total" => 2, "returned" => 1, "errors" => [%{"message" => message}]} =
                call!("page_errors", %{"sid" => s.sid, "limit" => 1})
 
-      assert message =~ "boom"
-      assert call_error("page_errors", %{"limit" => 101}) =~ "limit"
+      assert message == "boom"
+
+      assert call_error("page_errors", %{"limit" => 101}) ==
+               "limit: an integer from 1 to 100, got 101."
     end
 
     test "stack_args only with agents: true (ADR 03)" do

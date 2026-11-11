@@ -45,6 +45,14 @@ defmodule PhoenixDevToolbar.HostCheck do
     end
   end
 
+  @doc false
+  # Forgets the logged hosts, so a test sees the first refusal of each again.
+  @spec reset_logged() :: :ok
+  def reset_logged do
+    _ = :persistent_term.erase(@logged)
+    :ok
+  end
+
   defp ip?(host), do: match?({:ok, _ip}, :inet.parse_address(String.to_charlist(host)))
 
   defp localhost?(host), do: host == "localhost" or String.ends_with?(host, ".localhost")

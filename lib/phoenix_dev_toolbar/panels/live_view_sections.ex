@@ -146,6 +146,7 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
             :for={{key, value} <- entries}
             id={"pdt-snapshot-" <> key_name(key)}
             class={["pdt-snapshot__entry", key in @last_changed && "pdt-snapshot--changed"]}
+            data-pdt-snapshot-changed={key in @last_changed}
           >
             <dt>{key_name(key)}</dt>
             <dd><code>{value}</code></dd>
@@ -291,8 +292,12 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
         <code>{@event.data.type}</code>
       </div>
       <div class="pdt-row__meta">
-        <span class="pdt-tag pdt-tag--client" title="Fired in the browser">client</span>
-        <span :for={{field, value} <- @event.data.fields} class="pdt-tag">{field} {to_string(value)}</span>
+        <span class="pdt-tag pdt-tag--client" data-pdt-phase="client" title="Fired in the browser">
+          client
+        </span>
+        <span :for={{field, value} <- @event.data.fields} class="pdt-tag" data-pdt-field={field}>
+          {field} {to_string(value)}
+        </span>
       </div>
     </li>
     """
@@ -325,13 +330,21 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
 
   defp phase_tag(%{event: %Event{sid: sid}, root: sid} = assigns) do
     ~H"""
-    <span class="pdt-tag pdt-tag--http" title="Ran during the HTTP request (dead render)">HTTP</span>
+    <span
+      class="pdt-tag pdt-tag--http"
+      data-pdt-phase="http"
+      title="Ran during the HTTP request (dead render)"
+    >
+      HTTP
+    </span>
     """
   end
 
   defp phase_tag(assigns) do
     ~H"""
-    <span class="pdt-tag pdt-tag--live" title="Ran in the connected LiveView">live</span>
+    <span class="pdt-tag pdt-tag--live" data-pdt-phase="live" title="Ran in the connected LiveView">
+      live
+    </span>
     """
   end
 
@@ -339,10 +352,21 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
 
   defp changed(%{changes: %{keys: _}} = assigns) do
     ~H"""
-    <span :for={key <- @changes.keys} class="pdt-tag pdt-changed" title="Assign changed">
+    <span
+      :for={key <- @changes.keys}
+      class="pdt-tag pdt-changed"
+      data-pdt-changed={key_name(key)}
+      title="Assign changed"
+    >
       {key_name(key)}
     </span>
-    <span :if={@changes.omitted > 0} class="pdt-tag pdt-changed">+{@changes.omitted} more</span>
+    <span
+      :if={@changes.omitted > 0}
+      class="pdt-tag pdt-changed"
+      data-pdt-changed-more={@changes.omitted}
+    >
+      +{@changes.omitted} more
+    </span>
     """
   end
 
@@ -354,6 +378,7 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
     ~H"""
     <span
       class="pdt-tag pdt-pushed"
+      data-pdt-pushed-unavailable
       title="This LiveView version stores pushed events differently: see the server log"
     >
       push_event names unavailable
@@ -363,7 +388,9 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
 
   defp pushed(%{pushed: [_ | _]} = assigns) do
     ~H"""
-    <span :for={name <- @pushed} class="pdt-tag pdt-pushed" title="push_event">⇢ {name}</span>
+    <span :for={name <- @pushed} class="pdt-tag pdt-pushed" data-pdt-pushed={name} title="push_event">
+      ⇢ {name}
+    </span>
     """
   end
 

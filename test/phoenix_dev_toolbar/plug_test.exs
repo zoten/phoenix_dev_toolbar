@@ -5,7 +5,6 @@ defmodule PhoenixDevToolbar.PlugTest do
   import Plug.Conn
   import Plug.Test
   import PhoenixDevToolbar.EnvHelpers
-  import PhoenixDevToolbar.PageHelpers, only: [browser_headers: 1]
   import PhoenixDevToolbar.ProcessHelpers, only: [stop_store!: 0]
 
   alias PhoenixDevToolbar.Attribution
@@ -63,7 +62,7 @@ defmodule PhoenixDevToolbar.PlugTest do
       assert [%Event{plugin: :request, kind: :response, duration: duration, data: data}] =
                Store.events(sid(conn))
 
-      assert is_integer(duration)
+      assert duration >= 0
       assert %{method: "GET", path: "/users", status: 200, injected?: true} = data
     end
 
@@ -146,7 +145,7 @@ defmodule PhoenixDevToolbar.PlugTest do
           ToolbarPlug.before_send(hostile_conn(:exit), @opts)
         end)
 
-      assert length(String.split(log, "response hook failed")) == 3
+      assert [_, _] = Regex.scan(~r/response hook failed/, log)
     end
 
     test "inject once when the plug runs twice" do
@@ -157,7 +156,8 @@ defmodule PhoenixDevToolbar.PlugTest do
     end
 
     test "count as pages only for top level documents, by sec-fetch-dest" do
-      document = page_conn() |> browser_headers() |> respond()
+      # page_conn/1 headers, only sec-fetch-dest differs between the cases.
+      document = page_conn() |> put_req_header("sec-fetch-dest", "document") |> respond()
 
       assert [_tag] = loader_tags(document)
 
@@ -246,8 +246,8 @@ defmodule PhoenixDevToolbar.PlugTest do
     end
 
     test "clear the previous request's sid from a reused connection process" do
-      respond(page_conn())
-      assert Attribution.tracked_sid()
+      first = respond(page_conn())
+      assert Attribution.tracked_sid() == sid(first)
 
       :get |> conn("/api") |> put_req_header("accept", "application/json") |> respond()
 
@@ -271,8 +271,8 @@ defmodule PhoenixDevToolbar.PlugTest do
     end
 
     test "every request, without crashing, while the Store is down" do
-      respond(page_conn())
-      assert Attribution.tracked_sid()
+      first = respond(page_conn())
+      assert Attribution.tracked_sid() == sid(first)
 
       stop_store!()
 

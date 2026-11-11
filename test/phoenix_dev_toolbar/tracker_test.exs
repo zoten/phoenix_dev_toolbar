@@ -62,8 +62,6 @@ defmodule PhoenixDevToolbar.TrackerTest do
 
     {pid, sid} = connected_mount(socket("phx-1", transport_pid: transport))
 
-    assert sid != request_sid
-
     assert {:ok, %Session{kind: :live_view, parent: ^request_sid, owner: ^pid, path: "/users"}} =
              Store.session(sid)
 

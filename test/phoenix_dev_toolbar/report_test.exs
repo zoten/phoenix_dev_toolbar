@@ -693,10 +693,7 @@ defmodule PhoenixDevToolbar.ReportTest do
 
       md = Report.markdown(s.sid)
 
-      assert md =~ "# /users"
-      assert md =~ "DemoWeb.PageLive"
-      assert md =~ "GET"
-      assert md =~ "200"
+      assert md =~ "# /users (`DemoWeb.PageLive`)\n\nRequest: GET, status 200, 1.0 ms\n"
       assert md =~ "## Queries"
       assert md =~ "## N+1"
       assert md =~ "SELECT * FROM posts WHERE user_id = ?"
@@ -728,11 +725,14 @@ defmodule PhoenixDevToolbar.ReportTest do
       refute Report.markdown(s.sid) =~ "Origin |\n| ---"
       assert Report.markdown(s.sid) =~ "| Callback | Time | Queries |\n"
 
-      # A row with an origin brings the column back.
+      # A row with an origin brings the column back. The summary never carries one
+      # (inferred callbacks are not in it), so the input is built by hand.
       summary = Report.summary(s.sid, verbose: true)
       [row] = summary.callbacks.slowest
       summary = put_in(summary.callbacks.slowest, [%{row | origin: "lib/a.ex:1: A.a/0"}])
-      assert Markdown.render(summary) =~ "| Callback | Time | Queries | Origin |"
+      md = Markdown.render(summary)
+      assert md =~ "| Callback | Time | Queries | Origin |\n| --- | --- | --- | --- |\n"
+      assert md =~ "| `DemoWeb.PageLive mount` | - | 0 | `lib/a.ex:1: A.a/0` |\n"
     end
 
     test "omits empty sections" do
@@ -900,7 +900,7 @@ defmodule PhoenixDevToolbar.ReportTest do
 
       assert {b, a} == {before.sid, after_.sid}
       assert origin == "lib/app.ex:10: App.list/0"
-      assert message =~ "boom"
+      assert message == "** (RuntimeError) boom"
     end
 
     test "an N+1 and an error that appear are new, one that stays is still" do
@@ -978,7 +978,7 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert %{before: %{dropped: 0, trimmed: 0}, after: %{trimmed: trimmed}, warning: warning} =
                Report.compare(clean.sid, lossy.sid)
 
-      assert trimmed > 0
+      assert trimmed == 2
       assert warning =~ "lost to the caps"
     end
 

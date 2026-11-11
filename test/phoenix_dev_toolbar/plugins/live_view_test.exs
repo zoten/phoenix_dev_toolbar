@@ -7,7 +7,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
   import Phoenix.LiveViewTest
 
   import PhoenixDevToolbar.PageHelpers,
-    only: [attach_plugins: 0, boom_view: 0, browser_headers: 0, ms: 1, with_plugins: 1]
+    only: [attach_plugins: 0, browser_headers: 0, ms: 1, visit: 1, with_plugins: 1]
 
   import PhoenixDevToolbar.ProcessHelpers
   import PhoenixDevToolbar.StackArgsHelpers
@@ -311,7 +311,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
     end
 
     test "a LiveComponent handle_event that raises keeps its stacktrace" do
-      view = boom_view()
+      {view, _sid} = visit("/demo/boom")
       crash(fn -> view |> element("#boom-component") |> render_click() end)
 
       assert [%{message: message, stacktrace: [first | _] = frames}] = boom_errors()
@@ -326,7 +326,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
     end
 
     test "a render that raises keeps its stacktrace" do
-      view = boom_view()
+      {view, _sid} = visit("/demo/boom")
       crash(fn -> render_hook(view, "break", %{}) end)
 
       assert [%{message: message, stacktrace: [first | _]} | _] = boom_errors()
@@ -335,7 +335,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
     end
 
     test "a FunctionClauseError prints the arity, never the call's params or socket" do
-      view = boom_view()
+      {view, _sid} = visit("/demo/boom")
       params = %{"user" => %{"password" => "hunter2", "bio" => String.duplicate("x", 50_000)}}
       crash(fn -> render_hook(view, "strict", params) end)
 
@@ -349,7 +349,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
 
     defp strict_crash(config) do
       put_stack_args(config, [LiveViewPlugin])
-      view = boom_view()
+      {view, _sid} = visit("/demo/boom")
       params = %{"user" => %{"password" => "hunter2", "name" => "ann"}}
       crash(fn -> render_hook(view, "strict", params) end)
 

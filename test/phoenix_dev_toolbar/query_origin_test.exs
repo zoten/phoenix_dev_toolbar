@@ -16,10 +16,9 @@ defmodule PhoenixDevToolbar.QueryOriginTest do
     %{host: host, sid: sid}
   end
 
-  defp query(sid, param), do: sid |> Report.queries() |> Enum.find(&(&1.params =~ param))
+  defp query(sid, params), do: sid |> Report.queries() |> Enum.find(&(&1.params == params))
 
   defp assert_not_plumbing(origin) do
-    assert byte_size(origin) > 0
     refute origin =~ "Task.Supervised"
     refute origin =~ "Phoenix.LiveView.Async"
     refute origin =~ "proc_lib"
@@ -29,9 +28,9 @@ defmodule PhoenixDevToolbar.QueryOriginTest do
        %{host: host, sid: sid} do
     render_hook(host, "task_query", %{})
 
-    query = query(sid, "1")
+    query = query(sid, "[1]")
     assert_not_plumbing(query.origin)
-    assert query.origin =~ "DemoWeb.PageLive"
+    assert query.origin == "anonymous fn/0 in DemoWeb.PageLive.handle_event/3"
     assert [_ | _] = Report.summary(sid).queries.slowest
     assert Enum.all?(Report.summary(sid).queries.slowest, &(&1.origin == query.origin))
   end
@@ -41,7 +40,7 @@ defmodule PhoenixDevToolbar.QueryOriginTest do
     render_hook(host, "async_query", %{})
     render_async(host)
 
-    query = query(sid, "2")
+    query = query(sid, "[2]")
     assert_not_plumbing(query.origin)
     assert query.origin == "task in DemoWeb.PageLive"
 

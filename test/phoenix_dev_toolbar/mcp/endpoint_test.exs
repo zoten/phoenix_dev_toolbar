@@ -6,6 +6,7 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
 
   import PhoenixDevToolbar.EnvHelpers
   import PhoenixDevToolbar.McpHelpers
+  import PhoenixDevToolbar.PageHelpers, only: [browser_headers: 1]
   import PhoenixDevToolbar.ReportFixtures
   import Plug.Conn
   import Plug.Test, only: [conn: 2]
@@ -14,6 +15,7 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
   alias PhoenixDevToolbar.Plug, as: ToolbarPlug
   alias PhoenixDevToolbar.Store
 
+  @opts ToolbarPlug.init([])
   @refused_key :phoenix_dev_toolbar_mcp_refused_clients
   @meta "io.modelcontextprotocol/protocolVersion"
 
@@ -200,14 +202,14 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
 
     test "a body already parsed by the host is used" do
       conn =
-        %{build_mcp_conn("") | body_params: rpc("ping")} |> ToolbarPlug.call(ToolbarPlug.init([]))
+        %{build_mcp_conn("") | body_params: rpc("ping")} |> ToolbarPlug.call(@opts)
 
       assert conn.status == 200
       assert %{"id" => 1, "result" => %{}} = json(conn)
 
       conn =
         %{build_mcp_conn("") | body_params: %{"_json" => [rpc("ping")]}}
-        |> ToolbarPlug.call(ToolbarPlug.init([]))
+        |> ToolbarPlug.call(@opts)
 
       assert conn.status == 400
       assert %{"error" => %{"code" => -32_600}} = json(conn)
@@ -215,17 +217,21 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
   end
 
   describe "malformed input" do
-    test "a non object _meta is a 400, never a 500" do
+    test "a non object _meta, or params that are not an object, is ignored (legacy request)" do
       for meta <- ["str", 1, [1], nil] do
         conn = post(rpc("tools/list", %{"_meta" => meta}))
         assert conn.status == 200, inspect(meta)
+        assert %{"result" => %{"tools" => [_ | _]}} = json(conn)
       end
 
+      assert post(rpc("tools/list", "params-as-string")).status == 200
+    end
+
+    test "an unsupported protocol version in _meta, or a malformed envelope, is a 400" do
       conn = post(rpc("tools/list", %{"_meta" => %{@meta => "1999-01-01"}}))
       assert conn.status == 400
       assert %{"error" => %{"code" => -32_022}} = json(conn)
 
-      assert post(rpc("tools/list", "params-as-string")).status == 200
       assert post(%{"jsonrpc" => "2.0", "id" => 1, "method" => 5}).status == 400
       assert post(%{"jsonrpc" => "2.0", "id" => %{}, "method" => "ping"}).status == 400
     end
@@ -324,7 +330,7 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
         rpc("ping")
         |> build_mcp_conn()
         |> put_resp_header("access-control-allow-origin", "*")
-        |> ToolbarPlug.call(ToolbarPlug.init([]))
+        |> ToolbarPlug.call(@opts)
 
       assert [<<"application/json", _::binary>>] = get_resp_header(conn, "content-type")
       assert get_resp_header(conn, "cache-control") == ["no-store"]
@@ -345,7 +351,7 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
         "{}"
         |> build_mcp_conn(host: "evil.example")
         |> cors.()
-        |> ToolbarPlug.call(ToolbarPlug.init([]))
+        |> ToolbarPlug.call(@opts)
 
       assert forbidden.status == 403
       assert get_resp_header(forbidden, "access-control-allow-origin") == []
@@ -354,7 +360,7 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
         ""
         |> build_mcp_conn(method: :get, content_type: nil)
         |> cors.()
-        |> ToolbarPlug.call(ToolbarPlug.init([]))
+        |> ToolbarPlug.call(@opts)
 
       assert not_allowed.status == 405
       assert get_resp_header(not_allowed, "access-control-allow-origin") == []
@@ -396,9 +402,8 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
       page =
         :get
         |> conn("/tracked/page")
-        |> put_req_header("accept", "text/html")
-        |> put_req_header("sec-fetch-dest", "document")
-        |> ToolbarPlug.call(ToolbarPlug.init([]))
+        |> browser_headers()
+        |> ToolbarPlug.call(@opts)
         |> put_resp_content_type("text/html")
         |> send_resp(200, "<html><body>hi</body></html>")
 

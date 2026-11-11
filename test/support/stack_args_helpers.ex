@@ -10,9 +10,10 @@ defmodule PhoenixDevToolbar.StackArgsHelpers do
 
   @spec put_stack_args(term(), [module()]) :: :ok
   def put_stack_args(config, plugins \\ PhoenixDevToolbar.Application.plugins()) do
-    put_app_env(:stack_args, config)
-
+    # on_exit runs last in first out: registered first, the re-attach runs
+    # after put_app_env restored the env, so it reads the original stack_args.
     on_exit(fn -> Collector.attach(PhoenixDevToolbar.Application.plugins()) end)
+    put_app_env(:stack_args, config)
     Collector.attach(plugins)
   end
 end
