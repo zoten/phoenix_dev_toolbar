@@ -5,6 +5,7 @@
 import {test} from "node:test"
 import assert from "node:assert/strict"
 
+import {PER_SECOND} from "../client_events.mjs"
 import {BlockedStorage, FakeEvent, FakeWindow, freshImport, installDom, message} from "./support/fake_dom.mjs"
 
 const ORIGIN = "http://localhost:4000"
@@ -98,7 +99,7 @@ test("posts to the panel on the page's own origin only, never '*'", async (t) =>
   page.frame.dispatchEvent(new FakeEvent("load"))
   page.fromPanel({type: "pdt:toggle"})
 
-  assert.ok(page.posted().length >= 2)
+  assert.equal(page.posted().length, 3, "the mount state, the load, the toggle")
   page.posted().forEach(({targetOrigin}) => assert.equal(targetOrigin, ORIGIN))
   assert.deepEqual(page.lastState(), {type: "pdt:state", open: true, dock: "bottom", reserve: true})
 })
@@ -109,7 +110,8 @@ test("toggle, hide and the corner pill move between the three states", async (t)
 
   page.fromPanel({type: "pdt:toggle"})
   assert.equal(state(), "open")
-  assert.equal(page.host.style.height, page.host.style.getPropertyValue("--pdt-extent"))
+  assert.equal(page.host.style.height, "360px")
+  assert.equal(page.host.style.getPropertyValue("--pdt-extent"), "360px")
 
   page.fromPanel({type: "pdt:close"})
   assert.equal(state(), "collapsed")
@@ -205,8 +207,13 @@ test("a client event listener never throws into the host's dispatch", async (t) 
       throw new Error("hostile getter")
     },
   }
+  const clientEvents = () => page.posted().filter(({data}) => data.type === "pdt:client")
+  const before = clientEvents().length
 
   assert.doesNotThrow(() => page.window.dispatchEvent(new FakeEvent("phx:navigate", {detail})))
+  assert.equal(clientEvents().length, before + 1, "the event still goes out, without the hostile field")
+  assert.equal(clientEvents().at(-1).data.event.type, "phx:navigate")
+  assert.equal(clientEvents().at(-1).data.event.kind, undefined)
 })
 
 test("a burst past the rate limit reports its drops a second later", async (t) => {
@@ -218,17 +225,143 @@ test("a burst past the rate limit reports its drops a second later", async (t) =
   const report = page.posted().filter(({data}) => data.type === "pdt:client").at(-1).data
 
   assert.equal(report.event, null)
-  assert.ok(report.dropped > 0)
+  assert.equal(report.dropped, 100 - PER_SECOND)
 })
 
 test("the keyboard resizes the open panel and stores its size", async (t) => {
   const page = await load(t)
   page.fromPanel({type: "pdt:open"})
-  const handle = page.root.querySelector("div")
+  const handle = page.root.querySelector(".handle")
   const before = Number(handle.getAttribute("aria-valuenow"))
 
   handle.dispatchEvent(new FakeEvent("keydown", {key: "ArrowUp", shiftKey: false}))
 
   assert.equal(Number(handle.getAttribute("aria-valuenow")), before + 16)
   assert.equal(JSON.parse(page.window.localStorage.getItem("pdt:layout")).sizes.bottom, before + 16)
+})
+
+// Pointer events on the resize handle, as the browser fires them.
+const pointer = (type, {x = 0, y = 0, button = 0} = {}) =>
+  new FakeEvent(type, {button, pointerId: 1, clientX: x, clientY: y})
+
+const openHandle = (page) => {
+  page.fromPanel({type: "pdt:open"})
+  return page.root.querySelector(".handle")
+}
+
+const storedSize = (page, dock = "bottom") => JSON.parse(page.window.localStorage.getItem("pdt:layout")).sizes[dock]
+
+test("dragging the handle resizes once per frame to the pointer, and the end stores the size", async (t) => {
+  const page = await load(t)
+  const handle = openHandle(page)
+  assert.equal(handle.getAttribute("aria-valuenow"), "360")
+
+  handle.dispatchEvent(pointer("pointerdown", {y: 440}))
+  assert.ok(page.frame.classList.contains("dragging"), "the iframe stops swallowing the pointer")
+  assert.ok(handle.classList.contains("dragging"))
+
+  handle.dispatchEvent(pointer("pointermove", {y: 500}))
+  handle.dispatchEvent(pointer("pointermove", {y: 600}))
+  assert.equal(handle.getAttribute("aria-valuenow"), "360", "nothing moves before the frame")
+
+  page.flushFrames()
+  assert.equal(handle.getAttribute("aria-valuenow"), "200", "the last position wins: 800 - 600")
+  assert.equal(page.host.style.getPropertyValue("--pdt-extent"), "200px")
+  assert.equal(page.window.localStorage.getItem("pdt:layout"), null, "a drag in flight is not stored")
+
+  handle.dispatchEvent(pointer("pointerup", {y: 600}))
+  assert.ok(!page.frame.classList.contains("dragging"))
+  assert.ok(!handle.classList.contains("dragging"))
+  assert.equal(storedSize(page), 200)
+})
+
+test("a drag is clamped to the panel's bounds", async (t) => {
+  const page = await load(t)
+  const handle = openHandle(page)
+
+  handle.dispatchEvent(pointer("pointerdown"))
+  handle.dispatchEvent(pointer("pointermove", {y: 790}))
+  page.flushFrames()
+  assert.equal(handle.getAttribute("aria-valuenow"), "120", "never below the minimum")
+
+  handle.dispatchEvent(pointer("pointermove", {y: 0}))
+  page.flushFrames()
+  assert.equal(handle.getAttribute("aria-valuenow"), "752", "always a strip of page left")
+})
+
+test("only the primary button drags, and moves without a drag do nothing", async (t) => {
+  const page = await load(t)
+  const handle = openHandle(page)
+
+  handle.dispatchEvent(pointer("pointerdown", {button: 2, y: 400}))
+  assert.ok(!page.frame.classList.contains("dragging"))
+
+  handle.dispatchEvent(pointer("pointermove", {y: 100}))
+  page.flushFrames()
+  assert.equal(handle.getAttribute("aria-valuenow"), "360")
+})
+
+test("losing the pointer capture ends the drag like a release", async (t) => {
+  const page = await load(t)
+  const handle = openHandle(page)
+
+  handle.dispatchEvent(pointer("pointerdown"))
+  handle.dispatchEvent(pointer("pointermove", {y: 500}))
+  handle.dispatchEvent(pointer("lostpointercapture"))
+  page.flushFrames()
+
+  assert.ok(!page.frame.classList.contains("dragging"))
+  assert.equal(handle.getAttribute("aria-valuenow"), "360", "the frame that was pending is cancelled")
+  assert.equal(storedSize(page), 360)
+})
+
+test("a side dock measures the drag from its own edge", async (t) => {
+  const page = await load(t)
+  const handle = openHandle(page)
+  page.fromPanel({type: "pdt:dock", dock: "right"})
+
+  handle.dispatchEvent(pointer("pointerdown"))
+  handle.dispatchEvent(pointer("pointermove", {x: 900}))
+  page.flushFrames()
+  handle.dispatchEvent(pointer("pointerup", {x: 900}))
+
+  assert.equal(handle.getAttribute("aria-valuenow"), "380", "1280 - 900")
+  assert.equal(storedSize(page, "right"), 380)
+})
+
+test("double click resets the panel to its default size", async (t) => {
+  const page = await load(t)
+  const handle = openHandle(page)
+  handle.dispatchEvent(new FakeEvent("keydown", {key: "ArrowUp", shiftKey: true}))
+  assert.equal(handle.getAttribute("aria-valuenow"), "424")
+
+  handle.dispatchEvent(new FakeEvent("dblclick"))
+
+  assert.equal(handle.getAttribute("aria-valuenow"), "360")
+  assert.equal(storedSize(page), 360)
+})
+
+test("a window resize re-clamps the panel once per frame, and growing back restores the user's size", async (t) => {
+  const page = await load(t)
+  const handle = openHandle(page)
+  handle.dispatchEvent(pointer("pointerdown"))
+  handle.dispatchEvent(pointer("pointermove", {y: 100}))
+  page.flushFrames()
+  handle.dispatchEvent(pointer("pointerup", {y: 100}))
+  assert.equal(handle.getAttribute("aria-valuenow"), "700")
+
+  page.window.innerHeight = 400
+  page.window.dispatchEvent(new FakeEvent("resize"))
+  page.window.dispatchEvent(new FakeEvent("resize"))
+  assert.equal(page.pendingFrames(), 1, "a burst of resizes asks for one frame")
+  assert.equal(handle.getAttribute("aria-valuenow"), "700", "nothing before the frame")
+  page.flushFrames()
+  assert.equal(handle.getAttribute("aria-valuenow"), "352")
+  assert.equal(handle.getAttribute("aria-valuemax"), "352")
+  assert.equal(storedSize(page), 700, "shrinking the window does not overwrite the stored size")
+
+  page.window.innerHeight = 800
+  page.window.dispatchEvent(new FakeEvent("resize"))
+  page.flushFrames()
+  assert.equal(handle.getAttribute("aria-valuenow"), "700")
 })

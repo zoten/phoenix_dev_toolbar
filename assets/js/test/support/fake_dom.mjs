@@ -302,6 +302,8 @@ export class FakeElement extends Node {
 
   setPointerCapture() {}
 
+  select() {}
+
   getBoundingClientRect() {
     return {left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0}
   }
@@ -464,6 +466,7 @@ export const installDom = ({origin = "http://localhost:4000", search = "", body 
     script,
     build,
     // Runs the pending animation frames, as the browser does on its next paint.
+    pendingFrames: () => frames.length,
     flushFrames: () => frames.splice(0).forEach((fun) => fun(0)),
     restore: () => Object.assign(globalThis, previous),
   }
@@ -475,3 +478,14 @@ export const freshImport = (url) => import(`${url}?load=${++loads}`)
 
 // A message event as the browser delivers it to `window`.
 export const message = (data, {origin, source}) => new FakeEvent("message", {data, origin, source})
+
+// Lets the pending promise callbacks (a clipboard write, say) run.
+export const flush = () => new Promise((resolve) => setImmediate(resolve))
+
+// Replaces Node's `navigator` global for the test (the panel's hooks read
+// navigator.clipboard); the test context puts the original back.
+export const stubNavigator = (t, navigator) => {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "navigator")
+  Object.defineProperty(globalThis, "navigator", {configurable: true, value: navigator})
+  t.after(() => (saved ? Object.defineProperty(globalThis, "navigator", saved) : delete globalThis.navigator))
+}

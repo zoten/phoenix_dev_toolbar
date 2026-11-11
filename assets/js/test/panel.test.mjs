@@ -6,7 +6,7 @@
 import {test} from "node:test"
 import assert from "node:assert/strict"
 
-import {FakeEvent, FakeWindow, freshImport, installDom, message} from "./support/fake_dom.mjs"
+import {FakeEvent, FakeWindow, flush, freshImport, installDom, message, stubNavigator} from "./support/fake_dom.mjs"
 
 const ORIGIN = "http://localhost:4000"
 const PANEL = new URL("../panel.js", import.meta.url)
@@ -52,11 +52,15 @@ class FakeLiveSocket {
   }
 }
 
-// A LiveView hook instance: records its pushes.
-const hook = (spec) => {
+// A LiveView hook instance on `el`: records its pushes and the handleEvent
+// callbacks it registers (`handlers`, by event name).
+const hook = (spec, {el, handleEvent} = {}) => {
   const instance = Object.create(spec)
+  instance.el = el
   instance.pushed = []
+  instance.handlers = {}
   instance.pushEvent = (event, payload) => instance.pushed.push({event, payload})
+  instance.handleEvent = handleEvent || ((name, fun) => (instance.handlers[name] = fun))
   return instance
 }
 
@@ -275,22 +279,13 @@ test("a join forgets this page's recorded loads", async (t) => {
   ]
 
   const loadMarkdown = async (t, writes) => {
-    const saved = Object.getOwnPropertyDescriptor(globalThis, "navigator")
-    Object.defineProperty(globalThis, "navigator", {
-      configurable: true,
-      value: {clipboard: {writeText: async (text) => writes.push(text)}},
-    })
-    t.after(() => (saved ? Object.defineProperty(globalThis, "navigator", saved) : delete globalThis.navigator))
+    stubNavigator(t, {clipboard: {writeText: async (text) => writes.push(text)}})
 
     const page = await load(t, {setup: ({document, build}) => document.body.append(build(MARKDOWN))})
     const el = page.byId("pdt-markdown")
-    const markdown = Object.create(page.socket.options.hooks.PdtMarkdown)
-    markdown.el = el
-    markdown.handlers = {}
-    markdown.handleEvent = (name, fun) => (markdown.handlers[name] = fun)
+    const markdown = hook(page.socket.options.hooks.PdtMarkdown, {el})
     markdown.mounted()
     const result = () => page.byId("pdt-markdown-result").textContent
-    const flush = () => new Promise((resolve) => setImmediate(resolve))
     return {page, el, markdown, result, flush}
   }
 
@@ -335,5 +330,334 @@ test("a join forgets this page's recorded loads", async (t) => {
 
     assert.deepEqual(writes, [])
     assert.match(result(), /page changed/)
+  })
+}
+
+// Keyboard focus (ADR 04): a re-rendered button gets its focus back.
+{
+  const keepFocus = (fallback) => ["button", {id: "pdt-run", "data-pdt-keep-focus": fallback}, "Run"]
+  const loadFocus = (t, fallback = "") =>
+    load(t, {setup: ({document, build}) => document.body.append(build(keepFocus(fallback)), build(["button", {id: "other"}]))})
+
+  // What the browser does when a focused element is re-inserted: it blurs, the
+  // focusout has no relatedTarget.
+  const blur = (page, el) => {
+    page.document.activeElement = null
+    el.dispatchEvent(new FakeEvent("focusout", {relatedTarget: null}))
+  }
+
+  test("a keep-focus button that blurs on its own gets the focus back on the next frame", async (t) => {
+    const page = await loadFocus(t)
+    const run = page.byId("pdt-run")
+    run.focus()
+
+    blur(page, run)
+    assert.equal(page.document.activeElement, null)
+    page.flushFrames()
+
+    assert.equal(page.document.activeElement, run)
+  })
+
+  test("a keep-focus button that was replaced hands the focus to the element it names", async (t) => {
+    const page = await loadFocus(t, "pdt-run-next")
+    const run = page.byId("pdt-run")
+    const next = page.build(["button", {id: "pdt-run-next"}])
+    run.focus()
+
+    blur(page, run)
+    run.remove()
+    page.document.body.append(next)
+    page.flushFrames()
+
+    assert.equal(page.document.activeElement, next)
+  })
+
+  test("the focus stays where the user put it: a click elsewhere, a focus move or a plain button", async (t) => {
+    const page = await loadFocus(t)
+    const run = page.byId("pdt-run")
+    const other = page.byId("other")
+
+    run.focus()
+    other.dispatchEvent(new FakeEvent("pointerdown"))
+    blur(page, run)
+    page.flushFrames()
+    assert.equal(page.document.activeElement, null, "clicked elsewhere")
+
+    run.dispatchEvent(new FakeEvent("keydown", {key: "Tab"}))
+    run.dispatchEvent(new FakeEvent("focusout", {relatedTarget: other}))
+    page.flushFrames()
+    assert.equal(page.document.activeElement, null, "focus moved to another element")
+
+    blur(page, run)
+    other.focus()
+    page.flushFrames()
+    assert.equal(page.document.activeElement, other, "something else took the focus meanwhile")
+
+    other.dispatchEvent(new FakeEvent("pointerdown"))
+    run.dispatchEvent(new FakeEvent("keydown", {key: "Enter"}))
+    run.focus()
+    blur(page, run)
+    page.flushFrames()
+    assert.equal(page.document.activeElement, run, "a key press after the click makes it a keyboard user again")
+
+    other.dispatchEvent(new FakeEvent("focusout", {relatedTarget: null}))
+    page.document.activeElement = null
+    page.flushFrames()
+    assert.equal(page.document.activeElement, null, "a button without data-pdt-keep-focus")
+  })
+}
+
+test("arrow keys move between the tabs, wrap around and select the one reached", async (t) => {
+  const page = await load(t)
+  const request = page.byId("pdt-tab-request")
+  const ecto = page.byId("pdt-tab-ecto")
+  const press = (el, key) => {
+    const event = new FakeEvent("keydown", {key})
+    el.dispatchEvent(event)
+    return event
+  }
+
+  assert.equal(press(request, "ArrowRight").defaultPrevented, true)
+  assert.equal(page.document.activeElement, ecto)
+  assert.deepEqual(page.toLoader().map(({data}) => data), [{type: "pdt:open"}], "selecting a tab opens the panel")
+
+  press(ecto, "ArrowRight")
+  assert.equal(page.document.activeElement, request, "wraps to the first")
+
+  press(request, "ArrowLeft")
+  assert.equal(page.document.activeElement, ecto, "wraps to the last")
+  assert.equal(page.toLoader().length, 3)
+
+  const other = press(ecto, "ArrowDown")
+  assert.equal(other.defaultPrevented, false)
+  assert.equal(page.toLoader().length, 3, "other keys are left alone")
+
+  assert.equal(press(page.byId("pdt-toggle"), "ArrowRight").defaultPrevented, false, "only on tabs")
+})
+
+// The collapsed bar's "+N" badge (ADR 04): the PdtSummaryMore hook on #pdt-summary-more.
+{
+  const observers = {resize: [], mutation: []}
+  class Observer {
+    constructor(kind, callback) {
+      Object.assign(this, {callback, disconnected: false})
+      observers[kind].push(this)
+    }
+
+    observe(target) {
+      this.target = target
+    }
+
+    disconnect() {
+      this.disconnected = true
+    }
+  }
+
+  const loadSummary = async (t, {rows, side = false}) => {
+    globalThis.ResizeObserver = class extends Observer {
+      constructor(callback) {
+        super("resize", callback)
+      }
+    }
+    globalThis.MutationObserver = class extends Observer {
+      constructor(callback) {
+        super("mutation", callback)
+      }
+    }
+    observers.resize = []
+    observers.mutation = []
+    t.after(() => {
+      delete globalThis.ResizeObserver
+      delete globalThis.MutationObserver
+    })
+
+    const page = await load(t, {
+      setup: ({document, build}) =>
+        document.body.append(
+          build(["div", {id: "pdt-summary"}, ...rows.map(() => ["span", {class: "pdt-badge"}])]),
+          build(["button", {id: "pdt-summary-more", hidden: true}]),
+        ),
+    })
+    const summary = page.byId("pdt-summary")
+    const place = (positions) =>
+      summary.children.forEach((badge, i) => (badge[side ? "offsetLeft" : "offsetTop"] = positions[i]))
+    place(rows)
+    if (side) page.fromLoader({type: "pdt:state", open: false, dock: "left", reserve: true})
+
+    const more = page.byId("pdt-summary-more")
+    const badge = hook(page.socket.options.hooks.PdtSummaryMore, {el: more})
+    badge.mounted()
+    return {page, more, summary, badge, place}
+  }
+
+  test("the badge counts the summary badges that wrapped out of the collapsed bar", async (t) => {
+    const {more, summary} = await loadSummary(t, {rows: [0, 0, 22, 22, 44]})
+
+    assert.equal(more.textContent, "+3")
+    assert.equal(more.hidden, false)
+    assert.equal(observers.resize[0].target, summary)
+    assert.equal(observers.mutation[0].target, summary)
+  })
+
+  test("the badge hides when everything fits on one row", async (t) => {
+    const {more} = await loadSummary(t, {rows: [0, 0, 0]})
+
+    assert.equal(more.textContent, "+0")
+    assert.equal(more.hidden, true)
+  })
+
+  test("the badge recounts when the summary resizes or changes, and not when the panel is open", async (t) => {
+    const {page, more, place} = await loadSummary(t, {rows: [0, 0, 0]})
+
+    place([0, 0, 22])
+    observers.mutation[0].callback()
+    assert.equal(more.textContent, "+1")
+
+    place([0, 22, 44])
+    observers.resize[0].callback()
+    assert.equal(more.textContent, "+2")
+
+    page.fromLoader({type: "pdt:state", open: true, dock: "bottom", reserve: true})
+    observers.resize[0].callback()
+    assert.equal(more.textContent, "+0", "open, the summary shows every badge")
+    assert.equal(more.hidden, true)
+  })
+
+  test("on a side dock the wrapped badges are the columns to the left", async (t) => {
+    const {more} = await loadSummary(t, {rows: [100, 100, 60, 20], side: true})
+
+    assert.equal(more.textContent, "+2")
+    assert.equal(more.hidden, false)
+  })
+
+  test("destroying the badge stops both observers", async (t) => {
+    const {badge} = await loadSummary(t, {rows: [0]})
+
+    badge.destroyed()
+
+    assert.ok(observers.resize[0].disconnected)
+    assert.ok(observers.mutation[0].disconnected)
+  })
+}
+
+// The Ecto tab's Copy (ADR 08): the PdtExport hook on #pdt-ecto-export.
+{
+  const FORM = [
+    "form",
+    {id: "pdt-ecto-export", "data-pdt-page": "root1"},
+    ["input", {id: "pdt-export-choice", type: "checkbox"}],
+    ["button", {id: "pdt-export-copy"}, "Copy"],
+    ["span", {id: "pdt-export-result"}],
+  ]
+
+  // `secure` gives the browser's async clipboard (ClipboardItem), else only the
+  // text API is missing too: the pre Clipboard API execCopy path, which a fake
+  // document cannot grant (no execCommand), so exports are held.
+  const loadExport = async (t, {secure = true} = {}) => {
+    const copied = []
+    if (secure) {
+      globalThis.ClipboardItem = class {
+        constructor(data) {
+          this.data = data
+        }
+      }
+      t.after(() => delete globalThis.ClipboardItem)
+    }
+    stubNavigator(t, {
+      clipboard: secure
+        ? {write: async ([item]) => copied.push(await (await item.data["text/plain"]).text())}
+        : undefined,
+    })
+
+    const page = await load(t, {setup: ({document, build}) => document.body.append(build(FORM))})
+    const form = page.byId("pdt-ecto-export")
+    const exporter = hook(page.socket.options.hooks.PdtExport, {el: form})
+    exporter.mounted()
+    const result = () => page.byId("pdt-export-result").textContent
+    const click = (id = "pdt-export-copy") => {
+      const event = new FakeEvent("click", {button: 0})
+      page.byId(id).dispatchEvent(event)
+      return event
+    }
+    const arrive = (data) => exporter.handlers["pdt:export"](data)
+    return {page, form, exporter, copied, result, click, arrive}
+  }
+
+  test("Copy claims the clipboard in the click and the pushed export fills it", async (t) => {
+    const {copied, result, click, arrive} = await loadExport(t)
+
+    const event = click()
+    assert.equal(result(), "Copying…")
+    assert.equal(event.defaultPrevented, false, "the click goes on: the export is requested by the form")
+
+    arrive({payload: {count: 1}, page: "root1"})
+    await flush()
+
+    assert.deepEqual(copied, [JSON.stringify({count: 1}, null, 2)])
+    assert.equal(result(), "Copied")
+  })
+
+  test("clicks outside the Copy button are ignored", async (t) => {
+    const {result, click, form} = await loadExport(t)
+
+    click("pdt-export-choice")
+    form.dispatchEvent(new FakeEvent("click", {button: 0}))
+
+    assert.equal(result(), "")
+  })
+
+  test("an export for another page is not copied", async (t) => {
+    const {copied, result, click, arrive} = await loadExport(t)
+
+    click()
+    arrive({payload: {}, page: "root2"})
+    await flush()
+
+    assert.deepEqual(copied, [])
+    assert.match(result(), /page changed/)
+  })
+
+  test("the form showing another page settles the pending copy, an unchanged one does not", async (t) => {
+    const {form, exporter, result, click} = await loadExport(t)
+    click()
+
+    exporter.updated()
+    assert.equal(result(), "Copying…", "same page")
+
+    form.setAttribute("data-pdt-page", "root2")
+    exporter.updated()
+    assert.match(result(), /page changed/)
+  })
+
+  test("without a secure context the export is held and the next click copies it or says why it cannot", async (t) => {
+    const {result, click, arrive} = await loadExport(t, {secure: false})
+
+    assert.equal(click().defaultPrevented, false)
+    arrive({payload: [1], page: "root1"})
+    assert.equal(result(), "Export ready: click Copy again")
+
+    const again = click()
+    assert.equal(again.defaultPrevented, true, "the click does not request another export")
+    assert.equal(again.stopped, true)
+    assert.equal(result(), "Copy failed: use Download", "this fake page refuses the copy command")
+  })
+
+  test("a new choice in the form drops the held export", async (t) => {
+    const {form, result, click, arrive} = await loadExport(t, {secure: false})
+    click()
+    arrive({payload: [1], page: "root1"})
+
+    form.dispatchEvent(new FakeEvent("change"))
+
+    assert.equal(click().defaultPrevented, false, "a fresh export is requested")
+  })
+
+  test("destroying the hook removes its listeners", async (t) => {
+    const {exporter, result, click} = await loadExport(t)
+
+    exporter.destroyed()
+    click()
+
+    assert.equal(result(), "")
   })
 }

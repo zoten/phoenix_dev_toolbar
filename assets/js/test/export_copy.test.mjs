@@ -3,6 +3,7 @@
 import {test} from "node:test"
 import assert from "node:assert/strict"
 
+import {flush} from "./support/fake_dom.mjs"
 import {EXPORT_WAIT_MS, NO_EXPORT, PAGE_CHANGED, createExportCopy} from "../export_copy.mjs"
 
 class FakeItem {
@@ -18,8 +19,9 @@ class FakeBlob {
 }
 
 // A secure context when `item` is true: write() settles with the promised text,
-// as the browser does.
-const setup = ({item = true, writeText = false, execCopy = () => false} = {}) => {
+// as the browser does. `writeText` is true (copies) or the function to use;
+// `button` and `fallback` are passed on to the copier when given.
+const setup = ({item = true, writeText = false, execCopy = () => false, button, fallback} = {}) => {
   const said = []
   const copied = []
   const timers = new Map()
@@ -31,7 +33,7 @@ const setup = ({item = true, writeText = false, execCopy = () => false} = {}) =>
             copied.push(blob.text)
           })
       : undefined,
-    writeText: writeText ? async (text) => copied.push(text) : undefined,
+    writeText: typeof writeText === "function" ? writeText : writeText ? async (text) => copied.push(text) : undefined,
   }
   const env = {
     clipboard,
@@ -46,11 +48,12 @@ const setup = ({item = true, writeText = false, execCopy = () => false} = {}) =>
     say: (text) => said.push(text),
     warn: () => {},
   }
+  if (button !== undefined) env.button = button
+  if (fallback !== undefined) env.fallback = fallback
   const fire = (ms) => [...timers].filter(([, t]) => t.ms === ms).forEach(([id, t]) => (timers.delete(id), t.fun()))
   return {copier: createExportCopy(env), said, copied, timers, fire}
 }
 
-const flush = () => new Promise((resolve) => setImmediate(resolve))
 const last = (said) => said[said.length - 1]
 
 test("secure context: the click claims the clipboard, the export fills it", async () => {
@@ -78,16 +81,18 @@ test("a server error settles the pending copy at once, with its reason", async (
   assert.equal(timers.size, 0)
 })
 
-test("a page change settles the pending copy, and a late export is dropped", async () => {
-  const {copier, said, copied} = setup()
+test("a page change settles the pending copy at once, and a late export is not copied", async () => {
+  const {copier, said, copied, timers} = setup()
 
   copier.click()
   copier.pageChanged()
-  copier.arrive({payload: {}, page: "a"}, "a,b")
+  assert.equal(last(said), PAGE_CHANGED)
+  assert.equal(timers.size, 0)
+
+  copier.arrive({payload: {}, page: "a"}, "a")
   await flush()
 
   assert.deepEqual(copied, [])
-  assert.equal(last(said), PAGE_CHANGED)
 })
 
 test("an export built for another page is never copied", async () => {
@@ -173,39 +178,17 @@ test("a text (the Markdown copy) is copied as is, and a failure does not point a
   await flush()
   assert.deepEqual(copied, ["# page\n| a |"])
 
-  const said = []
-  const quiet = createExportCopy({
-    clipboard: {writeText: async () => Promise.reject(new Error("denied"))},
-    Blob: FakeBlob,
-    fallback: "",
-    setTimeout: () => 1,
-    clearTimeout: () => {},
-    say: (text) => said.push(text),
-    warn: () => {},
-  })
-  quiet.arrive({text: "x", page: "p"}, "p")
+  const quiet = setup({item: false, writeText: async () => Promise.reject(new Error("denied")), fallback: ""})
+  quiet.copier.arrive({text: "x", page: "p"}, "p")
   await flush()
-  assert.equal(last(said), "Copy failed (Error)")
+  assert.equal(last(quiet.said), "Copy failed (Error)")
 })
 
-test("messages name the button and the fallback the env gives", async () => {
-  const said = []
-  const timers = []
-  const copier = createExportCopy({
-    clipboard: {write: ([entry]) => entry.data["text/plain"].then(() => {}, () => {}), writeText: undefined},
-    ClipboardItem: FakeItem,
-    Blob: FakeBlob,
-    execCopy: () => false,
-    fallback: "",
-    button: "Copy as Markdown",
-    setTimeout: (fun, ms) => (timers.push({fun, ms}), timers.length),
-    clearTimeout: () => {},
-    say: (text) => said.push(text),
-    warn: () => {},
-  })
+test("messages name the button and the fallback the env gives", () => {
+  const {copier, said, fire} = setup({fallback: "", button: "Copy as Markdown"})
 
   copier.click()
-  timers.find((t) => t.ms === EXPORT_WAIT_MS).fun()
+  fire(EXPORT_WAIT_MS)
   assert.equal(last(said), "Copy failed: no export arrived")
 
   copier.arrive({text: "x", page: "a"}, "b")
