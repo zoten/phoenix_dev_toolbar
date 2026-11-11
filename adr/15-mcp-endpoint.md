@@ -109,6 +109,16 @@ arguments and a missing page are tool errors (`isError: true`) whose text says
 what to do; an unknown tool is `-32602`. Input is never turned into atoms; a sid
 must match `\A[A-Za-z0-9_-]{1,64}\z`.
 
+**Prompts.** The `prompts` capability (`listChanged: false`) is advertised in
+`initialize` and `server/discover`. `prompts/list` and `prompts/get` serve one
+prompt, `audit_page(path)`: `path` is required, a non-empty string of at most
+2048 bytes, only interpolated into the text. It returns one user message that
+walks `page_summary`, `page_n_plus_one`, `page_queries` (slowest),
+`page_errors` and, for a LiveView, `page_assigns_shape`, asks for findings with
+the `panel_url`, and explains the check loop (`compare_pages`, `recent_errors`
+with the sid). An unknown prompt or a bad `path` is `-32602`; on 2026-07-28
+`prompts/get` also needs the `Mcp-Name` header to match `name`.
+
 Tool names, arguments and result keys are a contract like `Report`'s: adding is
 not a breaking change, renaming or removing is (a CHANGELOG line).
 
@@ -154,7 +164,7 @@ not a breaking change, renaming or removing is (a CHANGELOG line).
   load the panel.
 - Plugin events outside the built-ins, assigns snapshots and the component tree
   are not exposed (as in `Report`).
-- No resources, prompts or change notifications.
+- No resources or change notifications.
 - Clients connect when the agent starts: a dev server started later, or
   restarted, gives `ECONNREFUSED` until the client reconnects (`/mcp` in Claude
   Code). The README and `guides/agent-setup.md` say so, with the LAN address and

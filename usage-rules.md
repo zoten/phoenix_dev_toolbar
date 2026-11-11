@@ -55,6 +55,8 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
 - `page_assigns_shape` weighs the assigns of the page's LiveView (type, length,
   words, `stream?`, no values): look for big lists that should be streams. It
   reads the LiveView live, so the page must be open in a browser.
+- The `audit_page` prompt (argument `path`) runs the whole audit of one page:
+  summary, N+1, slowest queries, errors, assigns shape, then a report.
 - `recent_errors` after a change: crashes in `handle_info` or in other tabs that
   the page lookups miss (`since` takes the sid you measured, hiding that page's old crashes, or a time; `limit`).
 - `page_queries`, `page_callbacks` (`sort: "slowest"`, `limit`),

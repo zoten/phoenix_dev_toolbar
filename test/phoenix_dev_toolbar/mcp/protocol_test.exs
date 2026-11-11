@@ -41,7 +41,10 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
 
         assert %{
                  "protocolVersion" => ^version,
-                 "capabilities" => %{"tools" => %{"listChanged" => false}},
+                 "capabilities" => %{
+                   "tools" => %{"listChanged" => false},
+                   "prompts" => %{"listChanged" => false}
+                 },
                  "serverInfo" => %{"name" => "phoenix_dev_toolbar", "version" => "1.2.3"},
                  "instructions" => instructions
                } = result
@@ -178,6 +181,116 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
     end
   end
 
+  describe "prompts, legacy era" do
+    test "prompts/list names audit_page with a required path" do
+      result = result!(Protocol.handle(rpc("prompts/list"), %{}, @opts))
+
+      assert %{
+               "prompts" => [
+                 %{
+                   "name" => "audit_page",
+                   "arguments" => [%{"name" => "path", "required" => true}]
+                 }
+               ]
+             } = result
+
+      refute Map.has_key?(result, "resultType")
+    end
+
+    test "prompts/get returns one user message naming the path and the tools" do
+      params = %{"name" => "audit_page", "arguments" => %{"path" => "/posts"}}
+      result = result!(Protocol.handle(rpc("prompts/get", params), %{}, @opts))
+
+      assert %{
+               "messages" => [
+                 %{"role" => "user", "content" => %{"type" => "text", "text" => text}}
+               ]
+             } =
+               result
+
+      for needle <- [
+            "\"/posts\"",
+            "page_summary",
+            "page_n_plus_one",
+            "page_queries",
+            "page_errors",
+            "page_assigns_shape",
+            "panel_url",
+            "compare_pages",
+            "recent_errors"
+          ] do
+        assert text =~ needle
+      end
+
+      refute Map.has_key?(result, "resultType")
+    end
+
+    test "unknown prompt, missing, invalid and oversized path are -32_602" do
+      bad = [
+        %{"name" => "nope", "arguments" => %{"path" => "/"}},
+        %{"name" => "audit_page"},
+        %{"name" => "audit_page", "arguments" => %{"path" => 5}},
+        %{"name" => "audit_page", "arguments" => %{"path" => ""}},
+        %{"name" => "audit_page", "arguments" => %{"path" => String.duplicate("a", 2049)}},
+        %{}
+      ]
+
+      for params <- bad do
+        assert {200, %{"error" => %{"code" => -32_602}}} =
+                 Protocol.handle(rpc("prompts/get", params), %{}, @opts)
+      end
+    end
+  end
+
+  describe "prompts, modern era (2026-07-28)" do
+    test "prompts/list and prompts/get add resultType complete" do
+      list =
+        result!(
+          Protocol.handle(rpc("prompts/list", modern(%{})), modern_headers("prompts/list"), @opts)
+        )
+
+      assert %{"resultType" => "complete", "prompts" => [%{"name" => "audit_page"}]} = list
+
+      params = modern(%{"name" => "audit_page", "arguments" => %{"path" => "/posts"}})
+
+      get =
+        result!(
+          Protocol.handle(
+            rpc("prompts/get", params),
+            modern_headers("prompts/get", "audit_page"),
+            @opts
+          )
+        )
+
+      assert %{"resultType" => "complete", "messages" => [_]} = get
+    end
+
+    test "prompts/get checks Mcp-Method and Mcp-Name" do
+      params = modern(%{"name" => "audit_page", "arguments" => %{"path" => "/"}})
+      good = modern_headers("prompts/get", "audit_page")
+
+      for headers <- [
+            Map.put(good, "mcp-name", "other"),
+            Map.delete(good, "mcp-name"),
+            Map.put(good, "mcp-method", "tools/call")
+          ] do
+        assert {400, %{"error" => %{"code" => -32_020}}} =
+                 Protocol.handle(rpc("prompts/get", params), headers, @opts)
+      end
+    end
+
+    test "unknown prompt is -32_602" do
+      params = modern(%{"name" => "nope"})
+
+      assert {200, %{"error" => %{"code" => -32_602}}} =
+               Protocol.handle(
+                 rpc("prompts/get", params),
+                 modern_headers("prompts/get", "nope"),
+                 @opts
+               )
+    end
+  end
+
   describe "modern era (2026-07-28)" do
     test "server/discover" do
       params = modern(%{})
@@ -192,7 +305,12 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
         )
 
       assert result["supportedVersions"] == @all
-      assert result["capabilities"] == %{"tools" => %{"listChanged" => false}}
+
+      assert result["capabilities"] == %{
+               "tools" => %{"listChanged" => false},
+               "prompts" => %{"listChanged" => false}
+             }
+
       assert result["instructions"] =~ "page_summary"
 
       assert result["_meta"]["io.modelcontextprotocol/serverInfo"] ==

@@ -5,6 +5,7 @@ defmodule PhoenixDevToolbar.Mcp.Protocol do
   # 2025-11-25) and 2026-07-28 on the same endpoint.
 
   alias PhoenixDevToolbar.Mcp.Json
+  alias PhoenixDevToolbar.Mcp.Prompts
   alias PhoenixDevToolbar.Mcp.Tools
 
   @legacy ["2025-11-25", "2025-06-18", "2025-03-26"]
@@ -18,6 +19,7 @@ defmodule PhoenixDevToolbar.Mcp.Protocol do
                   "and page_errors for a page, page_report for a page as Markdown, page_assigns_shape for assign sizes (the page must be open), recent_errors for failures across pages (also after a change). list_pages takes since (a sid or a time) for " <>
                   "pages captured after an earlier call. To check a change: page_summary, note " <>
                   "its sid, edit, reload the page, then compare_pages with before: sid. " <>
+                  "The audit_page prompt (argument path) walks these tools for one page. " <>
                   "Load the page first (a browser, or curl with " <>
                   "Accept: text/html): only pages captured in the last 10 minutes are available."
 
@@ -109,7 +111,10 @@ defmodule PhoenixDevToolbar.Mcp.Protocol do
     end
   end
 
-  defp name_header("tools/call", %{"name" => name}) when is_binary(name), do: [{"mcp-name", name}]
+  defp name_header(method, %{"name" => name})
+       when method in ["tools/call", "prompts/get"] and is_binary(name),
+       do: [{"mcp-name", name}]
+
   defp name_header(_method, _params), do: []
 
   # Notifications have no id: acknowledged, never answered.
@@ -167,6 +172,27 @@ defmodule PhoenixDevToolbar.Mcp.Protocol do
     error(200, id, -32_602, "Invalid params: name is required")
   end
 
+  defp respond(id, "prompts/list", _params, era, _opts) do
+    ok(id, complete(%{"prompts" => Prompts.list()}, era))
+  end
+
+  defp respond(id, "prompts/get", %{"name" => name} = params, era, _opts) when is_binary(name) do
+    case Prompts.get(name, Map.get(params, "arguments")) do
+      :unknown_prompt ->
+        error(200, id, -32_602, "Unknown prompt: " <> inspect(String.slice(name, 0, 60)))
+
+      {:error, message} ->
+        error(200, id, -32_602, "Invalid params: " <> message)
+
+      {:ok, prompt} ->
+        ok(id, complete(prompt, era))
+    end
+  end
+
+  defp respond(id, "prompts/get", _params, _era, _opts) do
+    error(200, id, -32_602, "Invalid params: name is required")
+  end
+
   defp respond(id, method, _params, era, _opts) do
     error(
       unknown_method_status(era),
@@ -208,7 +234,9 @@ defmodule PhoenixDevToolbar.Mcp.Protocol do
 
   defp text(text), do: %{"type" => "text", "text" => text}
 
-  defp capabilities, do: %{"tools" => %{"listChanged" => false}}
+  defp capabilities do
+    %{"tools" => %{"listChanged" => false}, "prompts" => %{"listChanged" => false}}
+  end
 
   defp server_info(opts) do
     %{"name" => "phoenix_dev_toolbar", "version" => Keyword.get(opts, :server_version, "0.0.0")}
