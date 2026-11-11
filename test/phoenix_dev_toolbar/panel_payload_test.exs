@@ -72,8 +72,8 @@ defmodule PhoenixDevToolbar.PanelPayloadTest do
     event_bytes = Map.get(sent, panel.pid, 0)
     IO.puts("panel payload: mount #{mount_bytes} B, 5 new events #{event_bytes} B")
 
-    # The open (Ecto) tab's 40 rows are most of the mount.
-    assert mount_bytes < 65_000
+    # The open (Ecto) tab's 40 collapsed rows (no details) are the mount: 60 KB with inline details.
+    assert mount_bytes < 36_000
     assert event_bytes < 1_500
   end
 

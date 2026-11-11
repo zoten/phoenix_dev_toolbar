@@ -108,9 +108,21 @@ defmodule PhoenixDevToolbar.Components do
         plan={@event.data.plan}
         target={@target}
       />
-      <details class="pdt-details">
-        <summary>details</summary>
-        <dl>
+      <div class="pdt-details">
+        <button
+          id={"pdt-details-toggle-#{@event.seq}"}
+          type="button"
+          class="pdt-details__toggle"
+          phx-click="toggle_details"
+          phx-value-seq={@event.seq}
+          phx-target={@target}
+          aria-expanded={to_string(@event.data[:open?] == true)}
+          aria-label={"Details of query #{@event.seq}" <> on_source(@event)}
+          data-pdt-keep-focus
+        >
+          details
+        </button>
+        <dl :if={@event.data[:open?] == true}>
           <dt>params</dt>
           <dd><code>{@event.data.params}</code></dd>
           <dt>repo</dt>
@@ -132,7 +144,7 @@ defmodule PhoenixDevToolbar.Components do
             in your repo config to see where queries come from.
           </dd>
         </dl>
-      </details>
+      </div>
     </li>
     """
   end

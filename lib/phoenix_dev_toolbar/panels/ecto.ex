@@ -24,6 +24,9 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
 
   # Rows kept in the DOM; the Store keeps 500 events per plugin and session.
   @dom_limit 500
+  # Expanded rows and EXPLAIN plans kept beside the stream (rows render their
+  # details only when open, ADR 04): the newest seqs win.
+  @side_limit 50
 
   @impl Phoenix.LiveComponent
   def mount(socket) do
@@ -36,6 +39,8 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
        detected: 0,
        flagged: MapSet.new(),
        shown: :queue.new(),
+       open: MapSet.new(),
+       plans: %{},
        explaining: nil,
        exporting: nil,
        queries?: false,
@@ -59,6 +64,8 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
         detected: 0,
         flagged: MapSet.new(),
         shown: :queue.new(),
+        open: MapSet.new(),
+        plans: %{},
         explaining: nil,
         exporting: nil,
         queries?: false
@@ -187,6 +194,26 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
     end
   end
 
+  def handle_event("toggle_details", %{"seq" => seq}, socket) when is_binary(seq) do
+    with {seq, ""} <- Integer.parse(seq),
+         true <- shown?(socket, seq),
+         %{} = event <- find(socket, seq) do
+      open = socket.assigns.open
+
+      open =
+        case MapSet.member?(open, seq) do
+          true -> MapSet.delete(open, seq)
+          false -> open |> MapSet.put(seq) |> newest(@side_limit)
+        end
+
+      {:noreply, socket |> assign(:open, open) |> insert_row(event)}
+    else
+      _unknown -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("toggle_details", _params, socket), do: {:noreply, socket}
+
   def handle_event("hide_plan", _params, socket), do: {:noreply, socket}
 
   # Clear is an event in the Store (ADR 08): the Ecto summary (the badge) and
@@ -299,12 +326,44 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   end
 
   defp show_plan(socket, event, plan) do
+    plans =
+      case plan do
+        nil -> Map.delete(socket.assigns.plans, event.seq)
+        plan -> socket.assigns.plans |> Map.put(event.seq, plan) |> newest_plans()
+      end
+
+    socket |> assign(:plans, plans) |> insert_row(event)
+  end
+
+  # Re-renders a row from the Store's event plus what the component keeps for
+  # it: its plan, its N+1 tag and whether its details are open.
+  defp insert_row(socket, event) do
+    %{plans: plans, flagged: flagged, open: open} = socket.assigns
+
     data =
       event.data
-      |> Map.put(:plan, plan)
-      |> Map.put(:n_plus_one?, MapSet.member?(socket.assigns.flagged, event.seq))
+      |> Map.put(:n_plus_one?, MapSet.member?(flagged, event.seq))
+      |> Map.put(:open?, MapSet.member?(open, event.seq))
+      |> put_plan(Map.get(plans, event.seq))
 
     stream_insert(socket, :queries, %{event | data: data}, limit: -@dom_limit)
+  end
+
+  defp put_plan(data, nil), do: Map.delete(data, :plan)
+  defp put_plan(data, plan), do: Map.put(data, :plan, plan)
+
+  defp newest(set, limit) do
+    case MapSet.size(set) > limit do
+      true -> set |> Enum.sort() |> Enum.take(-limit) |> MapSet.new()
+      false -> set
+    end
+  end
+
+  defp newest_plans(plans) do
+    case map_size(plans) > @side_limit do
+      true -> plans |> Map.take(plans |> Map.keys() |> Enum.sort() |> Enum.take(-@side_limit))
+      false -> plans
+    end
   end
 
   @impl Phoenix.LiveComponent

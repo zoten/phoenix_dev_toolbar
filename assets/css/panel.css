@@ -270,7 +270,7 @@ body.pdt {
 
 .pdt-tab:focus-visible, .pdt-toggle:focus-visible, .pdt-hide:focus-visible,
 .pdt-dock:focus-visible, .pdt-dock-option:focus-visible,
-.pdt-details summary:focus-visible {
+.pdt-details summary:focus-visible, .pdt-details__toggle:focus-visible {
   outline: 2px solid var(--pdt-accent);
   outline-offset: 1px;
 }
@@ -361,12 +361,23 @@ body.pdt {
 
 .pdt-details { margin-top: 3px; }
 
-.pdt-details summary {
+.pdt-details summary, .pdt-details__toggle {
   width: max-content;
   color: var(--pdt-muted);
   cursor: pointer;
   user-select: none;
 }
+
+.pdt-details__toggle {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+}
+
+.pdt-details__toggle::before { content: "\25B8"; margin-inline-end: 4px; }
+.pdt-details__toggle[aria-expanded="true"]::before { content: "\25BE"; }
 
 .pdt-details dl {
   display: grid;

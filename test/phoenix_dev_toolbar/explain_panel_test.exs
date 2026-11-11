@@ -39,10 +39,22 @@ defmodule PhoenixDevToolbar.ExplainPanelTest do
     assert has_element?(panel, "#pdt-explain-#{seq}", "EXPLAIN")
   end
 
+  test "a plan survives opening and closing the row's details", %{host: host, panel: panel} do
+    seq = run(host, panel, "SELECT * FROM users WHERE id = ?", [1])
+    panel |> element("#pdt-explain-#{seq}") |> render_click()
+    render_async(panel)
+
+    panel |> element("#pdt-details-toggle-#{seq}") |> render_click()
+    assert has_element?(panel, "#pdt-plan-#{seq}", "SEARCH users")
+    panel |> element("#pdt-details-toggle-#{seq}") |> render_click()
+    assert has_element?(panel, "#pdt-plan-#{seq}", "SEARCH users")
+  end
+
   test "a query that failed has no button and says why", %{host: host, panel: panel} do
     seq = run(host, panel, "SELECT * FROM no_such_table")
 
     refute has_element?(panel, "#pdt-explain-#{seq}")
+    panel |> element("#pdt-details-toggle-#{seq}") |> render_click()
     assert has_element?(panel, "#pdt-query-#{seq} .pdt-details", "the query itself failed")
   end
 
@@ -62,6 +74,7 @@ defmodule PhoenixDevToolbar.ExplainPanelTest do
     seq = run(host, panel, "UPDATE users SET name = name WHERE id = ?", [1])
 
     refute has_element?(panel, "#pdt-explain-#{seq}")
+    panel |> element("#pdt-details-toggle-#{seq}") |> render_click()
 
     assert has_element?(
              panel,

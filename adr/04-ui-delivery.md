@@ -225,9 +225,9 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   A tab keeps live updates only while open, so state a panel keeps beside its rows (an
   EXPLAIN plan) is rebuilt when a stale tab opens. Measured on 40 queries with 12 frame
   stacktraces and 30 LiveView callbacks (`test/phoenix_dev_toolbar/panel_payload_test.exs`,
-  JSON bytes of the panel's join reply and diffs): mount 82 KB to 60 KB (the open Ecto tab's rows
-  are the rest), 5 new events 7.7 KB to 0.3 KB. The open tab still sends each query's
-  `details` (params, stacktrace) inline.
+  JSON bytes of the panel's join reply and diffs): mount 82 KB to 60 KB, 5 new events 7.7 KB to 0.3 KB.
+  The open Ecto tab renders a query's details (params, stacktrace, timings) only once the row's
+  toggle is clicked (open rows and EXPLAIN plans are kept in the component, 50 each): mount 60 KB to 33 KB.
 
 ## Consequences
 

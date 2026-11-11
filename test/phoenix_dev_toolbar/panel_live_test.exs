@@ -139,6 +139,8 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     [event] = Store.events(request)
     view = open(conn, request)
 
+    view |> element("#pdt-details-toggle-#{event.seq}") |> render_click()
+
     assert has_element?(view, "#pdt-query-#{event.seq} .pdt-hint", "stacktrace: true")
     assert has_element?(view, "#pdt-query-#{event.seq} .pdt-timings", "queue")
   end
