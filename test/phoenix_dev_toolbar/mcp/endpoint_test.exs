@@ -238,15 +238,7 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
 
     @tag :capture_log
     test "a failure while encoding is a static 500 with -32603" do
-      previous = Application.fetch_env(:phoenix, :json_library)
-      Application.put_env(:phoenix, :json_library, BoomJson)
-
-      on_exit(fn ->
-        case previous do
-          {:ok, value} -> Application.put_env(:phoenix, :json_library, value)
-          :error -> Application.delete_env(:phoenix, :json_library)
-        end
-      end)
+      put_env(:phoenix, :json_library, BoomJson)
 
       conn = post(~s({"jsonrpc":"2.0","id":1,"method":"ping"}))
       assert conn.status == 500
@@ -442,5 +434,15 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
       refute conn.halted
       assert conn.state == :unset
     end
+  end
+
+  # The toolbar adds no JSON library: it encodes and decodes with the host's
+  # (`Phoenix.json_library/0`), here Elixir's built-in `JSON` (Elixir 1.18+).
+  @tag :json_module
+  test "a ping round trips with the built-in JSON module" do
+    put_env(:phoenix, :json_library, JSON)
+    conn = post(rpc("ping"))
+    assert conn.status == 200
+    assert %{"jsonrpc" => "2.0", "id" => 1, "result" => %{}} = JSON.decode!(conn.resp_body)
   end
 end

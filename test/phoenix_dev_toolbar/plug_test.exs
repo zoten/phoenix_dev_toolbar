@@ -424,6 +424,19 @@ defmodule PhoenixDevToolbar.PlugTest do
       refute Map.has_key?(conn.private, :phoenix_dev_toolbar)
     end
 
+    # The host's JSON library encodes the file (ADR 08): here the built-in one.
+    @tag :json_module
+    test "is encoded with the built-in JSON module when the host uses it" do
+      put_env(:phoenix, :json_library, JSON)
+      sid = page_sid()
+      conn = export(%{"format" => "short", "root" => sid, "sids" => sid})
+
+      assert conn.status == 200
+
+      assert %{"format" => "short", "path" => "/users", "count" => 0} =
+               JSON.decode!(conn.resp_body)
+    end
+
     test "refuses bad params, unknown pages and other methods" do
       sid = page_sid()
       many = Enum.join(for(_i <- 1..5, do: page_sid()), ",")

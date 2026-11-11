@@ -44,8 +44,13 @@ postgres? =
   end
 
 # Message trace needs OTP 27 trace sessions (ADR 11): skipped on older OTPs.
+# The built-in JSON module needs Elixir 1.18: skipped on 1.17.
 exclude =
-  [trace_sessions: not Code.ensure_loaded?(:trace), postgres: not postgres?]
+  [
+    trace_sessions: not Code.ensure_loaded?(:trace),
+    postgres: not postgres?,
+    json_module: not Code.ensure_loaded?(JSON)
+  ]
   |> Enum.filter(fn {_tag, skip?} -> skip? end)
   |> Enum.map(fn {tag, _skip?} -> tag end)
 

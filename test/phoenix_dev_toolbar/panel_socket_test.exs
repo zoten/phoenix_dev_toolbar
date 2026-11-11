@@ -97,6 +97,20 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
              WebSocketClient.recv_json(socket)
   end
 
+  # The join check decodes frames with the host's JSON library, as Phoenix's
+  # serializer does: here the built-in one (Elixir 1.18+).
+  @tag :json_module
+  test "the panel joins when the host uses the built-in JSON module", %{port: port} do
+    put_env(:phoenix, :json_library, JSON)
+    {id, join} = panel_join_params()
+
+    socket = connect!(port)
+    :ok = WebSocketClient.send_json(socket, ["1", "1", "lv:#{id}", "phx_join", join])
+
+    assert ["1", "1", "lv:" <> _, "phx_reply", %{"status" => "ok"}] =
+             WebSocketClient.recv_json(socket)
+  end
+
   # The bug this socket fixes: the host's socket (connect_info with a session)
   # refuses the same join without a matching CSRF token, and LiveView then
   # sends the iframe to its own URL at once: a reload loop.
