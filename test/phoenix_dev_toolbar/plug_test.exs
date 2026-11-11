@@ -97,7 +97,10 @@ defmodule PhoenixDevToolbar.PlugTest do
         |> put_resp_content_type("text/html")
         |> send_resp(200, @page)
 
-      assert conn.resp_body != @page
+      tag =
+        ~s(<script defer src="/__pdt/assets/loader.js" data-pdt-sid="#{sid(conn)}" data-pdt-path="/__pdt"></script>)
+
+      assert conn.resp_body == String.replace(@page, "</body>", tag <> "</body>")
       assert get_resp_header(conn, "content-length") == []
     end
 
@@ -155,6 +158,16 @@ defmodule PhoenixDevToolbar.PlugTest do
       document = page_conn() |> put_req_header("sec-fetch-dest", "document") |> respond()
 
       assert [_tag] = loader_tags(document)
+
+      # Not top level documents: no tag, no session.
+      for dest <- ["iframe", "empty"] do
+        conn = page_conn() |> put_req_header("sec-fetch-dest", dest) |> respond()
+
+        assert loader_tags(conn) == []
+        refute Map.has_key?(conn.private, :phoenix_dev_toolbar)
+      end
+
+      assert [_only_the_document] = Store.sessions()
     end
 
     test "use the configured path and the CSP nonce assign" do

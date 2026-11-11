@@ -90,5 +90,9 @@ defmodule PhoenixDevToolbar.ApplicationTest do
     assert ToolbarApp.maybe_attach(false) == :ok
 
     assert for(%{id: {Collector, _event}} <- :telemetry.list_handlers([]), do: :found) == []
+
+    assert ToolbarApp.maybe_attach(true) == :ok
+
+    assert for(%{id: {Collector, _event}} <- :telemetry.list_handlers([]), do: :found) != []
   end
 end

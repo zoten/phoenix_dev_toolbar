@@ -44,6 +44,8 @@ defmodule PdtExamples.ObanTest do
                PdtExamples.Oban.collect(event, {%{}, %{job: deep}}, context)
 
       refute args =~ "LEAK"
+      # Still a bounded, readable preview of the nested args, not an empty one.
+      assert args =~ ~s("a")
 
       assert PdtExamples.Oban.collect(event, {%{duration: 10}, %{job: job("default")}}, context) ==
                :skip
@@ -95,6 +97,8 @@ defmodule PdtExamples.ObanTest do
       assert has_element?(panel, "#pdt-badge-oban-jobs", "1 job enqueued")
       assert has_element?(panel, "#oban-jobs li[id^=oban-job-]", "MyApp.Welcome")
       refute render(panel) =~ "s3cret"
+      # The job's args are shown, with the token redacted.
+      assert has_element?(panel, "#oban-jobs li[id^=oban-job-]", "[REDACTED]")
     end
   end
 end

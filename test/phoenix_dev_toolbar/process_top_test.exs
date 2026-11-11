@@ -40,8 +40,18 @@ defmodule PhoenixDevToolbar.ProcessTopTest do
   end
 
   test "rows are named; toolbar processes are tagged" do
-    assert {:ok, rows} = ProcessTop.top(:memory)
+    # Two processes with a long queue, so both are in the top by queue.
+    toolbar = idle_process()
+    host = idle_process()
+    Process.register(toolbar, PhoenixDevToolbar.TopFixture)
+    Process.register(host, DemoHost.TopFixture)
+    for n <- 1..3_000, do: send(toolbar, {:junk, n})
+    for n <- 1..3_000, do: send(host, {:junk, n})
+
+    assert {:ok, rows} = ProcessTop.top(:queue)
     assert Enum.all?(rows, &is_binary(&1.name))
+    assert %{toolbar?: true} = Enum.find(rows, &(&1.pid == toolbar))
+    assert %{toolbar?: false} = Enum.find(rows, &(&1.pid == host))
   end
 
   test "a node with too many processes is not swept" do

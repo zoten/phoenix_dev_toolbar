@@ -68,6 +68,11 @@ defmodule PhoenixDevToolbar.ExplainPanelTest do
     render_async(panel)
     refute has_element?(panel, "#pdt-disabled-ecto")
     refute has_element?(panel, "#pdt-plan-#{seq}")
+
+    # The tab still works: a real click explains the query.
+    panel |> element("#pdt-explain-#{seq}") |> render_click()
+    render_async(panel)
+    assert has_element?(panel, "#pdt-plan-#{seq}", "SCAN users")
   end
 
   test "a write has no button and says why", %{host: host, panel: panel} do
@@ -97,5 +102,11 @@ defmodule PhoenixDevToolbar.ExplainPanelTest do
     refute has_element?(panel, "#pdt-plan-#{other}")
     refute has_element?(panel, "#pdt-plan-#{own}")
     refute render(panel) =~ "SCAN users"
+
+    # The tab still works: the page's own seq is explained.
+    panel |> element("#pdt-explain-#{own}") |> render_click()
+    render_async(panel)
+    assert has_element?(panel, "#pdt-plan-#{own}", "SCAN users")
+    refute has_element?(panel, "#pdt-plan-#{other}")
   end
 end

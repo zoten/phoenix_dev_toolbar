@@ -29,6 +29,8 @@ defmodule PhoenixDevToolbar.RedactConfigTest do
 
     refute inspect(changes.values) =~ ~s("a")
     refute inspect(changes.values) =~ ~s("b")
+    assert changes.values[:api_key] =~ "[REDACTED]"
+    assert changes.values[:password] =~ "[REDACTED]"
   end
 
   test "invalid redact entries are dropped with one warning" do

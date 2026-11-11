@@ -109,6 +109,8 @@ defmodule PhoenixDevToolbar.HostCheckTest do
       |> Map.put(:host, "<b>x</b>.example")
       |> DemoWeb.Endpoint.call([])
 
+    assert conn.status == 403
     refute conn.resp_body =~ "<b>"
+    assert conn.resp_body =~ "&lt;b&gt;x&lt;/b&gt;.example"
   end
 end

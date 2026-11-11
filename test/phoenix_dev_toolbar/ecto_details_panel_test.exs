@@ -55,5 +55,10 @@ defmodule PhoenixDevToolbar.EctoDetailsPanelTest do
     end
 
     refute has_element?(panel, "#pdt-query-#{seq} .pdt-details dl")
+
+    # The tab still works: a real toggle opens the details.
+    panel |> element(toggle) |> render_click()
+    assert has_element?(panel, "#{toggle}[aria-expanded=true]")
+    assert has_element?(panel, "#pdt-query-#{seq} .pdt-details dl")
   end
 end

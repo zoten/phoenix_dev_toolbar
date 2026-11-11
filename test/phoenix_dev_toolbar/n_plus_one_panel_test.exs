@@ -139,7 +139,8 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
     panel = open_panel(request.sid)
     open_panel_tab(panel, "live_view")
 
-    # 3 identical queries in one span: below the threshold (5)
+    # 1 query, flushed; 2 more stay pending: 3 identical queries in one span,
+    # below the threshold (5)
     query(live, span: 7)
     flush(panel)
     for _ <- 1..2, do: query(live, span: 7)
@@ -147,7 +148,25 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
     # the two unflushed queries must reach the tab once, through the flush
     open_panel_tab(panel, "ecto")
     flush(panel)
+    # Tab deliveries land after the next render.
+    _ = render(panel)
+
+    # Exactly the 3 queries, each once: the badge and the rows agree.
+    assert has_element?(panel, "#pdt-badge-ecto-queries", "3 queries")
+
+    assert panel
+           |> render()
+           |> LazyHTML.from_fragment()
+           |> LazyHTML.query("#pdt-queries li.pdt-row")
+           |> Enum.count() == 3
 
     refute has_element?(panel, "#pdt-n-plus-one")
+
+    # The detector still counts: two more make a group of exactly 5.
+    for _ <- 1..2, do: query(live, span: 7)
+    flush(panel)
+    _ = render(panel)
+    assert has_element?(panel, "#pdt-badge-ecto-n-plus-one", "N+1 ×1")
+    assert has_element?(panel, ~s(#pdt-n-plus-one li[data-pdt-count="5"]))
   end
 end

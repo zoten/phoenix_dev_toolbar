@@ -424,6 +424,8 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       # old LiveView's clicks: 1 must not show as the new page's.
       panel |> element("#pdt-tab-live_view") |> render_click()
       refute has_element?(panel, "#pdt-snapshot-clicks", "1")
+      # What stays shown is the last snapshot taken before the page changed.
+      assert has_element?(panel, "#pdt-snapshot-clicks code", "0")
     end
 
     test "a poll reads the host only while visible" do

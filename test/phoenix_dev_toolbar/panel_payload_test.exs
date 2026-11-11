@@ -83,7 +83,7 @@ defmodule PhoenixDevToolbar.PanelPayloadTest do
 
     # The open (Ecto) tab's 40 collapsed rows (no details) are the mount: 60 KB with inline details.
     assert mount_bytes < 36_000
-    assert event_bytes < 1_500
+    assert event_bytes > 0 and event_bytes < 1_500
   end
 
   test "a hidden tab gets no rows until it is opened" do

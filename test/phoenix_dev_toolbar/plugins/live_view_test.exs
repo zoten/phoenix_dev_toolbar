@@ -427,6 +427,12 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
     test "a :hide rule keeps the arguments out" do
       session = strict_crash(rules: [{DemoWeb.BoomLive, :hide}])
       assert stored_stack_args(session) == nil
+
+      # The exception itself was recorded: only its arguments are hidden.
+      assert Enum.any?(
+               Store.events(session.sid),
+               &match?(%Event{data: %{stacktrace: [_ | _]}}, &1)
+             )
     end
   end
 end

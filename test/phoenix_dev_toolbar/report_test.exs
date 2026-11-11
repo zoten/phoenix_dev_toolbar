@@ -767,10 +767,6 @@ defmodule PhoenixDevToolbar.ReportTest do
 
       assert md =~ "```sql\n" <> sql <> "\n```"
       assert md =~ "| `` ** (RuntimeError) a \\| b second `line` `` |"
-
-      table_rows = md |> String.split("\n") |> Enum.filter(&String.starts_with?(&1, "|"))
-      assert table_rows != []
-      refute Enum.any?(table_rows, &(&1 =~ "second\n"))
     end
 
     test "short single-line SQL stays in the table as a code span, escaped" do

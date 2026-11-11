@@ -488,15 +488,18 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
     end
 
     test "kill is refused" do
-      pid = idle_process()
-      ref = Process.monitor(pid)
+      pid = ponger()
       {panel, target} = forged_target(pid)
 
       render_click(target, "arm", %{"action" => "kill", "reason" => "kill"})
       render_click(target, "confirm", %{})
 
       refute has_element?(panel, "#pdt-system-confirm")
-      refute_received {:DOWN, ^ref, :process, ^pid, _reason}
+      assert has_element?(panel, "#pdt-system-actions-off", "Actions are off")
+      # Exit signals are asynchronous: a ping sent after the refused kill is
+      # answered only if no kill signal reached the process first.
+      send(pid, {:ping, self()})
+      assert_receive {:pong, ^pid}
     end
 
     test "suspend is refused" do
@@ -508,6 +511,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
       render_click(target, "confirm", %{})
 
       refute has_element?(panel, "#pdt-system-confirm")
+      assert has_element?(panel, "#pdt-system-actions-off", "Actions are off")
       assert PhoenixDevToolbar.Suspender.suspended() == %{}
       send(pid, {:ping, self()})
       assert_receive {:pong, ^pid}
@@ -521,6 +525,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
       render_click(target, "peek", %{})
 
       refute has_element?(panel, "#pdt-system-messages-list")
+      assert has_element?(panel, "#pdt-system-actions-off")
     end
 
     test "reading the state is refused" do
@@ -531,6 +536,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
       _ = render(panel)
 
       refute has_element?(panel, "#pdt-system-state-value")
+      assert has_element?(panel, "#pdt-system-actions-off")
     end
 
     test "tracing is refused" do
@@ -540,6 +546,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
       render_click(target, "trace", %{})
 
       refute has_element?(panel, "#pdt-system-trace-list")
+      assert has_element?(panel, "#pdt-system-actions-off")
       refute has_element?(panel, "#pdt-system-trace-status")
       assert PhoenixDevToolbar.Tracer.status(panel.pid) == nil
     end

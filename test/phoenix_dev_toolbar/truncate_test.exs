@@ -182,6 +182,8 @@ defmodule PhoenixDevToolbar.TruncateTest do
 
       refute Map.has_key?(redacted, :__struct__)
       assert redacted["…"] == "…"
+      # The fields kept are walked: their sensitive values are still redacted.
+      assert redacted.f1 == %{password: "[REDACTED]"}
     end
 
     test "walks the proper prefix of an improper list and cuts the tail" do
@@ -207,9 +209,17 @@ defmodule PhoenixDevToolbar.TruncateTest do
       wide = Map.put(Map.new(1..60, &{&1, 0}), 61, secret)
       far_deep = Enum.reduce(1..5_000, secret, fn _, acc -> [acc] end)
 
-      for value <- [deep, tuple, improper, wide, far_deep] do
+      # What each stays visible as: the walked secret redacted, or the cut.
+      for {value, visible} <- [
+            {deep, ~s(password: "[REDACTED]")},
+            {tuple, ~s(password: "[REDACTED]")},
+            {improper, ~s(password: "[REDACTED]")},
+            {wide, ~s(password: "[REDACTED]")},
+            {far_deep, "[[[["}
+          ] do
         redacted = Truncate.redact(value)
 
+        assert Truncate.inspect_value(redacted) =~ visible
         refute Truncate.inspect_value(redacted) =~ "hunter2"
         refute inspect(redacted, limit: :infinity, printable_limit: :infinity) =~ "hunter2"
       end
@@ -218,15 +228,22 @@ defmodule PhoenixDevToolbar.TruncateTest do
     test "a deeply nested sensitive key is still redacted within the budget" do
       deep = Enum.reduce(1..20, %{password: "hunter2"}, fn _, acc -> %{a: acc} end)
 
-      refute deep |> Truncate.redact() |> inspect(limit: :infinity) =~ "hunter2"
+      redacted = deep |> Truncate.redact() |> inspect(limit: :infinity)
+
+      refute redacted =~ "hunter2"
+      assert redacted =~ ~s(password: "[REDACTED]")
     end
 
     test "a 1 MB key is matched on a bounded prefix" do
       # Against a 1 KB key in the same run (reduction counts vary with the OTP
-      # release): a scan of the whole key would cost about 500 times more.
-      {_, short} = reductions(fn -> Truncate.redact(%{String.duplicate("é", 1_000) => 1}) end)
-      {_, cost} = reductions(fn -> Truncate.redact(%{String.duplicate("é", 500_000) => 1}) end)
-      assert cost < short * 20
+      # release), keys built before measuring: about the same cost. An Elixir
+      # scan of the whole key costs about 1000 times more; a BIF scan (regex,
+      # String.contains?) costs a few reductions and no bound can catch it.
+      short_key = String.duplicate("é", 1_000)
+      long_key = String.duplicate("é", 500_000)
+      {_, short} = reductions(fn -> Truncate.redact(%{short_key => 1}) end)
+      {_, cost} = reductions(fn -> Truncate.redact(%{long_key => 1}) end)
+      assert cost < short * 3
 
       long = "Password" <> String.duplicate("x", 1_000_000)
       assert Truncate.redact(%{long => "hunter2"}) == %{long => "[REDACTED]"}
@@ -413,7 +430,12 @@ defmodule PhoenixDevToolbar.TruncateTest do
       wide = Map.new(1..19, &{:"k#{&1}", Enum.to_list(1..20)})
       value = Map.put(wide, :zz, %{password: "hunter2"})
 
-      refute Truncate.preview(value, 100_000) =~ "hunter2"
+      preview = Truncate.preview(value, 100_000)
+
+      refute preview =~ "hunter2"
+      # The secret is replaced by the cut mark, siblings stay readable.
+      assert preview =~ ~s(zz: "…")
+      assert preview =~ "k10: [1, 2, 3"
     end
 
     test "redacts keyword lists inside lists and tuples" do
@@ -430,7 +452,11 @@ defmodule PhoenixDevToolbar.TruncateTest do
       uri = %URI{host: "example.com", query: "a=1", userinfo: "ada:hunter2"}
       session = %{__struct__: Plug.Conn, secret_key_base: "s3cret", assigns: %{uri: uri}}
 
-      refute Truncate.preview(session, 100_000) =~ "s3cret"
+      preview = Truncate.preview(session, 100_000)
+
+      refute preview =~ "s3cret"
+      assert preview =~ "secret_key_base: \"[REDACTED]\""
+      assert preview =~ "example.com"
     end
   end
 

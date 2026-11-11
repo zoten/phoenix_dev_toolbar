@@ -174,6 +174,12 @@ defmodule PhoenixDevToolbar.EctoExportPanelTest do
       refute_push_event(panel, "pdt:export", %{}, 50)
       refute has_element?(panel, "#pdt-disabled-ecto")
       assert has_element?(panel, "#pdt-ecto-export")
+
+      # The tab still works: a real Copy exports the query.
+      copy(panel, %{"format" => "full"})
+
+      assert_push_event(panel, "pdt:export", %{payload: %{"queries" => queries}})
+      assert Enum.any?(queries, &(&1["sql"] == "SELECT id FROM users"))
     end
   end
 end

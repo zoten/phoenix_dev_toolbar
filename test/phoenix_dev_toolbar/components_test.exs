@@ -23,6 +23,7 @@ defmodule PhoenixDevToolbar.ComponentsTest do
       assert [_] = Enum.to_list(LazyHTML.query(document, "details.pdt-stack-args"))
       assert [_] = Enum.to_list(LazyHTML.query(document, "details.pdt-stack-args dd"))
       refute html =~ "<script>"
+      assert html =~ "&lt;script&gt;x&lt;/script&gt;"
     end
 
     test "renders nothing without them" do

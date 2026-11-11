@@ -16,15 +16,21 @@ defmodule PhoenixDevToolbar.ProcessActionsTest do
     {:ok, context: %{@local | panel: self()}}
   end
 
+  # Exit signals are asynchronous, so a refused kill is proven by the process
+  # still answering: a signal sent before this ping would have reached it first.
+  defp assert_alive(pid) do
+    send(pid, {:ping, self()})
+    assert_receive {:pong, ^pid}
+  end
+
   test "a client off this machine may not act, and is told how to allow it", %{context: context} do
-    pid = idle_process()
-    ref = Process.monitor(pid)
+    pid = ponger()
     remote = %{context | client: {192, 168, 1, 20}}
 
     assert {:error, message} = ProcessActions.kill(pid, "kill", remote)
     assert message =~ "actions: :any"
     assert {:error, _message} = ProcessActions.peek(pid, remote)
-    refute_received {:DOWN, ^ref, :process, ^pid, _reason}
+    assert_alive(pid)
 
     put_app_env(:actions, false)
     assert {:error, "Actions are off" <> _rest} = ProcessActions.allowed(pid, context)
@@ -32,13 +38,12 @@ defmodule PhoenixDevToolbar.ProcessActionsTest do
 
   test "with actions unset nobody acts, and the message names the option", %{context: context} do
     delete_app_env(:actions)
-    pid = idle_process()
-    ref = Process.monitor(pid)
+    pid = ponger()
 
     assert {:error, message} = ProcessActions.kill(pid, "kill", context)
     assert message =~ "actions: :local"
     assert {:error, _message} = ProcessActions.peek(pid, context)
-    refute_received {:DOWN, ^ref, :process, ^pid, _reason}
+    assert_alive(pid)
   end
 
   test "a protected process is never killed", %{context: context} do
@@ -59,11 +64,10 @@ defmodule PhoenixDevToolbar.ProcessActionsTest do
   end
 
   test "an unknown reason kills nothing", %{context: context} do
-    pid = idle_process()
-    ref = Process.monitor(pid)
+    pid = ponger()
 
     assert ProcessActions.kill(pid, "nuke", context) == {:error, "Unknown kill reason."}
-    refute_received {:DOWN, ^ref, :process, ^pid, _reason}
+    assert_alive(pid)
   end
 
   test "suspend and resume, logged", %{context: context} do

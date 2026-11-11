@@ -184,6 +184,8 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
     assert frames != []
     assert length(frames) <= 20
     assert Enum.all?(frames, &is_binary/1)
+    # It waits inside the helper's receive.
+    assert Enum.any?(frames, &(&1 =~ "PhoenixDevToolbar.ProcessHelpers"))
   end
 
   test "otp?/1 tells proc_lib processes from plain ones" do

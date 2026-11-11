@@ -90,6 +90,10 @@ defmodule PhoenixDevToolbar.ClientMatchTest do
   end
 
   test "own_addresses/0 returns ip tuples" do
-    assert Enum.all?(ClientMatch.own_addresses(), &(tuple_size(&1) in [4, 8]))
+    addresses = ClientMatch.own_addresses()
+
+    # Every machine has its loopback interface.
+    assert {127, 0, 0, 1} in addresses
+    assert Enum.all?(addresses, &(tuple_size(&1) in [4, 8]))
   end
 end
