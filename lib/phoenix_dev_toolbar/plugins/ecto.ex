@@ -205,7 +205,7 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
       Map.put(
         badge,
         :title,
-        "Plus #{noise} framework #{noun(noise)} (Phoenix.Ecto.CheckRepoStatus) not counted"
+        "Plus #{noise} framework #{noun(noise)} (such as Phoenix.Ecto.CheckRepoStatus) not counted"
       )
 
   defp n_plus_one_badge(%{n_plus_one: n_plus_one}) do

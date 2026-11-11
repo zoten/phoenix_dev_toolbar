@@ -51,7 +51,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "page_summary",
         "Summarize a page",
-        "A compact page at a glance: request, query count and time, N+1 findings, slowest queries and callbacks, errors. Query counts leave out framework noise (Phoenix.Ecto.CheckRepoStatus), counted in queries.noise. Items carry no SQL, params or assigns: pass verbose: true, or use page_queries and page_callbacks, for detail.",
+        "A compact page at a glance: request, query count and time, N+1 findings, slowest queries and callbacks, errors. Query counts leave out framework noise (such as Phoenix.Ecto.CheckRepoStatus), counted in queries.noise. Items carry no SQL, params or assigns: pass verbose: true, or use page_queries and page_callbacks, for detail.",
         %{
           "sid" => @sid_prop,
           "path" => @path_prop,

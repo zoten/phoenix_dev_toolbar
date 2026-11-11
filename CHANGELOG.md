@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP: reconnect after an upgrade documented, serverInfo.version tested (ADR 15)
 - MCP argument errors say what is expected and where to get it (ADR 15)
 - Inferred callbacks: `duration_us` stays null, documented, sorted last (ADR 13, 15)
+- `phoenix_ecto` optional dependency: CheckRepoStatus in the harness and an end to end test (ADR 06, 08)
 - Panel LiveView `log: false`: no toolbar lines in the host's dev log (ADR 04)
 
 ## [0.0.4] - 2026-11-11

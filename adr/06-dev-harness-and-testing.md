@@ -14,7 +14,8 @@ correctness and boundedness need tests, not just eyeballing.
 
 - **Harness**: a single-file `dev.exs` (the `Phoenix.LiveDashboard` pattern) defines a
   Bandit endpoint with `PhoenixDevToolbar.Plug` (before the session plug, as in a
-  generated endpoint), a router without any toolbar routes, and an `ecto_sqlite3` repo
+  generated endpoint, followed by `Phoenix.Ecto.CheckRepoStatus` for the framework
+  noise of ADR 08), a router without any toolbar routes, and an `ecto_sqlite3` repo
   (`tmp/dev.sqlite3`, recreated and seeded on every boot, with `stacktrace: true`), so no
   database server is required. `mix dev` runs it on `PORT`
   (default 4000) and `IP` (default 127.0.0.1; a LAN address checks the MCP

@@ -25,6 +25,8 @@ Application.put_env(:phoenix_dev_toolbar, Demo.Endpoint,
 
 Application.put_env(:phoenix_dev_toolbar, Demo.Repo, database: database, stacktrace: true)
 Application.put_env(:phoenix_dev_toolbar, :repos, [Demo.Repo])
+# The repos Phoenix.Ecto.CheckRepoStatus checks (Demo.Endpoint).
+Application.put_env(:demo, :ecto_repos, [Demo.Repo])
 # The harness demonstrates process actions (opt-in, ADR 10).
 Application.put_env(:phoenix_dev_toolbar, :actions, :loopback)
 # Opt-in: call arguments of the crashing frame in the panel (ADR 03), off by default.
@@ -678,6 +680,13 @@ defmodule Demo.Endpoint do
 
   # In a host app this sits under `if code_reloading? do`, before the session plug.
   plug PhoenixDevToolbar.Plug
+
+  # As in a generated endpoint: its schema_migrations queries show up dimmed in
+  # the Ecto tab, left out of the count (framework noise, ADR 08).
+  if Code.ensure_loaded?(Phoenix.Ecto.CheckRepoStatus) do
+    plug Phoenix.Ecto.CheckRepoStatus, otp_app: :demo
+  end
+
   plug Plug.RequestId
   plug Plug.Parsers, parsers: [:urlencoded, :multipart, :json], json_decoder: Jason
   plug Plug.Session, @session

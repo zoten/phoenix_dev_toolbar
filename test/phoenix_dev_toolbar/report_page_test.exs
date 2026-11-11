@@ -107,6 +107,45 @@ defmodule PhoenixDevToolbar.ReportPageTest do
     assert String.ends_with?(markdown, "sid `#{sid}`, panel: #{url}\n")
   end
 
+  describe "a host endpoint with Phoenix.Ecto.CheckRepoStatus" do
+    setup do
+      Application.put_env(:pdt_check_repo_status, :ecto_repos, [DemoWeb.SQLiteRepo])
+      on_exit(fn -> Application.delete_env(:pdt_check_repo_status, :ecto_repos) end)
+    end
+
+    test "its queries are kept, tagged as noise, left out of the counts and dimmed" do
+      {host, sid} = visit("/demo")
+
+      render_hook(host, "sqlite", %{
+        "sql" => "SELECT name FROM users WHERE id = ?",
+        "params" => [1]
+      })
+
+      {noise, app} = sid |> Report.queries() |> Enum.split_with(&(&1.noise != nil))
+
+      assert [_ | _] = noise
+
+      assert Enum.all?(
+               noise,
+               &(&1.noise == "check_repo_status" and &1.sql =~ "schema_migrations")
+             )
+
+      assert [%{sql: "SELECT name FROM users WHERE id = ?", noise: nil}] = app
+
+      noise_count = length(noise)
+      assert %{count: 1, noise: %{count: ^noise_count}} = Report.summary(sid).queries
+      assert Report.markdown(sid) =~ "Plus #{noise_count} framework quer"
+
+      panel = open_panel(sid)
+      assert panel |> element("#pdt-badge-ecto-queries") |> render() =~ "1 query"
+      open_panel_tab(panel, "ecto")
+
+      for %{seq: seq} <- noise do
+        assert has_element?(panel, "#pdt-query-#{seq}.pdt-row--noise #pdt-noise-#{seq}")
+      end
+    end
+  end
+
   defp boom_view do
     {conn, sid} = load_page("/demo/boom")
     {:ok, view, _html} = live(conn)

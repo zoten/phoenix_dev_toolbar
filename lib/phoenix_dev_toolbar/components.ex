@@ -87,7 +87,7 @@ defmodule PhoenixDevToolbar.Components do
           :if={@noise}
           id={"pdt-noise-#{@event.seq}"}
           class="pdt-tag"
-          title="A framework query (Phoenix.Ecto.CheckRepoStatus runs it on every dev request): left out of the query count"
+          title="A framework query (such as Phoenix.Ecto.CheckRepoStatus, run on every dev request): left out of the query count"
         >
           framework
         </span>

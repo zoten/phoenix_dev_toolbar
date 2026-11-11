@@ -55,6 +55,9 @@ defmodule PhoenixDevToolbar.MixProject do
       # The panel's own socket (ADR 04); already a Phoenix dependency.
       {:websock_adapter, "~> 0.5"},
       {:ecto_sql, "~> 3.12", optional: true},
+      # Phoenix.Ecto.CheckRepoStatus in the harness and the framework noise tests
+      # (ADR 08); optional, so host apps without it are unaffected.
+      {:phoenix_ecto, "~> 4.5", optional: true},
       {:lazy_html, "~> 0.1", only: :test},
       # Builds priv/static (committed and shipped): never needed by host apps.
       {:esbuild, "~> 0.10", only: :dev, runtime: false},

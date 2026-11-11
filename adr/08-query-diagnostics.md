@@ -58,6 +58,11 @@ frame is `noise: "check_repo_status"`; one whose every frame is framework code i
 `noise: "framework"`; no stacktrace is never noise. Noise is kept (queries, export,
 the tab, dimmed with a `framework` tag) but left out of the counts: the Ecto badge
 (named in its title) and `Report.summary/2`, which counts it in `queries.noise`.
+The detection reads strings only and never touches `Phoenix.Ecto`. `phoenix_ecto` is
+an optional dependency (hosts without it are unaffected) used by the harness and by
+`DemoWeb.Endpoint`, which plug `Phoenix.Ecto.CheckRepoStatus` behind
+`Code.ensure_loaded?/1`: one end to end test runs its real queries through the panel
+and `Report`.
 
 **EXPLAIN** (`PhoenixDevToolbar.Explain`).
 - Capture, in `collect/3` (the host process): a query whose SQL starts with `SELECT`

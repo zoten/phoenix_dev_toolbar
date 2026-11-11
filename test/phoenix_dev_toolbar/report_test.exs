@@ -326,6 +326,23 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert md =~ "`DemoWeb.PageLive handle_event open` ×5"
       assert md =~ "`#{hd(mount)}` ×14"
     end
+
+    test "Markdown merges the repetitions of one callback into one entry" do
+      s = session(:live_view, path: "/events", view: DemoWeb.PageLive)
+      sql = "SELECT * FROM teams WHERE event_id = ?"
+      origin = "lib/demo/policy.ex:7: Demo.Policy.allowed?/2"
+
+      for {span, n} <- [{1, 5}, {2, 7}, {3, 6}] do
+        callback(s, :handle_event, span: span, event: "open")
+        for _ <- 1..n, do: query(s, sql: sql, span: span, stacktrace: [origin])
+      end
+
+      assert [%{ran_in: [_, _, _]}] = Report.n_plus_one(s.sid, threshold: 5)
+
+      md = Report.markdown(s.sid, threshold: 5)
+      assert md =~ "`DemoWeb.PageLive handle_event open` ×7 (3 callbacks)"
+      refute md =~ "×5"
+    end
   end
 
   describe "callbacks/2" do

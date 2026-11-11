@@ -10,6 +10,13 @@ defmodule DemoWeb.Endpoint do
   socket "/live", Phoenix.LiveView.Socket, websocket: [connect_info: [session: @session_options]]
 
   plug PhoenixDevToolbar.Plug
+
+  # As in a generated endpoint (framework noise, ADR 08). Its repos come from
+  # an app env only the CheckRepoStatus test sets: a no-op everywhere else.
+  if Code.ensure_loaded?(Phoenix.Ecto.CheckRepoStatus) do
+    plug Phoenix.Ecto.CheckRepoStatus, otp_app: :pdt_check_repo_status
+  end
+
   plug Plug.Session, @session_options
   plug DemoWeb.Router
 end

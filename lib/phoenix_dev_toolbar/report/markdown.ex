@@ -65,7 +65,7 @@ defmodule PhoenixDevToolbar.Report.Markdown do
 
   defp noise(%{noise: %{count: n}}) when n > 0,
     do:
-      " Plus #{count(n, "framework query", "framework queries")} (Phoenix.Ecto.CheckRepoStatus) not counted."
+      " Plus #{count(n, "framework query", "framework queries")} (such as Phoenix.Ecto.CheckRepoStatus) not counted."
 
   defp noise(_queries), do: ""
 
@@ -85,12 +85,24 @@ defmodule PhoenixDevToolbar.Report.Markdown do
     )
   end
 
-  # "`DemoWeb.PageLive mount` ×7, ..." in one cell.
+  # "`DemoWeb.PageLive mount` ×7, ..." in one cell: one entry per callback
+  # name, with its largest count and how many callbacks repeated it.
   defp ran_in([]), do: nil
 
   defp ran_in(places) do
-    Enum.map_join(places, ", ", fn place -> "#{code(callback_name(place))} ×#{place.count}" end)
+    named = Enum.map(places, &{callback_name(&1), &1.count})
+
+    named
+    |> Enum.map(&elem(&1, 0))
+    |> Enum.uniq()
+    |> Enum.map_join(", ", fn name ->
+      counts = for {^name, count} <- named, do: count
+      "#{code(name)} ×#{Enum.max(counts)}#{times(length(counts))}"
+    end)
   end
+
+  defp times(1), do: ""
+  defp times(n), do: " (#{n} callbacks)"
 
   defp callers([]), do: nil
   defp callers(callers), do: Enum.map_join(callers, ", ", &"#{code(&1.frame)} ×#{&1.count}")
