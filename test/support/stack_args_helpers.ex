@@ -4,23 +4,15 @@ defmodule PhoenixDevToolbar.StackArgsHelpers do
   # collector on exit.
 
   import ExUnit.Callbacks, only: [on_exit: 1]
+  import PhoenixDevToolbar.EnvHelpers, only: [put_app_env: 2]
 
   alias PhoenixDevToolbar.Collector
 
   @spec put_stack_args(term(), [module()]) :: :ok
   def put_stack_args(config, plugins \\ PhoenixDevToolbar.Application.plugins()) do
-    previous = Application.fetch_env(:phoenix_dev_toolbar, :stack_args)
+    put_app_env(:stack_args, config)
 
-    on_exit(fn ->
-      case previous do
-        {:ok, value} -> Application.put_env(:phoenix_dev_toolbar, :stack_args, value)
-        :error -> Application.delete_env(:phoenix_dev_toolbar, :stack_args)
-      end
-
-      Collector.attach(PhoenixDevToolbar.Application.plugins())
-    end)
-
-    Application.put_env(:phoenix_dev_toolbar, :stack_args, config)
+    on_exit(fn -> Collector.attach(PhoenixDevToolbar.Application.plugins()) end)
     Collector.attach(plugins)
   end
 end

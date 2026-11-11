@@ -448,16 +448,10 @@ defmodule PhoenixDevToolbar.ReportTest do
   end
 
   describe "recent_errors/1" do
-    defp failing(kind, path, started_at, message, at) do
-      s = session(kind, path: path, started_at: started_at)
-      callback(s, :handle_info, error: message, at: at)
-      s
-    end
-
     test "errors from every page, newest first, with the session sid and path" do
-      a = failing(:request, "/a", @t0, "first", @t0 + 10)
+      a = failing(:request, "/a", @t0, "first", at: @t0 + 10)
       # A LiveView callback outside the page the agent would look at.
-      b = failing(:live_view, "/b", @t0 + 1, "from handle_info", @t0 + 30)
+      b = failing(:live_view, "/b", @t0 + 1, "from handle_info", at: @t0 + 30)
       _c = session(:request, path: "/quiet", started_at: @t0 + 2)
       query(a, result: {:error, "no such table"}, at: @t0 + 20)
 
@@ -471,9 +465,9 @@ defmodule PhoenixDevToolbar.ReportTest do
     end
 
     test "since: a sid or a DateTime keeps errors that happened after it" do
-      a = failing(:request, "/a", @t0, "a", @t0)
-      _b = failing(:request, "/b", @t0 + 5, "b", @t0 + 6)
-      _c = failing(:request, "/c", @t0 + 9, "c", @t0 + 10)
+      a = failing(:request, "/a", @t0, "a", at: @t0)
+      _b = failing(:request, "/b", @t0 + 5, "b", at: @t0 + 6)
+      _c = failing(:request, "/c", @t0 + 9, "c", at: @t0 + 10)
 
       messages = fn opts -> opts |> Report.recent_errors() |> Enum.map(& &1.message) end
 
@@ -484,19 +478,19 @@ defmodule PhoenixDevToolbar.ReportTest do
     end
 
     test "since: a sid means after that page started, never the page's own events" do
-      req = failing(:request, "/a", @t0, "page crash", @t0 + 3)
+      req = failing(:request, "/a", @t0, "page crash", at: @t0 + 3)
       mount = session(:live_view, path: "/a", parent: req.sid, started_at: @t0 + 1)
       callback(mount, :handle_info, error: "mount crash", at: @t0 + 4)
-      _newer = failing(:request, "/b", @t0 + 8, "newer page", @t0 + 9)
+      _newer = failing(:request, "/b", @t0 + 8, "newer page", at: @t0 + 9)
 
       assert ["newer page"] == Report.recent_errors(since: req.sid) |> Enum.map(& &1.message)
       assert ["newer page"] == Report.recent_errors(since: mount.sid) |> Enum.map(& &1.message)
     end
 
     test "since: a sid does not move while the old page stays open and emits events" do
-      req = failing(:request, "/a", @t0, "old crash", @t0 + 1)
+      req = failing(:request, "/a", @t0, "old crash", at: @t0 + 1)
       mount = session(:live_view, path: "/a", parent: req.sid, started_at: @t0 + 2)
-      _other = failing(:request, "/b", @t0 + 5, "other page error", @t0 + 6)
+      _other = failing(:request, "/b", @t0 + 5, "other page error", at: @t0 + 6)
       # The old tab keeps emitting after the other page's error.
       callback(mount, :handle_info, error: "old tab crash", at: @t0 + 20)
 
@@ -505,7 +499,7 @@ defmodule PhoenixDevToolbar.ReportTest do
     end
 
     test "since: a LiveView root still lists the next navigated page's errors" do
-      root = failing(:live_view, "/a", @t0, "root crash", @t0 + 1)
+      root = failing(:live_view, "/a", @t0, "root crash", at: @t0 + 1)
       nav = session(:live_view, path: "/b", parent: root.sid, started_at: @t0 + 5)
       callback(nav, :handle_info, error: "next page crash", at: @t0 + 6)
 
@@ -515,7 +509,7 @@ defmodule PhoenixDevToolbar.ReportTest do
 
     test "items carry page_sid, the request for a connected mount" do
       req = session(:request, path: "/a", started_at: @t0)
-      mount = failing(:live_view, "/a", @t0 + 1, "in handle_info", @t0 + 2)
+      mount = failing(:live_view, "/a", @t0 + 1, "in handle_info", at: @t0 + 2)
       mount_child = session(:live_view, path: "/a", parent: req.sid, started_at: @t0 + 3)
       callback(mount_child, :handle_info, error: "child", at: @t0 + 4)
 
@@ -550,7 +544,7 @@ defmodule PhoenixDevToolbar.ReportTest do
     end
 
     test "limit caps the list, default 20, nil is unlimited" do
-      for n <- 1..25, do: failing(:request, "/p#{n}", @t0 + n, "e#{n}", @t0 + n)
+      for n <- 1..25, do: failing(:request, "/p#{n}", @t0 + n, "e#{n}", at: @t0 + n)
 
       assert 20 == length(Report.recent_errors())
       assert ["e25", "e24"] == Report.recent_errors(limit: 2) |> Enum.map(& &1.message)
@@ -1045,8 +1039,7 @@ defmodule PhoenixDevToolbar.ReportTest do
 
     test "sides of another kind or session count carry a warning" do
       req = page("/posts", @t0, fn _s -> :ok end)
-      mount = session(:live_view, path: "/posts", parent: req.sid, started_at: @t0 + 1)
-      _ = mount
+      _mount = session(:live_view, path: "/posts", parent: req.sid, started_at: @t0 + 1)
       nav = session(:live_view, path: "/posts", parent: "gone-lv", started_at: @t0 + 5)
 
       assert %{after: %{kind: :live_view, sids: [_]}, warning: warning} =

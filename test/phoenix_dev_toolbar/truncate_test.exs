@@ -182,8 +182,11 @@ defmodule PhoenixDevToolbar.TruncateTest do
 
       refute Map.has_key?(redacted, :__struct__)
       assert redacted["…"] == "…"
-      # The fields kept are walked: their sensitive values are still redacted.
-      assert redacted.f1 == %{password: "[REDACTED]"}
+      # The fields kept (which ones: map order) are walked: every one redacted.
+      {cut, kept} = Map.split(redacted, ["…"])
+      assert cut == %{"…" => "…"}
+      assert map_size(kept) == 50
+      assert Enum.all?(kept, fn {_field, value} -> value == %{password: "[REDACTED]"} end)
     end
 
     test "walks the proper prefix of an improper list and cuts the tail" do

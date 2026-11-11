@@ -34,13 +34,6 @@ defmodule PhoenixDevToolbar.CollectorTest do
 
   defp emit(metadata), do: :telemetry.execute(@event, %{}, metadata)
 
-  defp tracked(sid, fun) do
-    in_process(fn ->
-      Attribution.track(sid)
-      fun.()
-    end)
-  end
-
   test "ignores events from untracked processes", %{sid: sid} do
     Collector.attach([Echo])
 
@@ -62,7 +55,7 @@ defmodule PhoenixDevToolbar.CollectorTest do
   describe "the handler's own failure path" do
     # The failure log is once per error class, kept in :persistent_term.
     setup do
-      key = {Collector, :logged, :error, FunctionClauseError}
+      key = {Collector, :logged, :error, :other}
       :persistent_term.erase(key)
       on_exit(fn -> :persistent_term.erase(key) end)
     end
@@ -71,8 +64,7 @@ defmodule PhoenixDevToolbar.CollectorTest do
       Collector.attach([Echo])
       Attribution.track(sid)
 
-      :ok = Supervisor.terminate_child(PhoenixDevToolbar.Supervisor, Store)
-      on_exit(fn -> Supervisor.restart_child(PhoenixDevToolbar.Supervisor, Store) end)
+      stop_store!()
 
       assert emit(%{value: 1}) == :ok
       assert [%{id: {Collector, @event}}] = :telemetry.list_handlers(@event)

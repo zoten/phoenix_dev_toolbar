@@ -8,7 +8,6 @@ defmodule PdtExamples.ObanTest do
   import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Event
-  alias PhoenixDevToolbar.Store
 
   @endpoint DemoWeb.Endpoint
 
@@ -73,20 +72,14 @@ defmodule PdtExamples.ObanTest do
 
   describe "in the panel" do
     setup do
-      Store.reset()
-      attach_plugins([PdtExamples.Oban])
-
-      on_exit(fn ->
-        attach_plugins()
-        Store.reset()
-      end)
+      with_configured_plugins([PdtExamples.Oban])
     end
 
     test "shows the jobs a page enqueued and a badge" do
       {conn, sid} = load_page("/demo")
 
       {:ok, host, _html} = live(conn)
-      {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid}")
+      panel = open_panel(sid)
 
       render_hook(host, "enqueue", %{"worker" => "MyApp.Welcome", "queue" => "default"})
       send(panel.pid, :pdt_flush)

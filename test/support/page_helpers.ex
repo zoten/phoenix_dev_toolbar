@@ -6,18 +6,25 @@ defmodule PhoenixDevToolbar.PageHelpers do
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
 
+  import PhoenixDevToolbar.EnvHelpers, only: [put_app_env: 2]
+
   alias PhoenixDevToolbar.Collector
+  alias PhoenixDevToolbar.Store
 
   @endpoint DemoWeb.Endpoint
+
+  @doc "What a browser sends when it loads a page: `accept` and `sec-fetch-dest: document`."
+  @spec browser_headers(Plug.Conn.t()) :: Plug.Conn.t()
+  def browser_headers(conn \\ build_conn()) do
+    conn
+    |> Plug.Conn.put_req_header("accept", "text/html")
+    |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
+  end
 
   @doc "Dead renders `path` with a browser's page headers: the conn and the injected sid."
   @spec load_page(Plug.Conn.t(), String.t()) :: {Plug.Conn.t(), String.t()}
   def load_page(conn \\ build_conn(), path) do
-    conn =
-      conn
-      |> Plug.Conn.put_req_header("accept", "text/html")
-      |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
-      |> get(path)
+    conn = conn |> browser_headers() |> get(path)
 
     [sid] =
       conn
@@ -39,13 +46,19 @@ defmodule PhoenixDevToolbar.PageHelpers do
   end
 
   @doc """
-  Connects the panel LiveView for `sid`. `:conn` is the conn to connect with
-  (default `build_conn()`, e.g. for a custom `peer_data`).
+  Connects the panel LiveView for `sid`, or at `:query` (a query string such as
+  `"?path=/users"`, with the sid left out) when given. `:conn` is the conn to
+  connect with (default `build_conn()`, e.g. for a custom `peer_data`).
   """
-  @spec open_panel(String.t(), keyword()) :: struct()
-  def open_panel(sid, opts \\ []) do
+  @spec open_panel(String.t() | keyword(), keyword()) :: struct()
+  def open_panel(sid_or_opts, opts \\ [])
+
+  def open_panel(opts, []) when is_list(opts), do: connect_panel(opts[:query], opts)
+  def open_panel(sid, opts), do: connect_panel(Keyword.get(opts, :query, "?sid=#{sid}"), opts)
+
+  defp connect_panel(query, opts) do
     conn = Keyword.get_lazy(opts, :conn, &build_conn/0)
-    {:ok, panel, _html} = live(conn, "/__pdt/panel?sid=#{sid}")
+    {:ok, panel, _html} = live(conn, "/__pdt/panel" <> query)
     panel
   end
 
@@ -53,6 +66,87 @@ defmodule PhoenixDevToolbar.PageHelpers do
   @spec open_panel_tab(struct(), String.t()) :: String.t() | {:error, term()}
   def open_panel_tab(view, id) do
     view |> element("#pdt-tab-#{id}") |> render_click()
+  end
+
+  @doc """
+  Loads `path` (or takes a `sid`), connects its panel and opens the tab `tab`.
+  `:conn` as for `open_panel/2`; `visible: true` also reports the panel shown.
+  """
+  @spec open_tab(String.t(), String.t(), keyword()) :: struct()
+  def open_tab(path_or_sid, tab, opts \\ []) do
+    sid = sid_of(path_or_sid)
+    panel = open_panel(sid, Keyword.take(opts, [:conn]))
+    _ = open_panel_tab(panel, tab)
+    _ = if opts[:visible], do: visible(panel)
+    panel
+  end
+
+  defp sid_of("/" <> _rest = path) do
+    {_host, sid} = visit(path)
+    sid
+  end
+
+  defp sid_of(sid), do: sid
+
+  @doc "The panel reports itself open and visible (`pdt:visibility`)."
+  @spec visible(struct()) :: String.t() | {:error, term()}
+  def visible(panel),
+    do: render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
+
+  @doc "The panel reports itself open and hidden (`pdt:visibility`)."
+  @spec hidden(struct()) :: String.t() | {:error, term()}
+  def hidden(panel),
+    do: render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => false})
+
+  @doc "Hides and shows the panel again, which reads what it shows at once."
+  @spec reshow(struct()) :: String.t() | {:error, term()}
+  def reshow(panel) do
+    _ = hidden(panel)
+    visible(panel)
+  end
+
+  @doc """
+  The values of attribute `name` of the elements matching `selector` in the
+  rendered view, in document order.
+  """
+  @spec attribute(struct(), String.t(), String.t()) :: [String.t()]
+  def attribute(view, selector, name) do
+    view
+    |> render()
+    |> LazyHTML.from_fragment()
+    |> LazyHTML.query(selector)
+    |> LazyHTML.attribute(name)
+  end
+
+  @doc "Runs `sql` with `params` in the host LiveView and has the panel handle the query."
+  @spec run_sqlite(struct(), struct(), String.t(), list()) :: String.t() | {:error, term()}
+  def run_sqlite(host, panel, sql, params \\ []) do
+    render_hook(host, "sqlite", %{"sql" => sql, "params" => params})
+    flush(panel)
+  end
+
+  @doc """
+  The seqs of the Ecto tab's query rows, in order; only the rows whose text
+  contains `matching` (all by default).
+  """
+  @spec query_row_seqs(struct(), String.t()) :: [String.t()]
+  def query_row_seqs(panel, matching \\ "") do
+    panel
+    |> render()
+    |> LazyHTML.from_fragment()
+    |> LazyHTML.query("#pdt-queries li[id^=pdt-query-]")
+    |> Enum.filter(&(LazyHTML.text(&1) =~ matching))
+    |> Enum.map(fn row ->
+      "pdt-query-" <> seq = row |> LazyHTML.attribute("id") |> hd()
+      seq
+    end)
+  end
+
+  @doc "Loads `/demo/boom` and connects its LiveView, whose events raise."
+  @spec boom_view() :: struct()
+  def boom_view do
+    {view, _sid} = visit("/demo/boom")
+    view
   end
 
   @doc """
@@ -106,19 +200,34 @@ defmodule PhoenixDevToolbar.PageHelpers do
   """
   @spec sqlite_plugins(map()) :: :ok
   def sqlite_plugins(_context) do
-    PhoenixDevToolbar.Store.reset()
-
-    Collector.attach([
+    with_plugins([
       {PhoenixDevToolbar.Plugins.Ecto, repos: [DemoWeb.SQLiteRepo]},
       PhoenixDevToolbar.Plugins.LiveView
     ])
+  end
 
+  @doc """
+  Resets the Store and attaches exactly `plugins` for this test; on exit the
+  configured plugins are attached again and the Store reset. `env` is
+  application env set for the test (restored after the plugins, so plugins that
+  read it at attach see it).
+  """
+  @spec with_plugins([module() | PhoenixDevToolbar.Config.entry()], keyword()) :: :ok
+  def with_plugins(plugins, env \\ []) do
     ExUnit.Callbacks.on_exit(fn ->
       attach_plugins()
-      PhoenixDevToolbar.Store.reset()
+      Store.reset()
     end)
 
-    :ok
+    Enum.each(env, fn {key, value} -> put_app_env(key, value) end)
+    Store.reset()
+    Collector.attach(plugins)
+  end
+
+  @doc "`with_plugins/2` with the configured plugins followed by `extra`."
+  @spec with_configured_plugins([module() | PhoenixDevToolbar.Config.entry()], keyword()) :: :ok
+  def with_configured_plugins(extra \\ [], env \\ []) do
+    with_plugins(PhoenixDevToolbar.Application.plugins() ++ extra, env)
   end
 
   @doc "Attaches the configured plugins followed by `extra`."

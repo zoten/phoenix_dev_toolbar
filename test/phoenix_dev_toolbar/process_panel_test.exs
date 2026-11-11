@@ -7,6 +7,7 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
   import PhoenixDevToolbar.PageHelpers
+  import PhoenixDevToolbar.ProcessHelpers, only: [idle_process: 0]
 
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Panel
@@ -21,25 +22,11 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     on_exit(fn -> Store.reset() end)
   end
 
-  defp open(sid) do
-    panel = open_panel(sid)
-    panel |> element("#pdt-tab-process") |> render_click()
-    panel
-  end
-
-  defp visible(panel),
-    do: render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
-
-  defp hidden(panel),
-    do: render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => false})
+  defp open(sid), do: open_tab(sid, "process")
 
   defp samples(panel) do
-    panel
-    |> render()
-    |> LazyHTML.from_fragment()
-    |> LazyHTML.query("#pdt-process-vitals")
-    |> LazyHTML.attribute("data-samples")
-    |> then(fn [n] -> String.to_integer(n) end)
+    [n] = attribute(panel, "#pdt-process-vitals", "data-samples")
+    String.to_integer(n)
   end
 
   # A tick that is not the pending timer (a stale or forged token) is dropped.
@@ -48,17 +35,10 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     _ = render(panel)
   end
 
-  # Showing the panel again reads at once.
-  defp reshow(panel) do
-    hidden(panel)
-    visible(panel)
-  end
-
   test "with actions unset, the tab offers none and says which option turns them on" do
     delete_app_env(:actions)
 
-    {_host, sid} = visit("/demo")
-    panel = open(sid)
+    panel = open_tab("/demo", "process")
     visible(panel)
 
     refute has_element?(panel, "#pdt-process-kill")
@@ -87,8 +67,7 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
   end
 
   test "it samples only while shown and visible, one loop at a time" do
-    {_host, sid} = visit("/demo")
-    panel = open(sid)
+    panel = open_tab("/demo", "process")
     visible(panel)
     assert samples(panel) == 1
     assert has_element?(panel, "#pdt-process-memory .pdt-vital__peak", "over 1 sample")
@@ -101,9 +80,9 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     assert samples(panel) == 2
 
     # Another tab selected: nothing is read, even when the panel shows again.
-    panel |> element("#pdt-tab-ecto") |> render_click()
+    open_panel_tab(panel, "ecto")
     reshow(panel)
-    panel |> element("#pdt-tab-process") |> render_click()
+    open_panel_tab(panel, "process")
     assert samples(panel) == 3
   end
 
@@ -199,8 +178,7 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     assert_receive {:DOWN, ^ref, :process, _pid, :killed}
 
     # The rejoin: the same LiveView session claimed by a new process.
-    rejoined = spawn(fn -> receive(do: (:stop -> :ok)) end)
-    on_exit(fn -> send(rejoined, :stop) end)
+    rejoined = idle_process()
     Store.claim(live_sid, rejoined, self())
 
     _ = tick_now(panel, Panels.Process, "pdt-panel-process", :relations)

@@ -132,13 +132,7 @@ defmodule PhoenixDevToolbar.TracerTest do
   test "a Tracer crash ends the trace; a new one can start" do
     # The crash hits a Tracer of this test's supervisor: the toolbar's
     # supervisor spends no restart intensity, so repeated runs stay green.
-    :ok = Supervisor.terminate_child(PhoenixDevToolbar.Supervisor, Tracer)
-
-    on_exit(fn ->
-      {:ok, _pid} = Supervisor.restart_child(PhoenixDevToolbar.Supervisor, Tracer)
-    end)
-
-    start_supervised!(Tracer)
+    own_copy!(Tracer)
 
     pid = ponger()
     :ok = Tracer.start(pid, self())

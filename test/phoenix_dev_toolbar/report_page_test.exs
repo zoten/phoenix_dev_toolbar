@@ -4,14 +4,12 @@ defmodule PhoenixDevToolbar.ReportPageTest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
-  import Phoenix.ConnTest
   import Phoenix.LiveViewTest
+  import PhoenixDevToolbar.McpHelpers, only: [mcp_call: 2]
   import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Report
   alias PhoenixDevToolbar.Store
-
-  @endpoint DemoWeb.Endpoint
 
   setup :sqlite_plugins
 
@@ -60,6 +58,7 @@ defmodule PhoenixDevToolbar.ReportPageTest do
       "params" => [1]
     })
 
+    # Flush the first view's pending messages before reading the report.
     _ = render(first)
 
     result = mcp_call("compare_pages", %{"before" => before_sid})
@@ -72,7 +71,7 @@ defmodule PhoenixDevToolbar.ReportPageTest do
   end
 
   test "recent_errors over HTTP after a failing event on a real LiveView" do
-    {:ok, view, sid} = boom_view()
+    {view, sid} = visit("/demo/boom")
     Process.flag(:trap_exit, true)
 
     capture_log(fn ->
@@ -144,32 +143,5 @@ defmodule PhoenixDevToolbar.ReportPageTest do
         assert has_element?(panel, "#pdt-query-#{seq}.pdt-row--noise #pdt-noise-#{seq}")
       end
     end
-  end
-
-  defp boom_view do
-    {conn, sid} = load_page("/demo/boom")
-    {:ok, view, _html} = live(conn)
-    {:ok, view, sid}
-  end
-
-  # A tool call through the real endpoint: the structured result.
-  defp mcp_call(name, arguments) do
-    body = %{
-      "jsonrpc" => "2.0",
-      "id" => 1,
-      "method" => "tools/call",
-      "params" => %{"name" => name, "arguments" => arguments}
-    }
-
-    conn =
-      %{build_conn() | host: "localhost", remote_ip: {127, 0, 0, 1}}
-      |> Plug.Conn.put_req_header("content-type", "application/json")
-      |> Plug.Conn.put_req_header("mcp-protocol-version", "2025-06-18")
-      |> post("/__pdt/mcp", Jason.encode!(body))
-
-    assert %{"result" => %{"isError" => false, "structuredContent" => result}} =
-             json_response(conn, 200)
-
-    result
   end
 end

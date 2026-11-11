@@ -17,13 +17,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
     on_exit(fn -> Store.reset() end)
   end
 
-  defp open(conn \\ build_conn()) do
-    {_host, sid} = visit("/demo")
-    panel = open_panel(sid, conn: conn)
-    panel |> element("#pdt-tab-system") |> render_click()
-    render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
-    panel
-  end
+  defp open(conn \\ build_conn()), do: open_tab("/demo", "system", conn: conn, visible: true)
 
   defp search(panel, ref),
     do: panel |> form("#pdt-system-search", %{"ref" => ref}) |> render_submit()
@@ -104,8 +98,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
     stop(pid)
 
     # Showing the panel again reads at once and finds it gone.
-    render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => false})
-    render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
+    reshow(panel)
 
     assert has_element?(panel, "#pdt-system-dead")
     assert has_element?(panel, "#pdt-system-crumb-0[aria-current=true]")
@@ -116,7 +109,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
     on_exit(fn -> attach_plugins() end)
     {_host, sid} = visit("/demo")
     panel = open_panel(sid)
-    render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
+    visible(panel)
 
     assert has_element?(panel, "#pdt-process-target-label code")
     refute has_element?(panel, "#pdt-process-target-label button")
@@ -124,10 +117,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
   end
 
   test "a process link in the Process tab opens it here" do
-    {_host, sid} = visit("/demo")
-    panel = open_panel(sid)
-    panel |> element("#pdt-tab-process") |> render_click()
-    render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
+    panel = open_tab("/demo", "process", visible: true)
 
     panel |> element("#pdt-process-target-label button") |> render_click()
 
@@ -525,18 +515,24 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
       render_click(target, "peek", %{})
 
       refute has_element?(panel, "#pdt-system-messages-list")
-      assert has_element?(panel, "#pdt-system-actions-off")
+      assert has_element?(panel, "#pdt-system-messages-error", "Actions are off")
     end
 
     test "reading the state is refused" do
       agent = start_supervised!({Agent, fn -> :hidden end})
       {panel, target} = forged_target(agent)
+      # The State section is hidden here: the outcome is that no :sys request
+      # reached the process. Its receives are traced to this test.
+      :erlang.trace(agent, true, [:receive])
 
       render_click(target, "status", %{})
-      _ = render(panel)
+      # Any read the click started has finished, its messages traced.
+      _ = render_async(panel)
+      ref = :erlang.trace_delivered(agent)
+      assert_receive {:trace_delivered, ^agent, ^ref}
 
+      refute_received {:trace, ^agent, :receive, {:system, _from, _request}}
       refute has_element?(panel, "#pdt-system-state-value")
-      assert has_element?(panel, "#pdt-system-actions-off")
     end
 
     test "tracing is refused" do
@@ -546,7 +542,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
       render_click(target, "trace", %{})
 
       refute has_element?(panel, "#pdt-system-trace-list")
-      assert has_element?(panel, "#pdt-system-actions-off")
+      assert has_element?(panel, "#pdt-system-trace-error", "Actions are off")
       refute has_element?(panel, "#pdt-system-trace-status")
       assert PhoenixDevToolbar.Tracer.status(panel.pid) == nil
     end

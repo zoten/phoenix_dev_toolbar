@@ -2,13 +2,11 @@ defmodule PhoenixDevToolbar.Plugins.RequestTest do
   # Attaches global handlers and uses the node global Store.
   use ExUnit.Case, async: false
 
-  import PhoenixDevToolbar.PageHelpers, only: [attach_plugins: 0]
+  import PhoenixDevToolbar.PageHelpers, only: [with_plugins: 1]
   import PhoenixDevToolbar.ProcessHelpers
   import PhoenixDevToolbar.StackArgsHelpers
   import Plug.Test
 
-  alias PhoenixDevToolbar.Attribution
-  alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Plugins.Request
   alias PhoenixDevToolbar.Report
@@ -16,22 +14,14 @@ defmodule PhoenixDevToolbar.Plugins.RequestTest do
   alias PhoenixDevToolbar.Store
 
   setup do
-    Store.reset()
-    Collector.attach([Request])
-
-    on_exit(fn ->
-      attach_plugins()
-      Store.reset()
-    end)
+    with_plugins([Request])
 
     %Session{sid: sid} = Store.new_session(Session.new(:request))
     %{sid: sid}
   end
 
   defp dispatch(sid, method, path) do
-    in_process(fn ->
-      Attribution.track(sid)
-
+    tracked(sid, fn ->
       try do
         DemoWeb.Router.call(conn(method, path), DemoWeb.Router.init([]))
       catch
@@ -59,9 +49,7 @@ defmodule PhoenixDevToolbar.Plugins.RequestTest do
   end
 
   test "a LiveView route without an action names the view alone", %{sid: sid} do
-    in_process(fn ->
-      Attribution.track(sid)
-
+    tracked(sid, fn ->
       conn =
         :get
         |> conn("/demo")

@@ -7,11 +7,9 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
   import ExUnit.CaptureLog
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
-  import PhoenixDevToolbar.EnvHelpers
   import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Collector
-  alias PhoenixDevToolbar.Store
   alias PhoenixDevToolbar.TestPlugins.Fragile
   alias PhoenixDevToolbar.TestPlugins.MessageRaisingError
   alias PhoenixDevToolbar.TestPlugins.MountBoom
@@ -20,24 +18,12 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
   @endpoint DemoWeb.Endpoint
 
   setup do
-    Store.reset()
+    with_configured_plugins([Fragile], repos: [DemoWeb.FakeRepo])
 
-    # Registered before the env change: runs after it is restored.
-    on_exit(fn ->
-      attach_plugins()
-      Store.reset()
-    end)
-
-    put_app_env(:repos, [DemoWeb.FakeRepo])
-    attach_plugins([Fragile])
-
-    {conn, sid} = load_page("/demo")
-
-    {:ok, host, _html} = live(conn)
-    Process.put({:pdt_test_sid, host.pid}, sid)
+    {host, sid} = visit("/demo")
     panel = open_panel(sid)
     open_panel_tab(panel, "fragile")
-    %{host: host, panel: panel}
+    %{host: host, panel: panel, sid: sid}
   end
 
   # The flush sends the events to the tab's component with send_update, which
@@ -47,8 +33,6 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
     _ = flush(panel)
     _ = render(panel)
   end
-
-  defp sid_of(host), do: Process.get({:pdt_test_sid, host.pid})
 
   defp still_works(host, panel) do
     render_hook(host, "query", %{"sql" => "SELECT still works"})
@@ -170,16 +154,16 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
     assert log =~ "mount boom"
 
     capture_log(fn ->
-      {:ok, view, _html} = live(build_conn(), "/__pdt/panel?sid=missing")
+      view = open_panel(query: "?sid=missing")
       _ = render(view)
       assert has_element?(view, "#pdt-disabled-mount_boom", "mount boom")
     end)
   end
 
   test "a plugin without a tab is shown disabled and re-enabled from its badge",
-       %{host: host, panel: _panel} do
+       %{host: host, sid: sid} do
     attach_plugins([TablessFragile])
-    {:ok, panel, _html} = live(build_conn(), "/__pdt/panel?sid=#{sid_of(host)}")
+    panel = open_panel(sid)
 
     capture_log(fn -> echo(host, panel, "tabless") end)
 

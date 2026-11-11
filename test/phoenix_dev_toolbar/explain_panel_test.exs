@@ -10,18 +10,8 @@ defmodule PhoenixDevToolbar.ExplainPanelTest do
 
   # Runs `sql` in the host LiveView; returns the seq of its row in the panel.
   defp run(host, panel, sql, params \\ []) do
-    render_hook(host, "sqlite", %{"sql" => sql, "params" => params})
-    _ = flush(panel)
-
-    [id] =
-      panel
-      |> render()
-      |> LazyHTML.from_fragment()
-      |> LazyHTML.query("#pdt-queries li.pdt-row")
-      |> Enum.filter(&(LazyHTML.text(&1) =~ sql))
-      |> Enum.map(&(&1 |> LazyHTML.attribute("id") |> hd()))
-
-    "pdt-query-" <> seq = id
+    _ = run_sqlite(host, panel, sql, params)
+    [seq] = query_row_seqs(panel, sql)
     seq
   end
 

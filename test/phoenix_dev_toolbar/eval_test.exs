@@ -11,26 +11,15 @@ defmodule PhoenixDevToolbar.EvalTest do
   alias PhoenixDevToolbar.EvalRunner
   alias PhoenixDevToolbar.Panels.Eval, as: Panel
   alias PhoenixDevToolbar.Plugins.Eval
-  alias PhoenixDevToolbar.Store
 
   defp attach(opts) do
     capture_log(fn -> attach_plugins([{Eval, opts}]) end)
   end
 
-  defp open(conn \\ build_conn()) do
-    {_host, sid} = visit("/demo")
-    panel = open_panel(sid, conn: conn)
-    panel |> element("#pdt-tab-eval") |> render_click()
-    panel
-  end
+  defp open(conn \\ build_conn()), do: open_tab("/demo", "eval", conn: conn)
 
   setup do
-    Store.reset()
-
-    on_exit(fn ->
-      attach_plugins()
-      Store.reset()
-    end)
+    with_configured_plugins()
   end
 
   describe "options" do

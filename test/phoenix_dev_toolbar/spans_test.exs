@@ -6,7 +6,6 @@ defmodule PhoenixDevToolbar.SpansTest do
 
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
-  import PhoenixDevToolbar.EnvHelpers
   import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Attribution
@@ -17,16 +16,7 @@ defmodule PhoenixDevToolbar.SpansTest do
   @endpoint DemoWeb.Endpoint
 
   setup do
-    Store.reset()
-
-    # Registered before the env change: runs after it is restored.
-    on_exit(fn ->
-      attach_plugins()
-      Store.reset()
-    end)
-
-    put_app_env(:repos, [DemoWeb.FakeRepo])
-    attach_plugins()
+    with_configured_plugins([], repos: [DemoWeb.FakeRepo])
 
     {conn, _sid} = load_page("/demo")
     {:ok, host, _html} = live(conn)
@@ -69,16 +59,16 @@ defmodule PhoenixDevToolbar.SpansTest do
 
   describe "span ids" do
     test "two processes of one sid (nested LiveViews) never share a span" do
-      {_a, span_a} = ProcessHelpers.in_process(fn -> track_and_bump("shared") end)
-      {_b, span_b} = ProcessHelpers.in_process(fn -> track_and_bump("shared") end)
+      {_a, span_a} = ProcessHelpers.tracked("shared", &Attribution.next_span/0)
+      {_b, span_b} = ProcessHelpers.tracked("shared", &Attribution.next_span/0)
 
       refute span_a == span_b
     end
 
     test "a re-tracked process and its $callers children agree on the span" do
       {_pid, {own, child}} =
-        ProcessHelpers.in_process(fn ->
-          track_and_bump("first")
+        ProcessHelpers.tracked("first", fn ->
+          Attribution.next_span()
           Attribution.track("second")
           {_sid, :self, own} = Attribution.current()
           child = fn -> Attribution.current() end |> Task.async() |> Task.await()
@@ -103,11 +93,6 @@ defmodule PhoenixDevToolbar.SpansTest do
         end)
 
       assert result == {nil, nil}
-    end
-
-    defp track_and_bump(sid) do
-      Attribution.track(sid)
-      Attribution.next_span()
     end
   end
 end

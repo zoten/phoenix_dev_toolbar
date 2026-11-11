@@ -5,13 +5,14 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
   import ExUnit.CaptureLog
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
-  import PhoenixDevToolbar.PageHelpers, only: [attach_plugins: 0, ms: 1]
+
+  import PhoenixDevToolbar.PageHelpers,
+    only: [attach_plugins: 0, boom_view: 0, browser_headers: 0, ms: 1, with_plugins: 1]
+
   import PhoenixDevToolbar.ProcessHelpers
   import PhoenixDevToolbar.StackArgsHelpers
 
   alias Phoenix.LiveView.Socket
-  alias PhoenixDevToolbar.Attribution
-  alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Plugins.LiveView, as: LiveViewPlugin
   alias PhoenixDevToolbar.Report
@@ -23,13 +24,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
   @lc [:phoenix, :live_component]
 
   setup do
-    Store.reset()
-    Collector.attach([LiveViewPlugin])
-
-    on_exit(fn ->
-      attach_plugins()
-      Store.reset()
-    end)
+    with_plugins([LiveViewPlugin])
 
     %Session{sid: sid} = Store.new_session(Session.new(:live_view))
     %{sid: sid}
@@ -41,9 +36,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
 
   # Emits `events` ({name, measurements, metadata}) from a process tracked as `sid`.
   defp emit(sid, events) do
-    in_process(fn ->
-      Attribution.track(sid)
-
+    tracked(sid, fn ->
       Enum.each(events, fn {name, measurements, metadata} ->
         :telemetry.execute(name, measurements, metadata)
       end)
@@ -198,9 +191,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
         :telemetry.execute(@lv ++ [:handle_event, :stop], %{duration: 1}, metadata)
       end)
 
-      in_process(fn ->
-        Attribution.track(sid)
-
+      tracked(sid, fn ->
         task =
           Task.async(fn ->
             :telemetry.execute(@lv ++ [:handle_event, :stop], %{duration: 1}, metadata)
@@ -264,11 +255,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
     end
 
     test "records mounts, a click, a component event and its renders" do
-      conn =
-        build_conn()
-        |> Plug.Conn.put_req_header("accept", "text/html")
-        |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
-        |> get("/demo/components")
+      conn = get(browser_headers(), "/demo/components")
 
       {:ok, view, _html} = live(conn)
       view |> render_hook("click", %{})
@@ -308,17 +295,6 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
     setup do
       attach_plugins()
       :ok
-    end
-
-    defp boom_view do
-      conn =
-        build_conn()
-        |> Plug.Conn.put_req_header("accept", "text/html")
-        |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
-        |> get("/demo/boom")
-
-      {:ok, view, _html} = live(conn)
-      view
     end
 
     # The view process crashes and takes the test process with it unless trapped.

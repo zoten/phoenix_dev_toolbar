@@ -24,59 +24,45 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
     %{port: port}
   end
 
-  # A page's sid, then the panel's LiveView join params from its dead render.
-  defp panel_join_params do
-    {_conn, sid} = load_page("/demo")
-
+  # A LiveView's id and join params from the dead render of `path` (LiveView
+  # checks that the topic is the id signed in the token).
+  defp join_params(path, params) do
     main =
       build_conn()
-      |> get("/__pdt/panel?sid=#{sid}")
+      |> get(path)
       |> html_response(200)
       |> LazyHTML.from_document()
       |> LazyHTML.query("[data-phx-session]")
 
-    [id] = LazyHTML.attribute(main, "id")
-    [session] = LazyHTML.attribute(main, "data-phx-session")
-    static = main |> LazyHTML.attribute("data-phx-static") |> List.first()
-
-    {id,
+    {main |> LazyHTML.attribute("id") |> hd(),
      %{
-       "url" => "http://localhost/__pdt/panel?sid=#{sid}",
-       "session" => session,
-       "static" => static,
-       "params" => %{"_mounts" => 0}
+       "url" => "http://localhost" <> path,
+       "session" => main |> LazyHTML.attribute("data-phx-session") |> hd(),
+       "static" => main |> LazyHTML.attribute("data-phx-static") |> List.first(),
+       "params" => params
      }}
   end
 
-  defp connect!(port, vsn \\ "2.0.0") do
+  # A page's sid, then the panel's LiveView join params from its dead render.
+  defp panel_join_params do
+    {_conn, sid} = load_page("/demo")
+    join_params("/__pdt/panel?sid=#{sid}", %{"_mounts" => 0})
+  end
+
+  # A host LiveView's id and join params.
+  defp host_join, do: join_params("/demo", %{})
+
+  # Options: `:vsn`, `:path` of the socket and extra `:headers`.
+  defp connect!(port, opts \\ []) do
+    vsn = Keyword.get(opts, :vsn, "2.0.0")
+    path = Keyword.get(opts, :path, "/__pdt/live/websocket")
+
     {:ok, socket} =
-      WebSocketClient.connect(port, "/__pdt/live/websocket?vsn=#{vsn}", [
-        {"Origin", "http://localhost:#{port}"}
+      WebSocketClient.connect(port, "#{path}?vsn=#{vsn}", [
+        {"Origin", "http://localhost:#{port}"} | Keyword.get(opts, :headers, [])
       ])
 
     socket
-  end
-
-  defp host_main do
-    build_conn()
-    |> get("/demo")
-    |> html_response(200)
-    |> LazyHTML.from_document()
-    |> LazyHTML.query("[data-phx-session]")
-  end
-
-  # A host LiveView's id and join params, from one dead render (LiveView checks
-  # that the topic is the id signed in the token).
-  defp host_join do
-    main = host_main()
-
-    {main |> LazyHTML.attribute("id") |> hd(),
-     %{
-       "url" => "http://localhost/demo",
-       "session" => main |> LazyHTML.attribute("data-phx-session") |> hd(),
-       "static" => main |> LazyHTML.attribute("data-phx-static") |> List.first(),
-       "params" => %{}
-     }}
   end
 
   # The panel pushes diffs once joined: skip them up to the reply to `ref`.
@@ -97,11 +83,7 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
   test "the panel joins through its own socket with no cookie and no CSRF token", %{port: port} do
     {id, join} = panel_join_params()
 
-    {:ok, socket} =
-      WebSocketClient.connect(port, "/__pdt/live/websocket?vsn=2.0.0", [
-        {"Origin", "http://localhost:#{port}"}
-      ])
-
+    socket = connect!(port)
     :ok = WebSocketClient.send_json(socket, ["1", "1", "lv:#{id}", "phx_join", join])
 
     assert [
@@ -120,10 +102,7 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
   test "the host's own socket refuses the same join (stale)", %{port: port} do
     {id, join} = panel_join_params()
 
-    {:ok, socket} =
-      WebSocketClient.connect(port, "/live/websocket?vsn=2.0.0", [
-        {"Origin", "http://localhost:#{port}"}
-      ])
+    socket = connect!(port, path: "/live/websocket")
 
     :ok = WebSocketClient.send_json(socket, ["1", "1", "lv:#{id}", "phx_join", join])
 
@@ -183,7 +162,7 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
 
   test "the V1 serializer gets its own stale reply", %{port: port} do
     {id, join} = host_join()
-    socket = connect!(port, "1.0.0")
+    socket = connect!(port, vsn: "1.0.0")
     topic = "lv:#{id}"
 
     :ok =
@@ -213,7 +192,7 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
 
     # Duplicate keys: our check and the serializer decode with the same JSON
     # library, so they read the same pair. Here that is the join: refused.
-    socket = connect!(port, "1.0.0")
+    socket = connect!(port, vsn: "1.0.0")
 
     raw =
       ~s({"topic":"lv:#{id}","event":"phx_join","topic":"phoenix","event":"heartbeat","ref":"1","payload":) <>
@@ -460,10 +439,7 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
       on_exit(fn -> attach_plugins() end)
       {id, join} = panel_join_params()
 
-      {:ok, socket} =
-        WebSocketClient.connect(port, "/__pdt/live/websocket?vsn=2.0.0", [
-          {"Origin", "http://localhost:#{port}"} | headers
-        ])
+      socket = connect!(port, headers: headers)
 
       :ok = WebSocketClient.send_json(socket, ["1", "1", "lv:#{id}", "phx_join", join])
 

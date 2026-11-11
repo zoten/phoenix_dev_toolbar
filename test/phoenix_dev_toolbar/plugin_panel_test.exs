@@ -11,22 +11,12 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
   alias PhoenixDevToolbar.TestPlugins.Tabbed
 
   setup do
-    Store.reset()
-    attach_plugins([{Tabbed, prefix: "echo"}])
-
-    on_exit(fn ->
-      attach_plugins()
-      Store.reset()
-    end)
+    with_configured_plugins([{Tabbed, prefix: "echo"}])
   end
 
   defp props(panel) do
-    panel
-    |> render()
-    |> LazyHTML.from_fragment()
-    |> LazyHTML.query("#tabbed")
-    |> LazyHTML.attribute("data-props")
-    |> then(fn [value] -> String.to_integer(value) end)
+    [value] = attribute(panel, "#tabbed", "data-props")
+    String.to_integer(value)
   end
 
   test "Panel.navigate/3 shows the target tab and hands it the params" do
@@ -80,12 +70,12 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
     assert has_element?(panel, "#pdt-badge-tabbed", "2 echoes")
 
     # handle_props/1 runs on a real change only, not on every parent render.
-    panel |> element("#pdt-tab-request") |> render_click()
+    open_panel_tab(panel, "request")
     props = props(panel)
     _ = render(panel)
     assert props(panel) == props
 
-    panel |> element("#pdt-tab-tabbed") |> render_click()
+    open_panel_tab(panel, "tabbed")
     assert has_element?(panel, "#tabbed[data-shown=true]")
     assert props(panel) == props + 1
     refute has_element?(panel, "#pdt-section-tabbed[hidden]")
@@ -97,14 +87,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
     render_hook(host, "echo", %{"value" => "x"})
     panel = open_panel(sid)
 
-    ids =
-      panel
-      |> render()
-      |> LazyHTML.from_fragment()
-      |> LazyHTML.query("#pdt-summary .pdt-badge")
-      |> LazyHTML.attribute("id")
-
-    assert ids == [
+    assert attribute(panel, "#pdt-summary .pdt-badge", "id") == [
              "pdt-badge-ecto-queries",
              "pdt-badge-response",
              "pdt-badge-live",

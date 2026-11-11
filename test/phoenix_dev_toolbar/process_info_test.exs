@@ -88,17 +88,7 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
   end
 
   test "a linked port is listed as a port" do
-    test = self()
-
-    pid =
-      spawn(fn ->
-        port = Port.open({:spawn, "cat"}, [])
-        send(test, {:port, port})
-        idle()
-      end)
-
-    assert_receive {:port, port}
-    on_exit(fn -> Process.exit(pid, :kill) end)
+    {pid, port} = in_process(fn -> Port.open({:spawn, "cat"}, []) end)
 
     assert %{links: [%{kind: :port, id: id, name: name, child?: false}]} =
              ProcessInfo.relations(pid)
@@ -108,51 +98,25 @@ defmodule PhoenixDevToolbar.ProcessInfoTest do
   end
 
   test "relations are capped at 50 of each, the rest counted" do
-    others = for _n <- 1..60, do: spawn(fn -> idle() end)
-    test = self()
-
-    linker =
-      spawn(fn ->
-        for other <- others, do: Process.link(other)
-        send(test, :linked)
-        idle()
-      end)
-
-    assert_receive :linked
-    on_exit(fn -> for p <- [linker | others], do: Process.exit(p, :kill) end)
+    others = for _n <- 1..60, do: idle_process()
+    {linker, _links} = in_process(fn -> for other <- others, do: Process.link(other) end)
 
     assert %{links: links, more: %{links: 10}} = ProcessInfo.relations(linker)
     assert length(links) == 50
   end
 
   test "collect/1 garbage collects and reports memory before and after" do
-    test = self()
-
-    pid =
-      spawn(fn ->
-        # Garbage: a big list built and dropped, left on the heap until a GC.
-        _ = Enum.to_list(1..200_000) |> length()
-        send(test, :garbage)
-        idle()
-      end)
-
-    assert_receive :garbage
-    on_exit(fn -> send(pid, :stop) end)
+    # Garbage: a big list built and dropped, left on the heap until a GC.
+    {pid, _length} = in_process(fn -> Enum.to_list(1..200_000) |> length() end)
 
     assert {:ok, before, after_gc} = ProcessInfo.collect(pid)
     assert after_gc < before
 
-    dead = spawn(fn -> :ok end)
-    ref = Process.monitor(dead)
-    assert_receive {:DOWN, ^ref, :process, ^dead, _reason}
-    assert ProcessInfo.collect(dead) == :dead
+    assert ProcessInfo.collect(dead_process()) == :dead
   end
 
   test "a dead process reads as dead, never raises" do
-    pid = spawn(fn -> :ok end)
-    ref = Process.monitor(pid)
-    # :noproc when it exited before the monitor was set.
-    assert_receive {:DOWN, ^ref, :process, ^pid, _normal_or_noproc}
+    pid = dead_process()
 
     assert ProcessInfo.sample(pid) == :dead
     assert ProcessInfo.about(pid) == nil

@@ -10,11 +10,6 @@ defmodule PhoenixDevToolbar.EctoExportPanelTest do
 
   @endpoint DemoWeb.Endpoint
 
-  defp run(host, panel, sql, params) do
-    render_hook(host, "sqlite", %{"sql" => sql, "params" => params})
-    _ = flush(panel)
-  end
-
   defp choose(panel, fields), do: panel |> form("#pdt-ecto-export", fields) |> render_change()
 
   defp copy(panel, fields) do
@@ -89,7 +84,7 @@ defmodule PhoenixDevToolbar.EctoExportPanelTest do
     end
 
     test "Download is a same-origin file of the page's queries", %{host: host, panel: panel} do
-      run(host, panel, "SELECT * FROM users WHERE id = ?", [1])
+      run_sqlite(host, panel, "SELECT * FROM users WHERE id = ?", [1])
 
       assert has_element?(panel, "#pdt-export-download[download]")
       conn = download(panel)
@@ -106,7 +101,7 @@ defmodule PhoenixDevToolbar.EctoExportPanelTest do
     end
 
     test "Download follows the chosen format and EXPLAIN", %{host: host, panel: panel} do
-      run(host, panel, "SELECT * FROM users WHERE id = ?", [1])
+      run_sqlite(host, panel, "SELECT * FROM users WHERE id = ?", [1])
       choose(panel, %{"format" => "full", "explain" => "true"})
 
       %{"format" => "full", "queries" => queries} = Jason.decode!(download(panel).resp_body)
@@ -118,8 +113,8 @@ defmodule PhoenixDevToolbar.EctoExportPanelTest do
     end
 
     test "Copy pushes the full export with EXPLAIN plans", %{host: host, panel: panel} do
-      run(host, panel, "SELECT * FROM users WHERE id = ?", [1])
-      run(host, panel, "UPDATE users SET name = name WHERE id = ?", [1])
+      run_sqlite(host, panel, "SELECT * FROM users WHERE id = ?", [1])
+      run_sqlite(host, panel, "UPDATE users SET name = name WHERE id = ?", [1])
 
       copy(panel, %{"format" => "full", "explain" => "true"})
 
@@ -134,7 +129,7 @@ defmodule PhoenixDevToolbar.EctoExportPanelTest do
     end
 
     test "Copy without EXPLAIN runs none", %{host: host, panel: panel} do
-      run(host, panel, "SELECT id FROM users", [])
+      run_sqlite(host, panel, "SELECT id FROM users", [])
 
       copy(panel, %{"format" => "full"})
 
@@ -143,7 +138,7 @@ defmodule PhoenixDevToolbar.EctoExportPanelTest do
     end
 
     test "the chosen format and EXPLAIN survive an export", %{host: host, panel: panel} do
-      run(host, panel, "SELECT id FROM users", [])
+      run_sqlite(host, panel, "SELECT id FROM users", [])
       choice = %{"format" => "full", "explain" => "true"}
 
       choose(panel, choice)
@@ -160,7 +155,7 @@ defmodule PhoenixDevToolbar.EctoExportPanelTest do
     end
 
     test "tampered submits are ignored, never break the tab", %{host: host, panel: panel} do
-      run(host, panel, "SELECT id FROM users", [])
+      run_sqlite(host, panel, "SELECT id FROM users", [])
 
       for params <- [
             %{"format" => "xml", "action" => "copy"},

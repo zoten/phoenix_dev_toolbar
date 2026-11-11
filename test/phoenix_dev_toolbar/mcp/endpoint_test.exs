@@ -5,15 +5,15 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
   @moduletag :capture_log
 
   import PhoenixDevToolbar.EnvHelpers
+  import PhoenixDevToolbar.McpHelpers
   import PhoenixDevToolbar.ReportFixtures
   import Plug.Conn
-  import Plug.Test
+  import Plug.Test, only: [conn: 2]
 
   alias PhoenixDevToolbar.Mcp.Json
   alias PhoenixDevToolbar.Plug, as: ToolbarPlug
   alias PhoenixDevToolbar.Store
 
-  @opts ToolbarPlug.init([])
   @refused_key :phoenix_dev_toolbar_mcp_refused_clients
   @meta "io.modelcontextprotocol/protocolVersion"
 
@@ -27,21 +27,15 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
     end)
   end
 
-  defp rpc(method, params \\ nil, id \\ 1) do
-    message = %{"jsonrpc" => "2.0", "id" => id, "method" => method}
-    if params, do: Map.put(message, "params", params), else: message
+  # A JSON library that fails to encode: the endpoint's 500 path. Defined once
+  # here, not inside a test, so a repeated run does not redefine it.
+  defmodule BoomJson do
+    @moduledoc false
+    def encode_to_iodata!(_term), do: raise("boom")
+    defdelegate decode(binary), to: Jason
   end
 
-  defp post(body, headers \\ []) do
-    body = if is_binary(body), do: body, else: Json.encode!(body)
-
-    conn = %{conn(:post, "/__pdt/mcp", body) | host: "localhost"}
-    conn = put_req_header(conn, "content-type", "application/json")
-
-    headers
-    |> Enum.reduce(conn, fn {name, value}, acc -> put_req_header(acc, name, value) end)
-    |> ToolbarPlug.call(@opts)
-  end
+  defp post(body, headers \\ []), do: mcp_conn(body, headers: headers)
 
   defp json(conn), do: Json.decode(conn.resp_body) |> elem(1)
 
@@ -55,21 +49,12 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
     end
 
     test "403 for a foreign host" do
-      conn = %{conn(:post, "/__pdt/mcp", "{}") | host: "evil.example"}
-      conn = conn |> put_req_header("content-type", "application/json") |> ToolbarPlug.call(@opts)
+      conn = mcp_conn("{}", host: "evil.example")
       assert conn.status == 403
       assert conn.resp_body =~ "allowed_hosts"
     end
 
-    defp from(ip, headers \\ []) do
-      conn = %{conn(:post, "/__pdt/mcp", Json.encode!(rpc("ping"))) | host: "localhost"}
-      conn = %{conn | remote_ip: ip}
-      conn = put_req_header(conn, "content-type", "application/json")
-
-      headers
-      |> Enum.reduce(conn, fn {name, value}, acc -> put_req_header(acc, name, value) end)
-      |> ToolbarPlug.call(@opts)
-    end
+    defp from(ip, headers \\ []), do: mcp_conn(rpc("ping"), remote_ip: ip, headers: headers)
 
     test "403 for a foreign peer by default, naming the option" do
       conn = from({203, 0, 113, 9})
@@ -86,8 +71,7 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
     end
 
     test "a missing peer is named unknown" do
-      conn = %{conn(:post, "/__pdt/mcp", "{}") | host: "localhost", remote_ip: nil}
-      conn = conn |> put_req_header("content-type", "application/json") |> ToolbarPlug.call(@opts)
+      conn = mcp_conn("{}", remote_ip: nil)
       assert conn.status == 403
       assert conn.resp_body =~ "refused unknown"
     end
@@ -117,12 +101,8 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
     end
 
     defp from_own(ip, headers \\ []) do
-      conn = %{conn(:post, "/__pdt/mcp", Json.encode!(rpc("ping"))) | host: "localhost"}
-      conn = %{conn | remote_ip: ip}
-      conn = put_req_header(conn, "content-type", "application/json")
-
-      headers
-      |> Enum.reduce(conn, fn {name, value}, acc -> put_req_header(acc, name, value) end)
+      rpc("ping")
+      |> build_mcp_conn(remote_ip: ip, headers: headers)
       |> PhoenixDevToolbar.Mcp.Endpoint.call("/__pdt", fn -> [{192, 168, 7, 7}] end)
     end
 
@@ -161,13 +141,7 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
     test "clients: :any still applies the Host guard" do
       put_app_env(:mcp, clients: :any)
 
-      conn = %{
-        conn(:post, "/__pdt/mcp", "{}")
-        | host: "evil.example",
-          remote_ip: {203, 0, 113, 9}
-      }
-
-      conn = conn |> put_req_header("content-type", "application/json") |> ToolbarPlug.call(@opts)
+      conn = mcp_conn("{}", host: "evil.example", remote_ip: {203, 0, 113, 9})
       assert conn.status == 403
     end
 
@@ -189,40 +163,28 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
     test "Origin: null and a foreign origin on text/plain are refused before the content type" do
       assert post(rpc("ping"), [{"origin", "null"}]).status == 403
 
-      conn = %{conn(:post, "/__pdt/mcp", "{}") | host: "localhost"}
-
       conn =
-        conn
-        |> put_req_header("content-type", "text/plain")
-        |> put_req_header("origin", "http://evil.example")
-        |> ToolbarPlug.call(@opts)
+        mcp_conn("{}", content_type: "text/plain", headers: [{"origin", "http://evil.example"}])
 
       assert conn.status == 403
     end
 
     test "IPv6 loopback peers are accepted" do
       for ip <- [{0, 0, 0, 0, 0, 0, 0, 1}, {0, 0, 0, 0, 0, 0xFFFF, 0x7F00, 1}] do
-        conn = %{conn(:post, "/__pdt/mcp", Json.encode!(rpc("ping"))) | host: "localhost"}
-        conn = %{conn | remote_ip: ip}
-
-        conn =
-          conn |> put_req_header("content-type", "application/json") |> ToolbarPlug.call(@opts)
-
-        assert conn.status == 200, inspect(ip)
+        assert from(ip).status == 200, inspect(ip)
       end
     end
 
     test "405 for other methods, with allow" do
       for method <- [:get, :delete] do
-        conn = %{conn(method, "/__pdt/mcp") | host: "localhost"} |> ToolbarPlug.call(@opts)
+        conn = mcp_conn("", method: method, content_type: nil)
         assert conn.status == 405
         assert get_resp_header(conn, "allow") == ["POST"]
       end
     end
 
     test "415 for another content type" do
-      conn = %{conn(:post, "/__pdt/mcp", "{}") | host: "localhost"}
-      conn = conn |> put_req_header("content-type", "text/plain") |> ToolbarPlug.call(@opts)
+      conn = mcp_conn("{}", content_type: "text/plain")
       assert conn.status == 415
     end
 
@@ -237,15 +199,16 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
     end
 
     test "a body already parsed by the host is used" do
-      conn = %{conn(:post, "/__pdt/mcp", "") | host: "localhost"}
-      conn = put_req_header(conn, "content-type", "application/json")
-      conn = %{conn | body_params: rpc("ping")} |> ToolbarPlug.call(@opts)
+      conn =
+        %{build_mcp_conn("") | body_params: rpc("ping")} |> ToolbarPlug.call(ToolbarPlug.init([]))
+
       assert conn.status == 200
       assert %{"id" => 1, "result" => %{}} = json(conn)
 
-      conn = %{conn(:post, "/__pdt/mcp", "") | host: "localhost"}
-      conn = put_req_header(conn, "content-type", "application/json")
-      conn = %{conn | body_params: %{"_json" => [rpc("ping")]}} |> ToolbarPlug.call(@opts)
+      conn =
+        %{build_mcp_conn("") | body_params: %{"_json" => [rpc("ping")]}}
+        |> ToolbarPlug.call(ToolbarPlug.init([]))
+
       assert conn.status == 400
       assert %{"error" => %{"code" => -32_600}} = json(conn)
     end
@@ -269,12 +232,6 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
 
     @tag :capture_log
     test "a failure while encoding is a static 500 with -32603" do
-      defmodule BoomJson do
-        @moduledoc false
-        def encode_to_iodata!(_term), do: raise("boom")
-        defdelegate decode(binary), to: Jason
-      end
-
       previous = Application.fetch_env(:phoenix, :json_library)
       Application.put_env(:phoenix, :json_library, BoomJson)
 
@@ -364,10 +321,10 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
   describe "response hygiene" do
     test "headers, stripped CORS, and no session for the request itself" do
       conn =
-        %{conn(:post, "/__pdt/mcp", Json.encode!(rpc("ping"))) | host: "localhost"}
-        |> put_req_header("content-type", "application/json")
+        rpc("ping")
+        |> build_mcp_conn()
         |> put_resp_header("access-control-allow-origin", "*")
-        |> ToolbarPlug.call(@opts)
+        |> ToolbarPlug.call(ToolbarPlug.init([]))
 
       assert [<<"application/json", _::binary>>] = get_resp_header(conn, "content-type")
       assert get_resp_header(conn, "cache-control") == ["no-store"]
@@ -385,15 +342,19 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
       cors = fn conn -> put_resp_header(conn, "access-control-allow-origin", "*") end
 
       forbidden =
-        %{conn(:post, "/__pdt/mcp", "{}") | host: "evil.example"}
+        "{}"
+        |> build_mcp_conn(host: "evil.example")
         |> cors.()
-        |> ToolbarPlug.call(@opts)
+        |> ToolbarPlug.call(ToolbarPlug.init([]))
 
       assert forbidden.status == 403
       assert get_resp_header(forbidden, "access-control-allow-origin") == []
 
       not_allowed =
-        %{conn(:get, "/__pdt/mcp") | host: "localhost"} |> cors.() |> ToolbarPlug.call(@opts)
+        ""
+        |> build_mcp_conn(method: :get, content_type: nil)
+        |> cors.()
+        |> ToolbarPlug.call(ToolbarPlug.init([]))
 
       assert not_allowed.status == 405
       assert get_resp_header(not_allowed, "access-control-allow-origin") == []
@@ -419,11 +380,7 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
         rpc("tools/call", %{"name" => "page_summary", "arguments" => %{"sid" => session.sid}})
 
       url = fn scheme, port ->
-        conn = %{conn(:post, "/__pdt/mcp", Json.encode!(body)) | host: "localhost"}
-        conn = %{conn | scheme: scheme, port: port}
-
-        conn =
-          conn |> put_req_header("content-type", "application/json") |> ToolbarPlug.call(@opts)
+        conn = mcp_conn(body, scheme: scheme, port: port)
 
         assert %{"result" => %{"content" => [%{"text" => text}]}} = json(conn)
         assert {:ok, %{"panel_url" => url}} = Json.decode(text)
@@ -441,7 +398,7 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
         |> conn("/tracked/page")
         |> put_req_header("accept", "text/html")
         |> put_req_header("sec-fetch-dest", "document")
-        |> ToolbarPlug.call(@opts)
+        |> ToolbarPlug.call(ToolbarPlug.init([]))
         |> put_resp_content_type("text/html")
         |> send_resp(200, "<html><body>hi</body></html>")
 
@@ -462,24 +419,21 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
       body =
         rpc("tools/call", %{"name" => "page_summary", "arguments" => %{"sid" => session.sid}})
 
-      conn =
-        %{conn(:post, "/dev/tb/mcp", Json.encode!(body)) | host: "localhost"}
-        |> put_req_header("content-type", "application/json")
-        |> ToolbarPlug.call(opts)
+      conn = mcp_conn(body, path: "/dev/tb/mcp", plug_opts: opts)
 
       assert conn.status == 200
       assert %{"result" => %{"content" => [%{"text" => text}]}} = json(conn)
       assert {:ok, %{"panel_url" => url}} = Json.decode(text)
       assert String.starts_with?(url, "http://localhost/dev/tb/panel")
 
-      old = %{conn(:post, "/__pdt/mcp", "{}") | host: "localhost"} |> ToolbarPlug.call(opts)
+      old = mcp_conn("{}", plug_opts: opts)
       refute old.halted
       assert old.state == :unset
     end
 
     test "untouched when the toolbar is disabled" do
       put_app_env(:enabled, false)
-      conn = %{conn(:post, "/__pdt/mcp", "{}") | host: "localhost"} |> ToolbarPlug.call(@opts)
+      conn = mcp_conn("{}")
       refute conn.halted
       assert conn.state == :unset
     end

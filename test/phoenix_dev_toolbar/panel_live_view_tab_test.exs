@@ -71,14 +71,15 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
     :ok = Store.insert(sid, Event.new(:live_view, :render, data, duration: ms(duration_ms)))
   end
 
-  defp open_tab(view, sub) do
-    view |> element("#pdt-tab-live_view") |> render_click()
+  # Opens the LiveView tab of the panel of `sid` on its sub-tab `sub`.
+  defp open_lv(sid, sub) do
+    view = open_tab(sid, "live_view")
     view |> element("#pdt-lv-tab-#{sub}") |> render_click()
     view
   end
 
   test "a LiveView tab with ARIA sub-tabs", %{request: request} do
-    view = open_panel(request) |> open_tab("profiler")
+    view = open_lv(request, "profiler")
 
     assert has_element?(view, ~s|#pdt-section-live_view[role="tabpanel"]:not([hidden])|)
     assert has_element?(view, ~s(#pdt-lv-tab-profiler[role="tab"][aria-selected="true"]))
@@ -101,7 +102,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
     render_event(live, 1, nil)
     render_event(live, 1, DemoWeb.CounterComponent)
 
-    view = open_panel(request) |> open_tab("profiler")
+    view = open_lv(request, "profiler")
 
     assert has_element?(view, "#pdt-profile-0", ~s(handle_event "save"))
     assert has_element?(view, "#pdt-profile-0 .pdt-count", "2")
@@ -128,7 +129,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
     callback(live, :handle_params, 1, %{pushed: :unavailable})
 
-    view = open_panel(request) |> open_tab("events")
+    view = open_lv(request, "events")
     [save, boom, params] = Store.events(live)
 
     assert has_element?(view, "#pdt-lv-#{save.seq}", ~s(handle_event "save"))
@@ -141,7 +142,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
   end
 
   test "new callbacks reach the profiler and the log live", %{request: request, live: live} do
-    view = open_panel(request) |> open_tab("events")
+    view = open_lv(request, "events")
     refute has_element?(view, "#pdt-badge-live")
 
     callback(live, :handle_event, 4, %{event: "inc"})
@@ -168,7 +169,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
     callback(live, :handle_event, 1, %{event: "ok"})
 
-    view = open_panel(request) |> open_tab("events")
+    view = open_lv(request, "events")
     [failed, fine] = Store.events(live)
 
     assert has_element?(view, "#pdt-lv-#{failed.seq} .pdt-stack-args dd code", "ann")
@@ -181,7 +182,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
     callback(live, :handle_info, 1, %{error: "** (RuntimeError) bad"})
     render_event(live, 2, nil)
 
-    view = open_panel(request) |> open_tab("events")
+    view = open_lv(request, "events")
     [save, failed, render] = Store.events(live)
 
     assert has_element?(
@@ -217,7 +218,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       Store.reset()
       dead = Store.new_session(Session.new(:request, path: "/plain"))
 
-      view = open_panel(dead.sid) |> open_tab("assigns")
+      view = open_lv(dead.sid, "assigns")
       _ = render_async(view)
 
       assert has_element?(view, "#pdt-snapshot-missing", "No LiveView")
@@ -225,12 +226,10 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
     test "a read in flight is dropped when the LiveView rejoins", %{request: request, live: live} do
       # The owner never answers Debug.socket/1: the first read stays in flight.
-      view = open_panel(request) |> open_tab("assigns")
+      view = open_lv(request, "assigns")
 
       {:ok, session} = Store.session(live)
-      gone = spawn(fn -> :ok end)
-      ref = Process.monitor(gone)
-      assert_receive {:DOWN, ^ref, :process, ^gone, _reason}
+      gone = dead_process()
       {:ok, rejoined} = Store.claim(live, gone, session.transport)
       Notify.session(rejoined)
       _ = render(view)
@@ -242,12 +241,10 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
     test "explains when the LiveView is gone", %{request: request, live: live} do
       {:ok, session} = Store.session(live)
-      gone = spawn(fn -> :ok end)
-      ref = Process.monitor(gone)
-      assert_receive {:DOWN, ^ref, :process, ^gone, _reason}
+      gone = dead_process()
       Store.claim(live, gone, session.transport)
 
-      view = open_panel(request) |> open_tab("assigns")
+      view = open_lv(request, "assigns")
       _ = render_async(view)
 
       assert has_element?(view, "#pdt-snapshot-missing", "not running")
@@ -256,7 +253,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
   describe "client events" do
     test "logs LiveView's window events forwarded by the loader", %{request: request} do
-      view = open_panel(request) |> open_tab("events")
+      view = open_lv(request, "events")
 
       render_hook(view, "pdt:client", %{
         "event" => %{
@@ -279,7 +276,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
     end
 
     test "ignores unknown events and fields, caps strings, shows drops", %{request: request} do
-      view = open_panel(request) |> open_tab("events")
+      view = open_lv(request, "events")
 
       render_hook(view, "pdt:client", %{
         "event" => %{"type" => "phx:custom", "at" => 1},
@@ -313,7 +310,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       Store.reset()
       dead = Store.new_session(Session.new(:request, path: "/plain"))
 
-      view = open_panel(dead.sid) |> open_tab("components")
+      view = open_lv(dead.sid, "components")
 
       assert has_element?(view, "#pdt-tree-missing", "No LiveView")
     end
@@ -338,7 +335,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
     test "profiles the host LiveView and its component" do
       {host, sid} = visit("/demo/components")
-      panel = open_panel(sid) |> open_tab("profiler")
+      panel = open_lv(sid, "profiler")
 
       host |> element("#counter-inc") |> render_click()
       flush(panel)
@@ -357,14 +354,14 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
     test "snapshots the host LiveView's assigns, redacted, and refreshes after callbacks" do
       {host, sid} = visit("/demo/components")
-      panel = open_panel(sid) |> open_tab("assigns")
+      panel = open_lv(sid, "assigns")
       _ = render_async(panel)
 
       assert has_element?(panel, "#pdt-snapshot-clicks", "0")
       assert has_element?(panel, "#pdt-snapshot-api_token", "[REDACTED]")
       refute render(panel) =~ "s3cret"
 
-      render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
+      visible(panel)
       host |> render_hook("click", %{})
       flush(panel)
       # Within a second of the first snapshot the refresh is scheduled, not run:
@@ -378,23 +375,23 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
     test "shows the component tree, polling only while open and visible" do
       {_host, sid} = visit("/demo/components")
-      panel = open_panel(sid) |> open_tab("components")
+      panel = open_lv(sid, "components")
       _ = render_async(panel)
 
       assert has_element?(panel, "#pdt-tree-0", "DemoWeb.ComponentsLive")
       assert has_element?(panel, "#pdt-tree-0 li", "DemoWeb.CounterComponent")
       assert has_element?(panel, ~s(#pdt-lv-components[data-pdt-polling="off"]))
 
-      render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
+      visible(panel)
       assert has_element?(panel, ~s(#pdt-lv-components[data-pdt-polling="on"]))
 
-      render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => false})
+      hidden(panel)
       assert has_element?(panel, ~s(#pdt-lv-components[data-pdt-polling="off"]))
     end
 
     test "a read of the previous LiveView that lands after a rejoin is dropped" do
       {host, sid} = visit("/demo/components")
-      panel = open_panel(sid) |> open_tab("assigns")
+      panel = open_lv(sid, "assigns")
       _ = render_async(panel)
       assert has_element?(panel, "#pdt-snapshot-clicks", "0")
 
@@ -408,7 +405,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       ref = Process.monitor(task)
 
       # With the tab hidden no new read replaces the pending one on rejoin.
-      panel |> element("#pdt-tab-ecto") |> render_click()
+      open_panel_tab(panel, "ecto")
 
       # The rejoin is queued first, the read's result after it.
       :ok = :sys.suspend(panel.pid)
@@ -422,7 +419,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
       # Back on the tab a fresh read starts (the new owner never answers): the
       # old LiveView's clicks: 1 must not show as the new page's.
-      panel |> element("#pdt-tab-live_view") |> render_click()
+      open_panel_tab(panel, "live_view")
       refute has_element?(panel, "#pdt-snapshot-clicks", "1")
       # What stays shown is the last snapshot taken before the page changed.
       assert has_element?(panel, "#pdt-snapshot-clicks code", "0")
@@ -430,7 +427,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
     test "a poll reads the host only while visible" do
       {host, sid} = visit("/demo/components")
-      panel = open_panel(sid) |> open_tab("components")
+      panel = open_lv(sid, "components")
       _ = render_async(panel)
 
       # A suspended host keeps any read in flight, so a started read shows.
@@ -439,7 +436,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       Panel.send_now(panel.pid, Panels.LiveView, "pdt-panel-live_view", :tree_poll)
       assert has_element?(panel, ~s(#pdt-lv-components[data-pdt-reading="false"]))
 
-      render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
+      visible(panel)
       assert has_element?(panel, ~s(#pdt-lv-components[data-pdt-reading="true"]))
 
       :ok = :sys.resume(host.pid)
@@ -449,7 +446,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
     test "the tree follows live navigation" do
       {host, sid} = visit("/demo")
-      panel = open_panel(sid) |> open_tab("components")
+      panel = open_lv(sid, "components")
       _ = render_async(panel)
 
       assert has_element?(panel, "#pdt-tree-0", "DemoWeb.PageLive")
@@ -465,7 +462,7 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
     test "live navigation keeps the client events that announced it" do
       {host, sid} = visit("/demo")
-      panel = open_panel(sid) |> open_tab("events")
+      panel = open_lv(sid, "events")
 
       render_hook(panel, "pdt:client", %{
         "event" => %{"type" => "phx:page-loading-start", "at" => 1, "kind" => "redirect"},

@@ -3,6 +3,7 @@ defmodule PhoenixDevToolbar.LiveViewCompatTest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
+  import PhoenixDevToolbar.ProcessHelpers
 
   alias Phoenix.LiveView.Socket
   alias PhoenixDevToolbar.LiveViewCompat
@@ -31,17 +32,10 @@ defmodule PhoenixDevToolbar.LiveViewCompatTest do
 
   describe "live_view_label/1" do
     test "reads the view a LiveView process labels itself with" do
-      parent = self()
-
-      pid =
-        spawn(fn ->
+      {pid, _label} =
+        in_process(fn ->
           Process.put(:"$process_label", {Phoenix.LiveView, DemoWeb.PageLive, "lv:phx-1"})
-          send(parent, :labelled)
-          receive(do: (:stop -> :ok))
         end)
-
-      on_exit(fn -> send(pid, :stop) end)
-      assert_receive :labelled
 
       assert LiveViewCompat.live_view_label(pid) == {:ok, DemoWeb.PageLive}
     end
@@ -49,10 +43,7 @@ defmodule PhoenixDevToolbar.LiveViewCompatTest do
     test "is :error for other or dead processes" do
       assert LiveViewCompat.live_view_label(self()) == :error
 
-      dead = spawn(fn -> :ok end)
-      ref = Process.monitor(dead)
-      assert_receive {:DOWN, ^ref, :process, ^dead, _reason}
-      assert LiveViewCompat.live_view_label(dead) == :error
+      assert LiveViewCompat.live_view_label(dead_process()) == :error
     end
   end
 

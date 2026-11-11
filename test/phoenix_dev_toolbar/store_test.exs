@@ -2,6 +2,8 @@ defmodule PhoenixDevToolbar.StoreTest do
   # The Store owns named ETS tables shared by the whole node.
   use ExUnit.Case, async: false
 
+  import PhoenixDevToolbar.ProcessHelpers
+
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
@@ -16,16 +18,8 @@ defmodule PhoenixDevToolbar.StoreTest do
 
   defp sync_store, do: _ = :sys.get_state(Store)
 
-  defp start_owner do
-    pid = spawn(fn -> receive(do: (:stop -> :ok)) end)
-    on_exit(fn -> send(pid, :stop) end)
-    pid
-  end
-
   defp stop_owner(pid) do
-    ref = Process.monitor(pid)
-    send(pid, :stop)
-    assert_receive {:DOWN, ^ref, :process, ^pid, :normal}
+    stop(pid)
     sync_store()
   end
 
@@ -207,7 +201,7 @@ defmodule PhoenixDevToolbar.StoreTest do
       Store.put_limits(max_sessions: 2)
 
       open_tab =
-        Store.new_session(%{Session.new(:live_view, owner: start_owner()) | started_at: 1}).sid
+        Store.new_session(%{Session.new(:live_view, owner: idle_process()) | started_at: 1}).sid
 
       [old_request, new_request] =
         for at <- [2, 3], do: Store.new_session(%{Session.new(:request) | started_at: at}).sid
@@ -225,8 +219,8 @@ defmodule PhoenixDevToolbar.StoreTest do
     test "keeps the session and its indexes after the owner exits, until the TTL" do
       Store.put_limits(ttl_ms: 1_000)
       now = System.system_time(:microsecond)
-      owner = start_owner()
-      transport = start_owner()
+      owner = idle_process()
+      transport = idle_process()
 
       %Session{sid: sid} =
         Store.new_session(%{
@@ -259,19 +253,19 @@ defmodule PhoenixDevToolbar.StoreTest do
 
     test "a closed session is evicted before live ones at max_sessions" do
       Store.put_limits(max_sessions: 2)
-      closed_owner = start_owner()
+      closed_owner = idle_process()
 
       closed =
         Store.new_session(%{Session.new(:live_view, owner: closed_owner) | started_at: 1}).sid
 
       open_tab =
-        Store.new_session(%{Session.new(:live_view, owner: start_owner()) | started_at: 2}).sid
+        Store.new_session(%{Session.new(:live_view, owner: idle_process()) | started_at: 2}).sid
 
       sync_store()
       stop_owner(closed_owner)
 
       newest =
-        Store.new_session(%{Session.new(:live_view, owner: start_owner()) | started_at: 3}).sid
+        Store.new_session(%{Session.new(:live_view, owner: idle_process()) | started_at: 3}).sid
 
       sync_store()
 
@@ -282,11 +276,11 @@ defmodule PhoenixDevToolbar.StoreTest do
 
     test "keeps a session claimed by a new owner" do
       Store.put_limits(ttl_ms: 1_000)
-      old_owner = start_owner()
+      old_owner = idle_process()
       %Session{sid: sid} = Store.new_session(Session.new(:live_view, owner: old_owner))
       sync_store()
 
-      new_owner = start_owner()
+      new_owner = idle_process()
       assert {:ok, %Session{owner: ^new_owner}} = Store.claim(sid, new_owner, nil)
 
       stop_owner(old_owner)
@@ -300,7 +294,7 @@ defmodule PhoenixDevToolbar.StoreTest do
     test "lists the processes tracked as a session" do
       %Session{sid: sid} = Store.new_session(Session.new(:live_view))
       %Session{sid: other} = Store.new_session(Session.new(:live_view))
-      [a, b, c] = for _ <- 1..3, do: start_owner()
+      [a, b, c] = for _ <- 1..3, do: idle_process()
       Store.track_pid(a, sid)
       Store.track_pid(b, sid)
       Store.track_pid(c, other)
@@ -312,8 +306,8 @@ defmodule PhoenixDevToolbar.StoreTest do
   describe "sweep/1 index cleanup" do
     test "drops index rows of missing sessions and pid rows of dead processes" do
       %Session{sid: sid} = Store.new_session(Session.new(:request))
-      dead = start_owner()
-      alive = start_owner()
+      dead = idle_process()
+      alive = idle_process()
       Store.track_pid(dead, sid)
       Store.track_pid(alive, sid)
       Store.link_socket_id("phx-gone", "missing-sid")
@@ -344,7 +338,7 @@ defmodule PhoenixDevToolbar.StoreTest do
 
     test "never expires a LiveView session whose owner is alive" do
       Store.put_limits(ttl_ms: 0)
-      %Session{sid: sid} = Store.new_session(Session.new(:live_view, owner: start_owner()))
+      %Session{sid: sid} = Store.new_session(Session.new(:live_view, owner: idle_process()))
 
       Store.sweep(System.system_time(:microsecond) + 60_000_000)
 

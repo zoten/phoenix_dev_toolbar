@@ -86,4 +86,15 @@ defmodule PhoenixDevToolbar.ReportFixtures do
       us: Keyword.get(opts, :us, 1000)
     )
   end
+
+  @doc """
+  A session of `kind` with one failing `:handle_info` callback. The error lands
+  at `:at` (default `started_at`); other options go to the session.
+  """
+  def failing(kind, path, started_at, message, opts \\ []) do
+    {at, attrs} = Keyword.pop(opts, :at, started_at)
+    s = session(kind, Keyword.merge([path: path, started_at: started_at], attrs))
+    callback(s, :handle_info, error: message, at: at)
+    s
+  end
 end

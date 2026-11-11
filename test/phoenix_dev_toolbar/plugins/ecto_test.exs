@@ -4,11 +4,9 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
 
   import ExUnit.CaptureLog
   import PhoenixDevToolbar.EnvHelpers
-  import PhoenixDevToolbar.PageHelpers, only: [attach_plugins: 0, ms: 1]
+  import PhoenixDevToolbar.PageHelpers, only: [ms: 1, with_plugins: 2]
   import PhoenixDevToolbar.ProcessHelpers
 
-  alias PhoenixDevToolbar.Attribution
-  alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Plugins.Ecto, as: EctoPlugin
   alias PhoenixDevToolbar.Session
@@ -17,16 +15,7 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
   @event [:demo, :repo, :query]
 
   setup do
-    Store.reset()
-
-    # Registered before the env change: runs after it is restored.
-    on_exit(fn ->
-      attach_plugins()
-      Store.reset()
-    end)
-
-    put_app_env(:repos, [DemoWeb.FakeRepo])
-    Collector.attach([EctoPlugin])
+    with_plugins([EctoPlugin], repos: [DemoWeb.FakeRepo])
 
     %Session{sid: sid} = Store.new_session(Session.new(:request))
     %{sid: sid}
@@ -58,10 +47,7 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
     measurements = %{query_time: ms(3), queue_time: ms(1), decode_time: ms(1), total_time: ms(5)}
     emit = fn -> :telemetry.execute(@event, measurements, metadata) end
 
-    in_process(fn ->
-      Attribution.track(sid)
-      fun.(emit, [])
-    end)
+    tracked(sid, fn -> fun.(emit, []) end)
   end
 
   defp events(opts) do

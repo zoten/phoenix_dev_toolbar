@@ -5,6 +5,8 @@ defmodule PhoenixDevToolbar.PlugTest do
   import Plug.Conn
   import Plug.Test
   import PhoenixDevToolbar.EnvHelpers
+  import PhoenixDevToolbar.PageHelpers, only: [browser_headers: 1]
+  import PhoenixDevToolbar.ProcessHelpers, only: [stop_store!: 0]
 
   alias PhoenixDevToolbar.Attribution
   alias PhoenixDevToolbar.Event
@@ -155,7 +157,7 @@ defmodule PhoenixDevToolbar.PlugTest do
     end
 
     test "count as pages only for top level documents, by sec-fetch-dest" do
-      document = page_conn() |> put_req_header("sec-fetch-dest", "document") |> respond()
+      document = page_conn() |> browser_headers() |> respond()
 
       assert [_tag] = loader_tags(document)
 
@@ -272,8 +274,7 @@ defmodule PhoenixDevToolbar.PlugTest do
       respond(page_conn())
       assert Attribution.tracked_sid()
 
-      :ok = Supervisor.terminate_child(PhoenixDevToolbar.Supervisor, Store)
-      on_exit(fn -> Supervisor.restart_child(PhoenixDevToolbar.Supervisor, Store) end)
+      stop_store!()
 
       page = respond(page_conn())
       api = :get |> conn("/api") |> put_req_header("accept", "application/json") |> respond()

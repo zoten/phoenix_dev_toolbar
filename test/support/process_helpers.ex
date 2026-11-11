@@ -27,6 +27,56 @@ defmodule PhoenixDevToolbar.ProcessHelpers do
     pid
   end
 
+  @doc "Runs `fun` in a long lived process tracked as session `sid`, like `in_process/1`."
+  @spec tracked(String.t(), (-> result)) :: {pid(), result} when result: term()
+  def tracked(sid, fun) do
+    in_process(fn ->
+      PhoenixDevToolbar.Attribution.track(sid)
+      fun.()
+    end)
+  end
+
+  @doc "A process that has already exited."
+  @spec dead_process() :: pid()
+  def dead_process do
+    pid = spawn(fn -> :ok end)
+    ref = Process.monitor(pid)
+    # :noproc when it exited before the monitor was set.
+    _ = assert_receive {:DOWN, ^ref, :process, ^pid, _reason}
+    pid
+  end
+
+  @doc """
+  Terminates the Store child of the toolbar's supervisor for this test and
+  restarts it on exit.
+  """
+  @spec stop_store!() :: :ok
+  def stop_store! do
+    :ok = Supervisor.terminate_child(PhoenixDevToolbar.Supervisor, PhoenixDevToolbar.Store)
+
+    on_exit(fn ->
+      Supervisor.restart_child(PhoenixDevToolbar.Supervisor, PhoenixDevToolbar.Store)
+    end)
+  end
+
+  @doc """
+  Gives this test its own copy of `child` (a child spec or module of the
+  toolbar's supervisor): the supervisor's one is terminated and restarted on
+  exit, so a crash test spends no restart intensity of the toolbar's
+  supervisor. Returns the pid of the test's copy.
+  """
+  @spec own_copy!(module() | Supervisor.child_spec()) :: pid()
+  def own_copy!(child) do
+    id = if is_atom(child), do: child, else: child.id
+    :ok = Supervisor.terminate_child(PhoenixDevToolbar.Supervisor, id)
+
+    on_exit(fn ->
+      {:ok, _pid} = Supervisor.restart_child(PhoenixDevToolbar.Supervisor, id)
+    end)
+
+    start_supervised!(child)
+  end
+
   @spec stop(pid()) :: :ok
   def stop(pid) do
     ref = Process.monitor(pid)

@@ -1,6 +1,7 @@
 defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
   use ExUnit.Case, async: false
 
+  import PhoenixDevToolbar.McpHelpers
   import PhoenixDevToolbar.ReportFixtures
 
   alias PhoenixDevToolbar.Mcp.Json
@@ -14,18 +15,6 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
   setup do
     Store.reset()
     on_exit(&Store.reset/0)
-  end
-
-  defp rpc(method, params \\ nil, id \\ 1) do
-    message = %{"jsonrpc" => "2.0", "id" => id, "method" => method}
-    if params, do: Map.put(message, "params", params), else: message
-  end
-
-  defp modern(params), do: Map.put(params, "_meta", %{@meta => "2026-07-28"})
-
-  defp modern_headers(method, name \\ nil) do
-    base = %{"mcp-protocol-version" => "2026-07-28", "mcp-method" => method}
-    if name, do: Map.put(base, "mcp-name", name), else: base
   end
 
   defp result!(response) do

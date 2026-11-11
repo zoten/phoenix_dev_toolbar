@@ -8,7 +8,6 @@ defmodule PhoenixDevToolbar.ClusterTest do
 
   alias PhoenixDevToolbar.ClusterInfo
   alias PhoenixDevToolbar.Plugins.Cluster
-  alias PhoenixDevToolbar.Store
 
   test "this node is read like any other: processes, memory, OTP, uptime" do
     assert %{alive?: false, node: node, nodes: [row], more: 0} = ClusterInfo.read(1000)
@@ -27,20 +26,11 @@ defmodule PhoenixDevToolbar.ClusterTest do
 
   describe "the tab" do
     setup do
-      Store.reset()
-      attach_plugins([Cluster])
-
-      on_exit(fn ->
-        attach_plugins()
-        Store.reset()
-      end)
+      with_configured_plugins([Cluster])
     end
 
     test "shows this node, and says it is not distributed" do
-      {_host, sid} = visit("/demo")
-      panel = open_panel(sid)
-      panel |> element("#pdt-tab-cluster") |> render_click()
-      render_hook(panel, "pdt:visibility", %{"open" => true, "visible" => true})
+      panel = open_tab("/demo", "cluster", visible: true)
       _ = render_async(panel)
 
       assert has_element?(panel, "#pdt-cluster-node", to_string(node()))

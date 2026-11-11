@@ -5,27 +5,16 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
 
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
-  import PhoenixDevToolbar.EnvHelpers
   import PhoenixDevToolbar.PageHelpers
   import PhoenixDevToolbar.ReportFixtures, only: [query: 2, session: 2]
 
-  alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Plugins
   alias PhoenixDevToolbar.Store
 
   @endpoint DemoWeb.Endpoint
 
   defp start(plugins) do
-    Store.reset()
-
-    # Registered before the env change: runs after it is restored.
-    on_exit(fn ->
-      attach_plugins()
-      Store.reset()
-    end)
-
-    put_app_env(:repos, [DemoWeb.FakeRepo])
-    Collector.attach(plugins)
+    with_plugins(plugins, repos: [DemoWeb.FakeRepo])
 
     {conn, sid} = load_page("/demo")
 

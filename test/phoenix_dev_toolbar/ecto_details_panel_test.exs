@@ -17,16 +17,8 @@ defmodule PhoenixDevToolbar.EctoDetailsPanelTest do
     live = session(:live_view, parent: request.sid, path: "/demo", view: DemoWeb.PageLive)
     query(live, sql: "SELECT 1", stacktrace: ["lib/demo/thing.ex:10: Demo.Thing.run/0"])
     panel = open_panel(request.sid)
-    [seq] = for id <- row_ids(panel), do: String.replace_prefix(id, "pdt-query-", "")
+    [seq] = query_row_seqs(panel)
     %{panel: panel, seq: seq}
-  end
-
-  defp row_ids(panel) do
-    panel
-    |> render()
-    |> LazyHTML.from_fragment()
-    |> LazyHTML.query("#pdt-queries li[id^=pdt-query-]")
-    |> Enum.map(&(&1 |> LazyHTML.attribute("id") |> hd()))
   end
 
   test "a collapsed row has no details until its toggle is clicked", %{panel: panel, seq: seq} do

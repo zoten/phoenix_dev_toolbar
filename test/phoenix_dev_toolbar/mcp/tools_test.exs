@@ -448,12 +448,6 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
   end
 
   describe "recent_errors" do
-    defp failing(kind, path, started_at, message, opts \\ []) do
-      s = session(kind, Keyword.merge([path: path, started_at: started_at], opts))
-      callback(s, :handle_info, error: message, at: started_at)
-      s
-    end
-
     test "errors across pages with total, returned and a panel_url per page" do
       a = failing(:request, "/a", @t0, "boom a")
       b = failing(:live_view, "/b", @t0 + 1, "boom b")
