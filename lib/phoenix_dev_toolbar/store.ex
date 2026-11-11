@@ -3,7 +3,7 @@ defmodule PhoenixDevToolbar.Store do
   # Bounded in-memory event storage (ADR 03).
   #
   # The GenServer owns the ETS tables and does housekeeping (trimming, eviction,
-  # TTL sweep, DOWN cleanup). It is never on the write path: host processes
+  # TTL sweep). It is never on the write path: host processes
   # write to the public tables directly and only `cast` to the server.
   #
   # Tables:
@@ -50,6 +50,7 @@ defmodule PhoenixDevToolbar.Store do
     ttl_ms: :timer.minutes(10),
     sweep_ms: :timer.seconds(30),
     events_per_second: 200,
+    # Accepted for old configs, no effect (ADR 03).
     down_grace_ms: :timer.seconds(60)
   }
 
@@ -104,7 +105,7 @@ defmodule PhoenixDevToolbar.Store do
 
   @doc """
   Moves a session to a new owner process and transport (a LiveView rejoining
-  with the same socket id), so the previous owner's DOWN does not expire it.
+  with the same socket id), so it counts as having a live owner again.
   """
   @spec claim(Session.sid(), pid(), pid() | nil) :: {:ok, Session.t()} | :error
   def claim(sid, owner, transport) when is_pid(owner) do
@@ -113,7 +114,6 @@ defmodule PhoenixDevToolbar.Store do
         claimed = %{session | owner: owner, transport: transport}
         :ets.update_element(@sessions, sid, {2, claimed})
         maybe_index_transport(claimed)
-        GenServer.cast(Store, {:monitor, sid, owner})
         {:ok, claimed}
 
       [] ->
@@ -301,17 +301,13 @@ defmodule PhoenixDevToolbar.Store do
     :persistent_term.put(@seq_key, :atomics.new(1, signed: false))
     put_configured_limits()
     schedule_sweep()
-    {:ok, %{monitors: %{}}}
+    {:ok, %{}}
   end
 
   @impl GenServer
-  def handle_cast({:session_created, %Session{} = session}, state) do
+  def handle_cast({:session_created, %Session{}}, state) do
     evict_oldest()
-    {:noreply, maybe_monitor(state, session)}
-  end
-
-  def handle_cast({:monitor, sid, owner}, state) do
-    {:noreply, monitor(state, sid, owner)}
+    {:noreply, state}
   end
 
   def handle_cast({:trim, sid, {:plugin, _plugin} = scope}, state) do
@@ -332,23 +328,11 @@ defmodule PhoenixDevToolbar.Store do
 
   def handle_call(:reset, _from, state) do
     Enum.each(@tables, &:ets.delete_all_objects/1)
-    Enum.each(Map.keys(state.monitors), &Process.demonitor(&1, [:flush]))
     put_configured_limits()
-    {:reply, :ok, %{state | monitors: %{}}}
+    {:reply, :ok, state}
   end
 
   @impl GenServer
-  def handle_info({:DOWN, ref, :process, pid, _reason}, state) do
-    {sid, monitors} = Map.pop(state.monitors, ref)
-    _ = maybe_schedule_expire(sid, pid, limits().down_grace_ms)
-    {:noreply, %{state | monitors: monitors}}
-  end
-
-  def handle_info({:expire, sid, pid}, state) do
-    expire(sid, pid)
-    {:noreply, state}
-  end
-
   def handle_info(:sweep, state) do
     do_sweep(System.system_time(:microsecond))
     schedule_sweep()
@@ -488,32 +472,6 @@ defmodule PhoenixDevToolbar.Store do
     |> Enum.each(&delete_session(&1.sid))
   end
 
-  defp maybe_monitor(state, %Session{kind: :live_view, owner: owner, sid: sid})
-       when is_pid(owner),
-       do: monitor(state, sid, owner)
-
-  defp maybe_monitor(state, _session), do: state
-
-  defp monitor(state, sid, owner) do
-    ref = Process.monitor(owner)
-    %{state | monitors: Map.put(state.monitors, ref, sid)}
-  end
-
-  defp maybe_schedule_expire(nil, _pid, _grace), do: :ok
-  defp maybe_schedule_expire(sid, pid, 0), do: expire(sid, pid)
-
-  defp maybe_schedule_expire(sid, pid, grace),
-    do: Process.send_after(self(), {:expire, sid, pid}, grace)
-
-  # Only expires when the dead process still owns the session: a reconnected
-  # LiveView claims it first (see claim/2).
-  defp expire(sid, pid) do
-    case :ets.lookup(@sessions, sid) do
-      [{^sid, %Session{owner: ^pid}, _count, _dropped, _trimmed}] -> delete_session(sid)
-      _ -> :ok
-    end
-  end
-
   defp do_sweep(now_us) do
     ttl_us = limits().ttl_ms * 1000
 
@@ -555,8 +513,8 @@ defmodule PhoenixDevToolbar.Store do
 
   defp orphan_row?(_table, _key, sid), do: not :ets.member(@sessions, sid)
 
-  # LiveView sessions with a running owner are cleaned up by DOWN, not by TTL:
-  # an idle open tab keeps its data.
+  # LiveView sessions with a running owner are never swept: an idle open tab
+  # keeps its data. A closed one follows the TTL like a request.
   defp live_owner?(%Session{kind: :live_view, owner: owner}) when is_pid(owner),
     do: Process.alive?(owner)
 

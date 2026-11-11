@@ -37,7 +37,7 @@ correctness and boundedness need tests, not just eyeballing.
   after defining it; host apps do not need this, their repo modules are loadable when the
   toolbar starts. New panels add a harness page that demonstrates them.
 - **Test pyramid**:
-  - Unit: `Truncate`, `Store` (caps, TTL, flood guard, DOWN cleanup); attribution is covered through the collector and
+  - Unit: `Truncate`, `Store` (caps, TTL, flood guard); attribution is covered through the collector and
     plug tests.
   - Telemetry: emit synthetic events with `:telemetry.execute/3` in tracked and untracked
     processes; assert recorded events through the Store API. Unique handler ids per test.

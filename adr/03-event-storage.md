@@ -46,12 +46,16 @@ serialize every query of the app behind one mailbox.
 - Session cap: on every new session the Store evicts sessions beyond `max_sessions`,
   those without a live LiveView owner first, then the oldest by `started_at`, so the
   open tab survives a burst of page loads.
-- LiveView sessions are monitored; `down_grace_ms` after `:DOWN` the session and its index
-  rows are deleted, unless a rejoining LiveView claimed it in the meantime (`claim/3`).
-- TTL sweep every `sweep_ms`: sessions without a live LiveView owner (requests, orphans)
-  are deleted when their last event (or start) is older than `ttl_ms`. An idle open tab
-  keeps its data. The sweep also drops stale rate windows, orphan events, index rows
-  whose session is gone, and pid and transport rows of processes that exited.
+- LiveView sessions are not cleaned up on `:DOWN`: a tab reload kills the LiveView, but
+  the page's data (and its index rows) stay readable until the TTL sweep, so a noted
+  page keeps its LiveView half for the agent loop. `claim/3` still moves a rejoining
+  LiveView's session to its new owner.
+- TTL sweep every `sweep_ms`: sessions without a live LiveView owner (requests, closed
+  LiveViews, orphans) are deleted when their last event (or start) is older than
+  `ttl_ms`. An idle open tab keeps its data. The sweep also drops stale rate windows,
+  orphan events, index rows whose session is gone, and pid and transport rows of
+  processes that exited. Closed sessions are bounded by `max_sessions` (evicted first)
+  and the per-session caps.
 - Limits, overridable with `config :phoenix_dev_toolbar, limits: [...]` and kept in
   `:persistent_term` for the write path:
 
@@ -63,9 +67,9 @@ serialize every query of the app behind one mailbox.
   | `events_per_second` | 200 per session |
   | `ttl_ms` | 10 minutes |
   | `sweep_ms` | 30 seconds |
-  | `down_grace_ms` | 60 seconds |
+  | `down_grace_ms` | 60 seconds, no effect (accepted so old configs keep booting) |
 
-  Each override must be a positive integer (`ttl_ms` and `down_grace_ms` may be 0). An
+  Each override must be a positive integer (`ttl_ms` may be 0; `down_grace_ms` is accepted but unused). An
   unknown key or an invalid value (`:infinity` would disable a cap) is logged at boot
   and keeps its default: the host always boots.
 

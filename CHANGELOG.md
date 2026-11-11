@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Closed LiveView sessions live until the TTL, no DOWN cleanup; `down_grace_ms` has no effect (ADR 03)
 - `since` cursor on Report.sessions and list_pages (ADR 13, 15)
 - Report.compare and MCP compare_pages: before and after a change (ADR 13, 15)
 - Report.recent_errors and MCP recent_errors across pages (ADR 13, 15)

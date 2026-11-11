@@ -221,32 +221,60 @@ defmodule PhoenixDevToolbar.StoreTest do
   end
 
   describe "LiveView owner DOWN" do
-    setup do
-      Store.put_limits(down_grace_ms: 0)
-      :ok
-    end
-
-    test "drops the session and its indexes when the owner exits" do
+    # A closed LiveView session follows the TTL sweep like a request (ADR 03).
+    test "keeps the session and its indexes after the owner exits, until the TTL" do
+      Store.put_limits(down_grace_ms: 0, ttl_ms: 1_000)
+      now = System.system_time(:microsecond)
       owner = start_owner()
       transport = start_owner()
 
       %Session{sid: sid} =
-        Store.new_session(Session.new(:live_view, owner: owner, transport: transport))
+        Store.new_session(%{
+          Session.new(:live_view, owner: owner, transport: transport)
+          | started_at: now
+        })
 
-      Store.insert(sid, event())
-      Store.track_pid(owner, sid)
+      Store.insert(sid, event(1, now))
       Store.link_socket_id("phx-abc", sid)
       sync_store()
 
-      assert Store.latest_for_transport(transport) == sid
-
       stop_owner(owner)
+      sync_store()
 
+      assert {:ok, _} = Store.session(sid)
+      assert [_] = Store.events(sid)
+      assert Store.sid_for_socket_id("phx-abc") == sid
+
+      Store.sweep(now + 500_000)
+      assert {:ok, _} = Store.session(sid)
+
+      Store.sweep(now + 2_000_000)
       assert Store.session(sid) == :error
       assert Store.events(sid) == []
-      assert Store.sid_for_pid(owner) == nil
       assert Store.sid_for_socket_id("phx-abc") == nil
-      assert Store.latest_for_transport(transport) == nil
+    end
+
+    test "a closed session is evicted before live ones at max_sessions" do
+      Store.put_limits(max_sessions: 2)
+      closed_owner = start_owner()
+
+      closed =
+        Store.new_session(%{Session.new(:live_view, owner: closed_owner) | started_at: 1}).sid
+
+      open_tab =
+        Store.new_session(%{Session.new(:live_view, owner: start_owner()) | started_at: 2}).sid
+
+      sync_store()
+      stop_owner(closed_owner)
+
+      newest =
+        Store.new_session(%{Session.new(:live_view, owner: start_owner()) | started_at: 3}).sid
+
+      sync_store()
+
+      assert Store.session(closed) == :error
+      assert {:ok, _} = Store.session(open_tab)
+      assert {:ok, _} = Store.session(newest)
     end
 
     test "keeps a session claimed by a new owner" do
@@ -259,6 +287,7 @@ defmodule PhoenixDevToolbar.StoreTest do
 
       stop_owner(old_owner)
 
+      Store.sweep(System.system_time(:microsecond) + 60_000_000)
       assert {:ok, %Session{owner: ^new_owner}} = Store.session(sid)
     end
   end

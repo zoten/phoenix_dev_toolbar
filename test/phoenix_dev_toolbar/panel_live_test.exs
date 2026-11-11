@@ -261,7 +261,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
 
   test "keeps following navigation after older sessions expired",
        %{conn: conn, request: request, transport: transport} do
-    Store.put_limits(down_grace_ms: 0, ttl_ms: 0)
+    Store.put_limits(ttl_ms: 0)
     first = live_view_session(request, transport)
     view = open(conn, request)
 
