@@ -88,7 +88,8 @@ correctness and boundedness need tests, not just eyeballing.
   `PDT_POSTGRES_URL`, which runs the `:postgres` tests (ADR 08); without it (locally,
   `ci-min.sh`) they are excluded.
 - Releases: `mix bump` (tooling/mix/tasks/bump.ex) gates on `mix precommit` and the
-  minimum CI row, writes the version and the CHANGELOG section, commits and tags
+  minimum CI row, writes the version (mix.exs and the install snippets of README.md and
+  guides/agent-setup.md) and the CHANGELOG section, commits and tags
   `<version>`; `publish.sh` pushes, waits for CI and runs `mix hex.publish`. Repository
   tooling is compiled from `tooling/` in dev and test only, so the package (lib/ only)
   and host apps (which compile the dependency in prod) never see it.

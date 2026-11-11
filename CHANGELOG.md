@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Release bump also updates the install snippets of README.md and guides/agent-setup.md (ADR 06)
+
 ## [0.0.3] - 2026-11-11
 
 - `stack_args:` opt-in call arguments in crash stacktraces, panel only by default; conn cookies, headers and `:crypto` never printed (ADR 03)

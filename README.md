@@ -40,7 +40,7 @@ you are working on.
 
 ```elixir
 # mix.exs
-{:phoenix_dev_toolbar, "~> 0.0.2", only: :dev}
+{:phoenix_dev_toolbar, "~> 0.0.3", only: :dev}
 
 # config/dev.exs
 config :phoenix_dev_toolbar, repos: [MyApp.Repo]  # optional: defaults to your apps' :ecto_repos

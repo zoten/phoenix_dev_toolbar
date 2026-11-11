@@ -30,7 +30,7 @@ Find, without changing anything:
 
 ```elixir
 # mix.exs, deps/0: replace any github: or path: entry
-{:phoenix_dev_toolbar, "~> 0.0.2", only: :dev}
+{:phoenix_dev_toolbar, "~> 0.0.3", only: :dev}
 ```
 
 Run `mix deps.get`. Keep `only: :dev`: the toolbar must not exist in prod or test

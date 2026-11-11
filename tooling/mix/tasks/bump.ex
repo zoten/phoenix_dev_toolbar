@@ -16,8 +16,9 @@ defmodule Mix.Tasks.Bump do
        and the tree still clean after them
     3. The version: when its `<version>` tag does not exist yet it is released as
        it is (the first release, 0.0.1), otherwise it is bumped by `--version`
-    4. `@version` in mix.exs, and CHANGELOG.md: the Unreleased entries move into
-       the version's section, dated today
+    4. `@version` in mix.exs, CHANGELOG.md (the Unreleased entries move into the
+       version's section, dated today) and the `~> <version>` install snippets of
+       README.md and guides/agent-setup.md
     5. A commit (none when no file changed) and an annotated `<version>` tag,
        nothing pushed: `./publish.sh` pushes, waits for CI and publishes to Hex
   """
@@ -28,6 +29,8 @@ defmodule Mix.Tasks.Bump do
 
   @mix_file "mix.exs"
   @changelog "CHANGELOG.md"
+  # Docs whose install snippet names the version: each must have one.
+  @install_docs ["README.md", "guides/agent-setup.md"]
   @switches [
     version: :string,
     skip_precommit: :boolean,
@@ -53,6 +56,10 @@ defmodule Mix.Tasks.Bump do
 
     write!(@mix_file, &Release.put_version(&1, current, version))
     write!(@changelog, &Release.release_changelog(&1, version, Date.utc_today()))
+
+    for doc <- @install_docs,
+        do: write!(doc, &in_file(doc, Release.put_requirement(&1, version)))
+
     Mix.shell().info("Version: #{current} -> #{version}")
 
     commit_and_tag(commit?, version, tag)
@@ -129,18 +136,23 @@ defmodule Mix.Tasks.Bump do
     path |> File.read!() |> fun.() |> ok!() |> then(&File.write!(path, &1))
   end
 
+  defp in_file(_path, {:ok, _text} = ok), do: ok
+  defp in_file(path, {:error, message}), do: {:error, "#{path}: #{message}"}
+
   defp commit_and_tag(false, version, _tag),
     do:
       Mix.shell().info(
-        "Skipped commit and tag: #{@mix_file} and #{@changelog} now say #{version}"
+        "Skipped commit and tag: #{Enum.join(release_files(), ", ")} now say #{version}"
       )
 
   defp commit_and_tag(true, _version, tag) do
-    _ = git!(["add", @mix_file, @changelog])
+    _ = git!(["add" | release_files()])
     :ok = commit(staged?(), tag)
     _ = git!(["tag", "--annotate", tag, "-m", tag])
     Mix.shell().info("Tagged #{tag}, nothing pushed. Next: ./publish.sh")
   end
+
+  defp release_files, do: [@mix_file, @changelog | @install_docs]
 
   # A first release whose section is already dated today changes no file: the tag
   # goes on HEAD, without an empty commit.

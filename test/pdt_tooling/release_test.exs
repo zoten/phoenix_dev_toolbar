@@ -36,6 +36,33 @@ defmodule PdtTooling.ReleaseTest do
     end
   end
 
+  describe "put_requirement/2" do
+    test "rewrites every install snippet to the released version" do
+      doc = """
+      {:phoenix_dev_toolbar, "~> 0.0.2", only: :dev}
+      text
+      {:phoenix_dev_toolbar, "~> 0.0.1"}
+      """
+
+      assert Release.put_requirement(doc, "0.0.3") ==
+               {:ok,
+                """
+                {:phoenix_dev_toolbar, "~> 0.0.3", only: :dev}
+                text
+                {:phoenix_dev_toolbar, "~> 0.0.3"}
+                """}
+    end
+
+    test "from 1.0 the requirement drops the patch" do
+      assert Release.put_requirement(~s({:phoenix_dev_toolbar, "~> 0.9.1"}), "1.2.0") ==
+               {:ok, ~s({:phoenix_dev_toolbar, "~> 1.2"})}
+    end
+
+    test "fails when the file has no install snippet" do
+      assert {:error, _} = Release.put_requirement("# Docs\n", "0.0.3")
+    end
+  end
+
   describe "release_changelog/3" do
     test "moves the unreleased entries into a new section and empties Unreleased" do
       changelog = """

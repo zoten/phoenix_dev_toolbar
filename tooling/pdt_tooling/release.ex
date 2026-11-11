@@ -55,6 +55,28 @@ defmodule PdtTooling.Release do
   end
 
   @doc """
+  Points every `{:phoenix_dev_toolbar, "~> ..."` install snippet of a doc at
+  `version`: `~> 0.m.p` while on 0.x (each minor may break), `~> M.m` from 1.0.
+  A file without one is an error, so a doc that loses its snippet is noticed.
+  """
+  @spec put_requirement(String.t(), String.t()) :: {:ok, String.t()} | {:error, String.t()}
+  def put_requirement(doc, version) do
+    snippet = ~r/(\{:phoenix_dev_toolbar, "~> )[^"]+"/
+
+    case Regex.match?(snippet, doc) do
+      true -> {:ok, Regex.replace(snippet, doc, "\\g{1}#{requirement(version)}\"")}
+      false -> {:error, "no {:phoenix_dev_toolbar, \"~> ...\"} install snippet"}
+    end
+  end
+
+  defp requirement(version) do
+    case Version.parse!(version) do
+      %Version{major: 0} -> version
+      %Version{major: major, minor: minor} -> "#{major}.#{minor}"
+    end
+  end
+
+  @doc """
   Moves the Unreleased entries into `version`'s section dated `date`, leaving
   Unreleased empty. A section for `version` that already exists (a first release
   written by hand) keeps its body first and takes the new date.
