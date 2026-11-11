@@ -50,6 +50,8 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
 - To check a change: `page_summary`, note its `sid`, edit, reload the page,
   then `compare_pages` with `before: sid` (the newest capture of the same path
   after it, or pass `after` or `path`): deltas, N+1 and errors fixed or new.
+- `page_report` returns a page as Markdown (tables, SQL in fenced blocks): use it
+  to paste a finding into a bug report or answer.
 - `recent_errors` after a change: crashes in `handle_info` or in other tabs that
   the page lookups miss (`since` takes the sid you measured, hiding that page's old crashes, or a time; `limit`).
 - `page_queries`, `page_callbacks` (`sort: "slowest"`, `limit`),

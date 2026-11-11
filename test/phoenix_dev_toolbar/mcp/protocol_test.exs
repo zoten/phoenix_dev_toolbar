@@ -83,7 +83,7 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
           Protocol.handle(rpc("tools/list"), %{"mcp-protocol-version" => "2025-06-18"}, @opts)
         )
 
-      assert length(result["tools"]) == 8
+      assert length(result["tools"]) == 9
       refute Map.has_key?(result, "resultType")
     end
 
@@ -122,6 +122,28 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
       assert decoded == result["structuredContent"]
       # The whole response is encodable.
       assert byte_size(Json.encode!(result)) > 0
+    end
+
+    test "page_report's text block is the Markdown, not JSON" do
+      s = session(:request, path: "/users")
+      params = %{"name" => "page_report", "arguments" => %{"sid" => s.sid}}
+      headers = %{"mcp-protocol-version" => "2025-06-18"}
+
+      result = result!(Protocol.handle(rpc("tools/call", params), headers, @opts))
+
+      assert %{
+               "isError" => false,
+               "structuredContent" => %{"markdown" => md, "sid" => sid},
+               "content" => [%{"type" => "text", "text" => text}]
+             } = result
+
+      assert text == md
+      assert sid == s.sid
+      assert String.starts_with?(text, "# /users")
+
+      legacy = result!(Protocol.handle(rpc("tools/call", params), %{}, @opts))
+      assert %{"content" => [%{"text" => ^text}]} = legacy
+      refute Map.has_key?(legacy, "structuredContent")
     end
 
     test "2025-03-26 (or no header) omits structuredContent" do

@@ -91,6 +91,7 @@ the default resolve to the request. `list_pages` with both `path` and
 | `page_n_plus_one` | `sid`, `path` | `sid`, `panel_url`, `n_plus_one` |
 | `page_errors` | `sid`, `path`, `limit` (1..100, 20) | `sid`, `panel_url`, `total`, `returned`, `errors` |
 | `recent_errors` | `since` (a captured sid: errors after that page's last captured event; or ISO 8601 time; same parsing and errors as `list_pages`), `limit` (1..100, 20) | `total`, `returned`, `errors` (`Report.recent_errors/1`, newest first), each with a `panel_url` (a connected mount links to its request's page) |
+| `page_report` | `sid`, `path` | `sid`, `panel_url`, `markdown` (`Report.markdown/2`) as `structuredContent`; the text block is the Markdown itself, not JSON |
 | `compare_pages` | `before` (a captured sid, required), `after` (a captured sid) or `path` (the newest page at that path started after `before`; default: `before`'s path), not both | `Report.compare/3` (a connected mount reads as its request; `warning` when the sides differ in kind or session count) plus `before_panel_url` and `after_panel_url`; no page after `before` is a tool error asking to reload the page, and an `after` older than `before` is a tool error |
 
 `panel_url` is absolute, built from the request's scheme, host and port (the

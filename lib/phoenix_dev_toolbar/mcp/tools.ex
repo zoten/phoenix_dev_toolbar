@@ -121,6 +121,12 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
               "Exact request path: compare with its newest capture started after before. Default: before's own path."
           }
         }
+      ),
+      tool(
+        "page_report",
+        "Report a page as Markdown",
+        "The page summary as Markdown, ready to read or paste into a bug report: request line, totals, N+1 findings, slowest queries (with SQL) and callbacks, errors.",
+        page_props()
       )
     ]
   end
@@ -201,6 +207,15 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       case Report.summary(sid, verbose: verbose) do
         nil -> {:error, no_page()}
         summary -> {:ok, Map.put(summary, :panel_url, panel_url(opts, sid))}
+      end
+    end
+  end
+
+  defp execute("page_report", args, opts) do
+    with {:ok, sid} <- resolve(args) do
+      case Report.markdown(sid) do
+        nil -> {:error, no_page()}
+        markdown -> {:ok, %{sid: sid, panel_url: panel_url(opts, sid), markdown: markdown}}
       end
     end
   end

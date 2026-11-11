@@ -507,6 +507,85 @@ defmodule PhoenixDevToolbar.ReportTest do
     end
   end
 
+  describe "markdown/2" do
+    test "nil for a gone page" do
+      assert Report.markdown("gone") == nil
+    end
+
+    test "renders the sections of a page" do
+      s = session(:live_view, path: "/users", view: DemoWeb.PageLive)
+      request(s)
+
+      for i <- 1..5 do
+        query(s, sql: "SELECT * FROM posts WHERE user_id = ?", span: 2, at: @t0 + i)
+      end
+
+      callback(s, :mount, error: "** (RuntimeError) boom")
+
+      insert(s, :live_view, :callback, %{
+        view: DemoWeb.PageLive,
+        callback: :handle_event,
+        event: "save",
+        error: nil
+      })
+
+      md = Report.markdown(s.sid)
+
+      assert md =~ "# /users"
+      assert md =~ "DemoWeb.PageLive"
+      assert md =~ "GET"
+      assert md =~ "200"
+      assert md =~ "## Queries"
+      assert md =~ "## N+1"
+      assert md =~ "SELECT * FROM posts WHERE user_id = ?"
+      assert md =~ "## Slowest queries"
+      assert md =~ "## Slowest callbacks"
+      assert md =~ "## Errors"
+      assert md =~ "RuntimeError"
+    end
+
+    test "omits empty sections" do
+      s = session(:request, path: "/empty")
+      md = Report.markdown(s.sid)
+
+      assert md =~ "# /empty"
+      refute md =~ "## N+1"
+      refute md =~ "## Errors"
+      refute md =~ "## Slowest queries"
+    end
+
+    test "escapes pipes, backticks and newlines in table cells, fences long or multiline SQL" do
+      s = session(:live_view, path: "/x", view: DemoWeb.PageLive)
+      sql = "SELECT a | b\nFROM `t`\nWHERE x = 1"
+      query(s, sql: sql, stacktrace: ["lib/a|b.ex:1: A.b/0"])
+
+      insert(s, :live_view, :callback, %{
+        view: DemoWeb.PageLive,
+        callback: :mount,
+        error: "** (RuntimeError) a | b\nsecond `line`",
+        origin: "lib/h.ex:1: H.f/0"
+      })
+
+      md = Report.markdown(s.sid)
+
+      assert md =~ "```sql\n" <> sql <> "\n```"
+      assert md =~ "a \\| b second \\`line\\`"
+
+      table_rows = md |> String.split("\n") |> Enum.filter(&String.starts_with?(&1, "|"))
+      assert table_rows != []
+      refute Enum.any?(table_rows, &(&1 =~ "second\n"))
+    end
+
+    test "short single-line SQL stays in the table, escaped" do
+      s = session(:request, path: "/x")
+      query(s, sql: "SELECT 1 | 2")
+      md = Report.markdown(s.sid)
+
+      assert md =~ "| `SELECT 1 \\| 2` |" or md =~ "SELECT 1 \\| 2"
+      refute md =~ "```sql"
+    end
+  end
+
   describe "compare/3" do
     @n1 "SELECT * FROM posts WHERE user_id = ?"
 

@@ -28,11 +28,11 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
     message
   end
 
-  test "list/0 describes eight read-only tools with strict schemas" do
+  test "list/0 describes nine read-only tools with strict schemas" do
     tools = Tools.list()
 
     assert Enum.map(tools, & &1["name"]) ==
-             ~w(list_pages page_summary page_queries page_callbacks page_n_plus_one page_errors recent_errors compare_pages)
+             ~w(list_pages page_summary page_queries page_callbacks page_n_plus_one page_errors recent_errors compare_pages page_report)
 
     for tool <- tools do
       assert tool["annotations"] == %{"readOnlyHint" => true}
@@ -316,6 +316,27 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
                call!("page_n_plus_one", %{"sid" => s.sid})
 
       assert count >= 5
+    end
+  end
+
+  describe "page_report" do
+    test "returns the Markdown, the sid and a panel_url" do
+      s = session(:request, path: "/users")
+      query(s)
+
+      assert %{"sid" => sid, "panel_url" => url, "markdown" => md} =
+               call!("page_report", %{"sid" => s.sid})
+
+      assert sid == s.sid
+      assert url == "http://localhost:4000/__pdt/panel?sid=" <> s.sid
+      assert md =~ "# /users"
+      assert md =~ "SELECT * FROM users WHERE id = ?"
+    end
+
+    test "resolves by path, errors without a page" do
+      session(:request, path: "/a")
+      assert %{"markdown" => "# /a" <> _} = call!("page_report", %{"path" => "/a"})
+      assert call_error("page_report", %{"path" => "/x"}) =~ "No captured page at /x"
     end
   end
 

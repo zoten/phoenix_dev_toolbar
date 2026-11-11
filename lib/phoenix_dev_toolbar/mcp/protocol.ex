@@ -15,7 +15,7 @@ defmodule PhoenixDevToolbar.Mcp.Protocol do
 
   @instructions "Read-only access to what Phoenix Dev Toolbar captured in the running dev app: " <>
                   "list_pages, then page_summary, page_queries, page_callbacks, page_n_plus_one " <>
-                  "and page_errors for a page, recent_errors for failures across pages (also after a change). list_pages takes since (a sid or a time) for " <>
+                  "and page_errors for a page, page_report for a page as Markdown, recent_errors for failures across pages (also after a change). list_pages takes since (a sid or a time) for " <>
                   "pages captured after an earlier call. To check a change: page_summary, note " <>
                   "its sid, edit, reload the page, then compare_pages with before: sid. " <>
                   "Load the page first (a browser, or curl with " <>
@@ -155,7 +155,7 @@ defmodule PhoenixDevToolbar.Mcp.Protocol do
         error(200, id, -32_602, "Unknown tool: " <> inspect(String.slice(name, 0, 60)))
 
       {:ok, structured} ->
-        ok(id, complete(tool_result(structured, era), era))
+        ok(id, complete(tool_result(name, structured, era), era))
 
       {:error, message} ->
         result = %{"content" => [text(message)], "isError" => true}
@@ -185,14 +185,19 @@ defmodule PhoenixDevToolbar.Mcp.Protocol do
   defp maybe_data(error, nil), do: error
   defp maybe_data(error, data), do: Map.put(error, "data", data)
 
-  defp tool_result(structured, era) do
-    result = %{"content" => [text(Json.encode!(structured))], "isError" => false}
+  defp tool_result(name, structured, era) do
+    result = %{"content" => [text(tool_text(name, structured))], "isError" => false}
 
     case structured_content?(era) do
       true -> Map.put(result, "structuredContent", structured)
       false -> result
     end
   end
+
+  # The text block is the JSON of the result, except for page_report: its
+  # Markdown (also in structuredContent) reads better as plain text.
+  defp tool_text("page_report", %{"markdown" => markdown}), do: markdown
+  defp tool_text(_name, structured), do: Json.encode!(structured)
 
   # 2025-03-26 (also: no header at all) predates structuredContent.
   defp structured_content?({_era, "2025-03-26"}), do: false

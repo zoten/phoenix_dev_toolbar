@@ -45,6 +45,7 @@ defmodule PhoenixDevToolbar.Report do
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.NPlusOne
   alias PhoenixDevToolbar.Plugins
+  alias PhoenixDevToolbar.Report.Markdown
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
 
@@ -407,6 +408,24 @@ defmodule PhoenixDevToolbar.Report do
           dropped: sessions |> Enum.map(& &1.dropped) |> Enum.sum(),
           trimmed: sessions |> Enum.map(& &1.trimmed) |> Enum.sum()
         }
+    end
+  end
+
+  @doc """
+  A page as Markdown, for an agent or a bug report, or nil when no session of
+  `target` is left. Built from `summary/2`, so it holds at most what the summary
+  lists: the request line, query and callback totals, the N+1 findings, the
+  slowest queries and callbacks, unattributed origins and errors. Empty
+  sections are left out, table cells are escaped to one line, SQL that is long
+  or multi-line goes in a fenced block. Options: `children:`, `threshold:`.
+  """
+  @spec markdown(target(), keyword()) :: String.t() | nil
+  def markdown(target, opts \\ []) do
+    opts = Keyword.take(opts, [:children, :threshold])
+
+    case summary(target, Keyword.put(opts, :verbose, true)) do
+      nil -> nil
+      summary -> Markdown.render(summary)
     end
   end
 
