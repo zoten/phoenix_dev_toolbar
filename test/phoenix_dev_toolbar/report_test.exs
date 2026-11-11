@@ -362,11 +362,36 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert ["c", "b", "a"] == messages.(since: nil)
     end
 
-    test "since: a sid keeps later errors of the cursor's own page" do
-      a = failing(:request, "/a", @t0, "early", @t0)
-      callback(a, :handle_event, error: "late", at: @t0 + 9)
+    test "since: a sid cuts after the page's last captured event, its mount child included" do
+      req = failing(:request, "/a", @t0, "page crash", @t0 + 3)
+      mount = session(:live_view, path: "/a", parent: req.sid, started_at: @t0 + 1)
+      callback(mount, :handle_info, error: "mount crash", at: @t0 + 4)
+      _newer = failing(:request, "/b", @t0 + 8, "newer page", @t0 + 9)
 
-      assert ["late"] == Report.recent_errors(since: a.sid) |> Enum.map(& &1.message)
+      assert ["newer page"] == Report.recent_errors(since: req.sid) |> Enum.map(& &1.message)
+    end
+
+    test "request exceptions and render failures are listed, a mount's error once under its sid" do
+      req = session(:request, path: "/a", started_at: @t0)
+
+      insert(req, :request, :exception, %{
+        path: "/a",
+        error: "** (RuntimeError) x",
+        stacktrace: []
+      })
+
+      mount = session(:live_view, path: "/a", parent: req.sid, started_at: @t0 + 1)
+
+      insert(mount, :live_view, :render, %{view: DemoWeb.PageLive, error: "** (KeyError) k"},
+        at: @t0 + 5
+      )
+
+      assert [
+               %{source: :live_view, sid: mount_sid},
+               %{source: :request, sid: req_sid}
+             ] = Report.recent_errors()
+
+      assert {mount_sid, req_sid} == {mount.sid, req.sid}
     end
 
     test "limit caps the list, default 20, nil is unlimited" do

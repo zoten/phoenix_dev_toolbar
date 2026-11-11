@@ -30,7 +30,7 @@ Store, built for IEx and agents:
   assigns changes, times or stacktrace; an error keeps its first frame as
   `origin`; LiveView crashes carry their stacktrace in call order, cut after the last host frame plus one, and `origin` is their first host frame, ADR 07; an error carries `stack_args`, the call arguments of its frames, only when the developer set `stack_args: [agents: true]`, ADR 03): `verbose: true` returns the full items, `queries/2`, `callbacks/2`
   and `errors/2` the detail.
-- `recent_errors/1` lists the newest failures of every session the Store holds (a bounded read of its capped sessions), newest first, as error briefs plus `at` and the session `path`; `since:` (sid: errors after that session started, its own later ones included; `DateTime`) and `limit:` (20, `nil` for all). It sees crashes in `handle_info` or another tab that no page lookup points at.
+- `recent_errors/1` lists the newest failures of every session the Store holds (a bounded read of its capped sessions), newest first, as error briefs plus `at` and the session `path`; `since:` (sid: errors after that page's last captured event, its connected mount included, so a fixed page shows none of its old crashes; `DateTime`: errors after it) and `limit:` (20, `nil` for all). It sees crashes in `handle_info` or another tab that no page lookup points at.
 - `compare/3` puts two targets side by side, built from two compact `summary/2`
   calls (options pass through; a connected mount reads as its request; nil when
   either side is gone): `queries`, `callbacks`, `renders` and `unattributed` as
@@ -111,6 +111,7 @@ Store, built for IEx and agents:
 - `started_at` is wall-clock time: a clock step back can hide pages from `since`.
 - `Report.sessions(since: request_sid)` includes that request's own connected
   mount (`list_pages` drops mounts).
+- `recent_errors` copies every captured event of up to 50 sessions per call (bounded, on demand).
 - `compare` `still` is a count only: an N+1 group dropping from 50 repetitions to 10 shows as still.
 - `compare` reads at most 50 N+1 groups per side (summary cap): a larger set can yield false fixed or new.
 - Assigns snapshots, client `phx:*` events and the component tree are not exposed.

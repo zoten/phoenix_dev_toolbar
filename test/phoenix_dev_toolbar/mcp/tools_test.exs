@@ -369,6 +369,15 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       assert call_error("recent_errors", %{"since" => 5}) =~ "since"
     end
 
+    test "a sid cursor excludes the cursor page's own later crash, keeps newer pages" do
+      a = failing(:request, "/a", @t0, "old")
+      callback(a, :handle_info, error: "later crash", at: @t0 + 1_000_000)
+      _b = failing(:request, "/b", @t0 + 5_000_000, "newer")
+
+      assert %{"errors" => [%{"message" => "newer"}]} =
+               call!("recent_errors", %{"since" => a.sid})
+    end
+
     test "an empty Store gives an empty list" do
       assert %{"total" => 0, "returned" => 0, "errors" => []} = call!("recent_errors")
     end

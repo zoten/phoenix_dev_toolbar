@@ -230,6 +230,10 @@ defmodule PhoenixDevToolbar.Report do
           path: String.t() | nil
         }
 
+  @typedoc "An option of `recent_errors/1`."
+  @type recent_errors_opt ::
+          {:since, sid() | DateTime.t()} | {:limit, non_neg_integer() | nil}
+
   @typedoc "The dead render request: its route and response."
   @type request :: %{
           method: String.t() | nil,
@@ -585,16 +589,17 @@ defmodule PhoenixDevToolbar.Report do
 
   @doc """
   The newest failures across every page the Store holds, newest first, as
-  `t:recent_error/0` items: the `t:error_brief/0` plus the session `path` and
+  `t:recent_error/0` items: an `t:error_brief/0` plus the session `path` and
   the error's `at`. It sees LiveView callbacks (a `handle_info` crash, another
   tab) that no page lookup would point at.
 
-  Options: `:since` (a sid: errors that happened after that session started,
-  including later ones on that page; a `DateTime`: errors after it; an unknown
-  sid or any other value gives `[]`) and `:limit` (default 20, `nil` for all).
-  Reads the events of at most the capped number of sessions the Store holds.
+  Options: `:since` (a sid: errors after that page's last captured event, its
+  connected mount included, so a fix that leaves the old crash behind reads as
+  fixed; a `DateTime`: errors after it; an unknown sid or any other value gives
+  `[]`) and `:limit` (default 20, `nil` for all). Reads the events of at most
+  the capped number of sessions the Store holds.
   """
-  @spec recent_errors(keyword()) :: [recent_error()]
+  @spec recent_errors([recent_errors_opt()]) :: [recent_error()]
   def recent_errors(opts \\ []) do
     all = all_sessions()
 
@@ -614,17 +619,19 @@ defmodule PhoenixDevToolbar.Report do
   defp cursor_us(_all, nil), do: 0
   defp cursor_us(_all, %DateTime{} = cursor), do: DateTime.to_unix(cursor, :microsecond)
 
-  defp cursor_us(all, sid) when is_binary(sid) do
-    case Enum.find(all, &(&1.sid == sid)) do
-      %Session{started_at: us} -> us
-      nil -> :none
+  # The page's last captured event (the page and its connected mounts).
+  defp cursor_us(_all, sid) when is_binary(sid) do
+    case read(sid, []) do
+      {[], _events} -> :none
+      {[first | _], []} -> first.started_at
+      {_sessions, events} -> events |> Enum.map(& &1.at) |> Enum.max()
     end
   end
 
   defp cursor_us(_all, _other), do: :none
 
   defp session_errors(%Session{} = session, after_us) do
-    {_sessions, events} = read(session.sid, children: false)
+    events = events(session.sid)
 
     events
     |> errors_of(owners(events, [session]))

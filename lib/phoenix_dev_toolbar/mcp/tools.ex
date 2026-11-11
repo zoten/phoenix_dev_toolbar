@@ -97,7 +97,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
           "since" => %{
             "type" => "string",
             "description" =>
-              "Only errors after this: a sid from an earlier list_pages (errors since that page started) or an ISO 8601 timestamp."
+              "Only errors after this: a sid from an earlier list_pages or page_summary (errors after that page's last captured event, so a fixed page shows none of its old crashes) or an ISO 8601 timestamp."
           },
           "limit" => int_prop("Maximum errors to return.", 1, 100, 20)
         }
@@ -256,7 +256,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   defp execute("recent_errors", args, opts) do
     with {:ok, since} <- since_arg(args),
          {:ok, limit} <- int_arg(args, "limit", 20, 1, 100) do
-      all = recent_errors(since)
+      all = Report.recent_errors(Keyword.put(since, :limit, nil))
 
       errors =
         all
@@ -265,13 +265,6 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
 
       {:ok, %{"total" => length(all), "returned" => length(errors), "errors" => errors}}
     end
-  end
-
-  # A Store that is restarting (its tables missing) holds no errors.
-  defp recent_errors(since) do
-    Report.recent_errors(Keyword.put(since, :limit, nil))
-  rescue
-    ArgumentError -> []
   end
 
   # A connected mount belongs to its request's page (see `reject_mounts/1`).
