@@ -27,6 +27,8 @@ Application.put_env(:phoenix_dev_toolbar, Demo.Repo, database: database, stacktr
 Application.put_env(:phoenix_dev_toolbar, :repos, [Demo.Repo])
 # The harness demonstrates process actions (opt-in, ADR 10).
 Application.put_env(:phoenix_dev_toolbar, :actions, :loopback)
+# Opt-in: call arguments of the crashing frame in the panel (ADR 03), off by default.
+# Application.put_env(:phoenix_dev_toolbar, :stack_args, true)
 
 # Plugins (ADR 05): the example Oban plugin and a demo plugin that fails on
 # demand, next to the built-ins, and the opt-in Cluster and Eval tabs (ADR 12;

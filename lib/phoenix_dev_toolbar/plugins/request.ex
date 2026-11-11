@@ -17,6 +17,7 @@ defmodule PhoenixDevToolbar.Plugins.Request do
 
   use PhoenixDevToolbar.Plugin, id: :request, name: "Request"
 
+  alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Components
   alias PhoenixDevToolbar.Context
   alias PhoenixDevToolbar.Event
@@ -78,17 +79,24 @@ defmodule PhoenixDevToolbar.Plugins.Request do
   end
 
   def collect(@exception, {measurements, metadata}, %Context{}) do
+    skip = [Phoenix.Router, Plug]
+
     data =
       metadata
       |> route_data()
       |> Map.put(:error, Truncate.banner(metadata.kind, metadata.reason))
       |> Map.put(
         :stacktrace,
-        Truncate.stacktrace(metadata[:stacktrace], [Phoenix.Router, Plug])
+        Truncate.stacktrace(metadata[:stacktrace], skip)
       )
+      |> put_stack_args(Truncate.stack_args(metadata[:stacktrace], skip, Collector.stack_args()))
 
     {:record, Event.new(:request, :exception, data, duration: measurements[:duration])}
   end
+
+  # Opt-in call arguments (ADR 03), beside the frames; absent by default.
+  defp put_stack_args(data, nil), do: data
+  defp put_stack_args(data, args), do: Map.put(data, :stack_args, args)
 
   defp route_data(metadata) do
     conn = metadata.conn

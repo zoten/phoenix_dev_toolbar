@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `stack_args:` opt-in call arguments in crash stacktraces, panel only by default (ADR 03)
 - Stack frames print the arity, not the call's arguments: no params or socket (ADR 03)
 - MCP docs: connect at agent start, LAN and `${PHX_IP:-...}` URLs (ADR 15)
 - Query origin inside `Task.async` and `start_async`: task function or callback (ADR 08, 13)

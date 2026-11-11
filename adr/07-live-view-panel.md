@@ -91,7 +91,10 @@ navigation.
   child counts) are resolved once at `Collector.attach/1` into a `:persistent_term`,
   never in a handler. `origin` is the first host frame. When the roots are unknown
   (no Mix) or no host frame is present, the first 10 frames are kept and `origin`
-  is the first frame. Successes store `[]`.
+  is the first frame. Successes store `[]`. With the opt-in `stack_args:` the
+  frames that carried call arguments also store them as `stack_args`
+  ([ADR 03](./03-event-storage.md)); the panel shows them, `Report` only with
+  `agents: true`.
 
 ## Consequences
 

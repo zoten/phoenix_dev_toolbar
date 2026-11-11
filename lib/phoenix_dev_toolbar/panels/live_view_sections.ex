@@ -7,7 +7,7 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
 
   use Phoenix.Component
 
-  import PhoenixDevToolbar.Components, only: [duration: 1, row_attrs: 3]
+  import PhoenixDevToolbar.Components, only: [duration: 1, row_attrs: 3, stack_args: 1]
 
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Profile
@@ -266,6 +266,7 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
         <.pushed pushed={@event.data.pushed} />
       </div>
       <pre :if={@event.data.error} class="pdt-error">{@event.data.error}</pre>
+      <.stack_args :if={@event.data.error} data={@event.data} />
       <details :if={details?(@event.data)} class="pdt-details">
         <summary>details</summary>
         <dl>
@@ -314,6 +315,7 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
         <span :if={@event.data.force?} class="pdt-tag" title="Forced render">forced</span>
       </div>
       <pre :if={@event.data.error} class="pdt-error">{@event.data.error}</pre>
+      <.stack_args :if={@event.data.error} data={@event.data} />
     </li>
     """
   end

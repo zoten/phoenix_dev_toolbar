@@ -191,7 +191,14 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
       stacktrace: Truncate.exception_stacktrace(frames, &Collector.host_module?/1),
       origin: Truncate.exception_origin(frames, &Collector.host_module?/1)
     }
+    |> put_stack_args(
+      Truncate.exception_stack_args(frames, &Collector.host_module?/1, Collector.stack_args())
+    )
   end
+
+  # Opt-in call arguments (ADR 03), beside the frames; absent by default.
+  defp put_stack_args(data, nil), do: data
+  defp put_stack_args(data, args), do: Map.put(data, :stack_args, args)
 
   defp record_render(measurements, %{socket: %Socket{} = socket} = metadata, extra) do
     data =

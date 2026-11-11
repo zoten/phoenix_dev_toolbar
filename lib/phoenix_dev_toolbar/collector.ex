@@ -40,6 +40,14 @@ defmodule PhoenixDevToolbar.Collector do
   @plugins_key {Collector, :plugins}
   @configs_key {Collector, :configs}
   @host_roots_key {Collector, :host_roots}
+  @stack_args_key {Collector, :stack_args}
+
+  @doc """
+  The resolved `stack_args:` settings (ADR 03), or nil: off, or not attached
+  yet. Read on the exception path only: one `:persistent_term` lookup.
+  """
+  @spec stack_args() :: Config.stack_args() | nil
+  def stack_args, do: :persistent_term.get(@stack_args_key, nil)
 
   @doc """
   Whether `module` is the host's own code (ADR 07): its source file lies under
@@ -117,6 +125,11 @@ defmodule PhoenixDevToolbar.Collector do
   def attach(plugins) do
     detach()
     :persistent_term.put(@host_roots_key, resolve_host_roots())
+
+    :persistent_term.put(
+      @stack_args_key,
+      Config.stack_args(Application.get_env(:phoenix_dev_toolbar, :stack_args, false))
+    )
 
     attached = Enum.flat_map(plugins, &attachable/1)
     configs = Enum.map(attached, fn {plugin, _id, config, _events} -> {plugin, config} end)

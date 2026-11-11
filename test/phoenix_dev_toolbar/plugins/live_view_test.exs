@@ -369,5 +369,67 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
       assert frames |> Enum.map(&byte_size/1) |> Enum.sum() < 5_000
       assert byte_size(origin) < 1_000
     end
+
+    defp strict_crash(config) do
+      previous = Application.fetch_env(:phoenix_dev_toolbar, :stack_args)
+
+      on_exit(fn ->
+        case previous do
+          {:ok, value} -> Application.put_env(:phoenix_dev_toolbar, :stack_args, value)
+          :error -> Application.delete_env(:phoenix_dev_toolbar, :stack_args)
+        end
+
+        Collector.attach([LiveViewPlugin])
+      end)
+
+      Application.put_env(:phoenix_dev_toolbar, :stack_args, config)
+      Collector.attach([LiveViewPlugin])
+      view = boom_view()
+      params = %{"user" => %{"password" => "hunter2", "name" => "ann"}}
+      crash(fn -> render_hook(view, "strict", params) end)
+
+      [session] =
+        for s <- Store.sessions(), s.kind == :live_view, s.view == DemoWeb.BoomLive, do: s
+
+      session
+    end
+
+    defp stored_stack_args(session) do
+      session.sid
+      |> Store.events()
+      |> Enum.find_value(fn %Event{data: data} -> data[:stack_args] end)
+    end
+
+    test "default off: nothing stored" do
+      session = strict_crash(false)
+      assert stored_stack_args(session) == nil
+    end
+
+    test "opted in: stored redacted, hidden from agents by default" do
+      session = strict_crash(true)
+
+      assert [args | _] = stored_stack_args(session)
+      assert args =~ "ann"
+      assert args =~ "[REDACTED]"
+      refute args =~ "hunter2"
+
+      assert [error] = for(%{source: :live_view} = e <- Report.errors(session.sid), do: e)
+      refute Map.has_key?(error, :stack_args)
+      refute inspect(Report.summary(session.sid)) =~ "ann"
+    end
+
+    test "agents: true puts them in the report" do
+      session = strict_crash(agents: true)
+
+      assert [error] = for(%{source: :live_view} = e <- Report.errors(session.sid), do: e)
+      assert [args | _] = error.stack_args
+      assert args =~ "[REDACTED]"
+      refute inspect(error) =~ "hunter2"
+    end
+
+    test "a :hide rule keeps the arguments out" do
+      session = strict_crash(rules: [{DemoWeb.BoomLive, :hide}])
+      assert stored_stack_args(session) == nil
+    end
   end
 end

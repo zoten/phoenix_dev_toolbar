@@ -169,15 +169,16 @@ defmodule PhoenixDevToolbar.Report do
           sids: [sid()]
         }
 
-  @typedoc "A failure: a request exception, a failed callback or render, a failed query. Request, LiveView and Ecto errors carry a formatted stacktrace in call order (LiveView: cut after the last host frame plus one, ADR 07)."
+  @typedoc "A failure: a request exception, a failed callback or render, a failed query. Request, LiveView and Ecto errors carry a formatted stacktrace in call order (LiveView: cut after the last host frame plus one, ADR 07). `stack_args`, parallel to `stacktrace` (the call arguments of a frame, redacted and bounded), is present only when the developer set `stack_args: [agents: true]` (ADR 03)."
   @type error :: %{
-          sid: sid(),
-          seq: pos_integer(),
-          at: DateTime.t(),
-          source: :request | :live_view | :ecto,
-          message: String.t(),
-          origin: String.t() | nil,
-          stacktrace: [String.t()]
+          required(:sid) => sid(),
+          required(:seq) => pos_integer(),
+          required(:at) => DateTime.t(),
+          required(:source) => :request | :live_view | :ecto,
+          required(:message) => String.t(),
+          required(:origin) => String.t() | nil,
+          required(:stacktrace) => [String.t()],
+          optional(:stack_args) => [String.t() | nil]
         }
 
   @typedoc "A `t:query/0` without SQL, params, times and stacktrace: what `summary/2` lists by default."
@@ -735,7 +736,14 @@ defmodule PhoenixDevToolbar.Report do
       stacktrace: stacktrace || [],
       origin: origin || List.first(stacktrace || [])
     }
+    |> maybe_stack_args(event.data[:stack_args], Collector.stack_args())
   end
+
+  # Call arguments reach agents only when the developer asked (ADR 03).
+  defp maybe_stack_args(error, args, %{agents: true}) when is_list(args),
+    do: Map.put(error, :stack_args, args)
+
+  defp maybe_stack_args(error, _args, _settings), do: error
 
   ## Helpers
 

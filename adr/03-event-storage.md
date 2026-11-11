@@ -84,6 +84,21 @@ serialize every query of the app behind one mailbox.
   a map a `"…" => "…"` entry, a struct past 50 fields becomes a plain map). Scalars,
   large binaries included, are returned as they are. Key names are matched on their
   first 256 bytes.
+- Stack frames print the arity, never the call's arguments (a `FunctionClauseError`
+  frame carries them: params, the whole socket or conn). `config :phoenix_dev_toolbar,
+  stack_args: [...]` (default `false`; `true` means the defaults) opts in, for crash
+  stacktraces of LiveView callbacks and renders and of request exceptions: the
+  arguments of a frame go through `Truncate.preview/3` capped at `bytes:` per frame
+  (default 512, 64 to 8192) with the redact keys of this ADR plus `stack_args`
+  `redact:` and the keys of the matching rule. `rules:` map a module, `{module, fun}`
+  or `{module, fun, arity}` to `:hide` (never printed) or extra keys; the most specific
+  rule wins. They are stored beside the frames as `data.stack_args`, a list parallel
+  to `stacktrace` (a string or nil per frame, in practice the top frame), and the panel
+  shows them under the error. `Report` and MCP carry `stack_args` only with
+  `agents: true` (default `false`); error briefs never do. The settings are resolved
+  once at `Collector.attach/1` into a `:persistent_term` (a bad entry is a boot
+  warning and falls back, never raises); the exception path costs one lookup. `origin`
+  stays arity only.
 - LiveView assigns and params can be huge (preloaded lists), so they go through
   `Truncate.preview/3` instead: at most 200 nodes and 20 items per container are walked,
   whatever is not walked becomes `"…"` (so a sensitive key past the budget is cut, never
@@ -118,5 +133,7 @@ serialize every query of the app behind one mailbox.
 - Key matching only sees map, struct and keyword keys: a bare 2-tuple outside a list
   (`%{creds: {"password", "x"}}`), a charlist key and a secret inside a string value are
   not redacted.
+- `stack_args` redacts by key name like everything else: a secret positional in the
+  arguments (a bare string argument) is not redacted, hide the function with a rule.
 - Ecto params are positional: an INSERT shows a password hash column value, there is no
   key to match.

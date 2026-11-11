@@ -15,6 +15,19 @@ defmodule PhoenixDevToolbar.Config do
 
   @type entry :: {module(), keyword()}
 
+  @typedoc "Resolved `stack_args:`: the per frame byte cap, lowered extra keys, rules and the agents gate."
+  @type stack_args :: %{
+          bytes: pos_integer(),
+          redact: [String.t()],
+          rules: %{
+            (module() | {module(), atom()} | {module(), atom(), non_neg_integer()}) =>
+              :hide | [String.t()]
+          },
+          agents: boolean()
+        }
+
+  @stack_args_bytes 512
+
   # Limits that may be 0 (expire at once); every other limit is a positive cap.
   @zero_limits [:ttl_ms, :down_grace_ms]
 
@@ -158,6 +171,128 @@ defmodule PhoenixDevToolbar.Config do
     maybe_warn_redact(dropped)
     valid
   end
+
+  @doc """
+  Resolves `stack_args:` (ADR 03) into `t:stack_args/0`, or nil when call
+  arguments stay out of crash stacktraces (the default: `false`, absent or
+  invalid). `true` means all defaults. A bad entry is logged and falls back,
+  never raises, never makes atoms. Rule keys are the modules and functions the
+  developer wrote; rule redact keys are lowered strings.
+  """
+  @spec stack_args(term()) :: stack_args() | nil
+  def stack_args(value) when value in [nil, false], do: nil
+  def stack_args(true), do: stack_args([])
+
+  def stack_args(opts) when is_list(opts) do
+    case Keyword.keyword?(opts) do
+      true -> resolve_stack_args(opts)
+      false -> bad_stack_args(opts)
+    end
+  end
+
+  def stack_args(other), do: bad_stack_args(other)
+
+  defp bad_stack_args(value) do
+    warn("`stack_args` must be a boolean or a keyword list, got #{inspect(value, limit: 5)}: off")
+    nil
+  end
+
+  defp resolve_stack_args(opts) do
+    %{
+      bytes: stack_args_bytes(Keyword.get(opts, :bytes, @stack_args_bytes)),
+      redact: opts |> Keyword.get(:redact, []) |> stack_args_keys("redact"),
+      rules: opts |> Keyword.get(:rules, []) |> stack_args_rules(),
+      agents: stack_args_agents(Keyword.get(opts, :agents, false))
+    }
+  end
+
+  defp stack_args_bytes(bytes) when is_integer(bytes) and bytes in 64..8192, do: bytes
+
+  defp stack_args_bytes(other) do
+    _ =
+      warn(
+        "`stack_args` `bytes` must be an integer from 64 to 8192, got " <>
+          "#{inspect(other, limit: 5)}: using #{@stack_args_bytes}"
+      )
+
+    @stack_args_bytes
+  end
+
+  defp stack_args_agents(agents) when is_boolean(agents), do: agents
+
+  defp stack_args_agents(other) do
+    _ = warn("`stack_args` `agents` must be a boolean, got #{inspect(other, limit: 5)}: false")
+    false
+  end
+
+  # Lowered strings, as `Truncate` compares them.
+  defp stack_args_keys(keys, where) when is_list(keys) do
+    {valid, dropped} = Enum.split_with(keys, &(is_binary(&1) or is_atom(&1)))
+
+    case dropped do
+      [] -> :ok
+      _ -> warn("ignoring `stack_args` #{where} entries #{inspect(dropped, limit: 5)}")
+    end
+
+    Enum.map(valid, &(&1 |> to_string() |> String.downcase()))
+  end
+
+  defp stack_args_keys(other, where) do
+    _ = warn("`stack_args` #{where} must be a list, got #{inspect(other, limit: 5)}: ignored")
+    []
+  end
+
+  defp stack_args_rules(rules) when is_list(rules) do
+    Enum.reduce(rules, %{}, fn rule, acc ->
+      case stack_args_rule(rule) do
+        {:ok, key, action} ->
+          Map.put(acc, key, action)
+
+        :error ->
+          _ =
+            warn(
+              "ignoring `stack_args` rule #{inspect(rule, limit: 5)}: expected " <>
+                "{Module | {Module, fun} | {Module, fun, arity}, :hide | [key]}"
+            )
+
+          acc
+      end
+    end)
+  end
+
+  defp stack_args_rules(other) do
+    _ = warn("`stack_args` rules must be a list, got #{inspect(other, limit: 5)}: ignored")
+    %{}
+  end
+
+  defp stack_args_rule({key, action}) do
+    with true <- rule_key?(key), {:ok, action} <- rule_action(action) do
+      {:ok, key, action}
+    else
+      _ -> :error
+    end
+  end
+
+  defp stack_args_rule(_rule), do: :error
+
+  defp rule_key?(module) when is_atom(module), do: true
+  defp rule_key?({module, fun}), do: is_atom(module) and is_atom(fun)
+
+  defp rule_key?({module, fun, arity}),
+    do: is_atom(module) and is_atom(fun) and is_integer(arity) and arity >= 0
+
+  defp rule_key?(_key), do: false
+
+  defp rule_action(:hide), do: {:ok, :hide}
+
+  defp rule_action(keys) when is_list(keys) do
+    case Enum.all?(keys, &(is_binary(&1) or is_atom(&1))) do
+      true -> {:ok, Enum.map(keys, &(&1 |> to_string() |> String.downcase()))}
+      false -> :error
+    end
+  end
+
+  defp rule_action(_action), do: :error
 
   @doc """
   Keeps the `allowed_origins:` entries an `Origin` header can match (`origin/1`),

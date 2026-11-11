@@ -171,4 +171,55 @@ defmodule PhoenixDevToolbar.ConfigTest do
       assert Config.allowed_origins(nil) == []
     end
   end
+
+  describe "stack_args/1" do
+    test "off unless opted in" do
+      assert Config.stack_args(nil) == nil
+      assert Config.stack_args(false) == nil
+    end
+
+    test "true means the defaults" do
+      assert Config.stack_args(true) == %{bytes: 512, redact: [], rules: %{}, agents: false}
+    end
+
+    test "valid options are kept, keys lowered" do
+      assert Config.stack_args(
+               bytes: 1024,
+               redact: ["Card_Number", :pin],
+               rules: [{Mod, :hide}, {{Mod, :f}, ["PIN"]}, {{Mod, :f, 2}, :hide}],
+               agents: true
+             ) == %{
+               bytes: 1024,
+               redact: ["card_number", "pin"],
+               rules: %{Mod => :hide, {Mod, :f} => ["pin"], {Mod, :f, 2} => :hide},
+               agents: true
+             }
+    end
+
+    test "invalid entries warn and fall back, never raise" do
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          assert Config.stack_args(
+                   bytes: 10,
+                   redact: ["ok", 1],
+                   rules: [
+                     {"Mod", :hide},
+                     {Mod, :nope},
+                     {{Mod, :f, -1}, :hide},
+                     :junk,
+                     {Mod, [1]}
+                   ],
+                   agents: :yes
+                 ) == %{bytes: 512, redact: ["ok"], rules: %{}, agents: false}
+
+          assert Config.stack_args("yes") == nil
+          assert Config.stack_args(bytes: 9000).bytes == 512
+          assert Config.stack_args(rules: :x).rules == %{}
+        end)
+
+      assert log =~ "bytes"
+      assert log =~ "rule"
+      assert log =~ "agents"
+    end
+  end
 end

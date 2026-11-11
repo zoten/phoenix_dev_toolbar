@@ -322,9 +322,40 @@ defmodule PhoenixDevToolbar.Components do
         <code :if={@event.data.handler} class="pdt-origin">{@event.data.handler}</code>
       </div>
       <pre :if={@event.kind == :exception} class="pdt-error">{Map.get(@event.data, :error)}</pre>
+      <.stack_args :if={@event.kind == :exception} data={@event.data} />
     </li>
     """
   end
+
+  @doc """
+  The call arguments of a crash's frames (`stack_args:`, ADR 03), under its
+  banner: one `frame` and its arguments per frame that carried them. Renders
+  nothing when the event has none (the default).
+  """
+  attr :data, :map, required: true
+
+  def stack_args(assigns) do
+    assigns = assign(assigns, :frames, stack_arg_frames(assigns.data))
+
+    ~H"""
+    <details :if={@frames != []} class="pdt-details pdt-stack-args">
+      <summary>call arguments</summary>
+      <dl>
+        <%= for {frame, args} <- @frames do %>
+          <dt><code>{frame}</code></dt>
+          <dd><code>{args}</code></dd>
+        <% end %>
+      </dl>
+    </details>
+    """
+  end
+
+  defp stack_arg_frames(%{stack_args: args, stacktrace: frames})
+       when is_list(args) and is_list(frames) do
+    for {frame, arg} when is_binary(arg) <- Enum.zip(frames, args), do: {frame, arg}
+  end
+
+  defp stack_arg_frames(_data), do: []
 
   @doc """
   Formats a byte count: `"512 B"`, `"1.5 KB"`, `"2.3 MB"`, `"1.1 GB"`.

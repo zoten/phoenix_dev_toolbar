@@ -7,6 +7,8 @@ defmodule PhoenixDevToolbar.Truncate do
   redact: [...]`, by default keys containing "password", "token" or "secret").
   """
 
+  alias PhoenixDevToolbar.Config
+
   @inspect_opts [limit: 50, printable_limit: 1024, charlists: :as_lists]
   @sql_limit 8192
   @string_limit 2048
@@ -127,12 +129,15 @@ defmodule PhoenixDevToolbar.Truncate do
   def stacktrace(true, _skip), do: []
 
   def stacktrace(frames, skip) when is_list(frames) do
+    frames |> request_frames(skip) |> Enum.map(&format_frame/1)
+  end
+
+  defp request_frames(frames, skip) do
     skip = @own_frames ++ skip
 
     frames
     |> Stream.reject(&skipped_frame?(&1, skip))
     |> Enum.take(@frames)
-    |> Enum.map(&format_frame/1)
   end
 
   @doc """
@@ -155,11 +160,73 @@ defmodule PhoenixDevToolbar.Truncate do
   def exception_stacktrace(nil, _host?), do: []
 
   def exception_stacktrace(frames, host?) when is_list(frames) do
+    frames |> crash_frames(host?) |> Enum.map(&format_frame/1)
+  end
+
+  defp crash_frames(frames, host?) do
     frames
     |> Enum.reject(&skipped_frame?(&1, @own_frames))
     |> cut_after_host(host?)
     |> Enum.take(@frames)
-    |> Enum.map(&format_frame/1)
+  end
+
+  # The call arguments of the frames `exception_stacktrace/2` keeps, one entry per
+  # frame (nil or a redacted, bounded string), or nil when `settings` is nil (the
+  # default, `Config.stack_args/1`) or no frame carried arguments (ADR 03).
+  # Exception path only; never raises.
+  @doc false
+  @spec exception_stack_args(
+          Exception.stacktrace() | nil,
+          (module() -> boolean()) | nil,
+          Config.stack_args() | nil
+        ) :: [String.t() | nil] | nil
+  def exception_stack_args(frames, host?, settings) when is_list(frames) and is_map(settings),
+    do: frames |> crash_frames(host?) |> frames_args(settings)
+
+  def exception_stack_args(_frames, _host?, _settings), do: nil
+
+  # Like `exception_stack_args/3` for the frames `stacktrace/2` keeps.
+  @doc false
+  @spec stack_args(Exception.stacktrace() | nil, [module()], Config.stack_args() | nil) ::
+          [String.t() | nil] | nil
+  def stack_args(frames, skip, settings) when is_list(frames) and is_map(settings),
+    do: frames |> request_frames(skip) |> frames_args(settings)
+
+  def stack_args(_frames, _skip, _settings), do: nil
+
+  defp frames_args(frames, settings) do
+    args = Enum.map(frames, &frame_args(&1, settings))
+
+    case Enum.any?(args) do
+      true -> args
+      false -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  # The redacted, bounded (`settings.bytes`) call arguments of one frame, or nil:
+  # the frame has none (an arity), or a `:hide` rule matches. The most specific
+  # rule wins: `{m, f, arity}`, `{m, f}`, then `m`; its keys come on top of the
+  # defaults, `redact:` and `stack_args` `redact:`.
+  @doc false
+  @spec frame_args(tuple(), Config.stack_args()) :: String.t() | nil
+  def frame_args({module, fun, args, _location}, settings) when is_list(args) do
+    case rule(settings.rules, module, fun, length(args)) do
+      :hide ->
+        nil
+
+      rule_keys ->
+        keys = lowered_redact_keys() ++ settings.redact ++ List.wrap(rule_keys)
+        preview(args, settings.bytes, keys)
+    end
+  end
+
+  def frame_args(_frame, _settings), do: nil
+
+  defp rule(rules, module, fun, arity) do
+    Map.get(rules, {module, fun, arity}) || Map.get(rules, {module, fun}) ||
+      Map.get(rules, module)
   end
 
   @doc """

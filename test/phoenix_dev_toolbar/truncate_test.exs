@@ -1,6 +1,7 @@
 defmodule PhoenixDevToolbar.TruncateTest do
   use ExUnit.Case, async: true
 
+  alias PhoenixDevToolbar.Config
   alias PhoenixDevToolbar.TestCreds
   alias PhoenixDevToolbar.Truncate
 
@@ -425,6 +426,70 @@ defmodule PhoenixDevToolbar.TruncateTest do
       session = %{__struct__: Plug.Conn, secret_key_base: "s3cret", assigns: %{uri: uri}}
 
       refute Truncate.preview(session, 100_000) =~ "s3cret"
+    end
+  end
+
+  describe "stack args (opt-in call arguments)" do
+    defp settings(opts \\ []), do: Config.stack_args(opts)
+
+    defp call(args) do
+      {MyApp.Live, :handle_event, args, []}
+    end
+
+    defp args_of(frames, settings) do
+      Truncate.exception_stack_args(frames, nil, settings)
+    end
+
+    test "off by default: no settings, no arguments" do
+      assert args_of([call(["save", %{"password" => "hunter2"}])], nil) == nil
+      assert Truncate.stack_args([call(["save"])], [], nil) == nil
+    end
+
+    test "opted in: redacted by key and bounded per frame" do
+      params = %{"password" => "hunter2", "zbio" => String.duplicate("x", 50_000)}
+
+      assert [args] = args_of([call(["save", params, :socket])], settings(bytes: 256))
+      assert args =~ "[REDACTED]"
+      refute args =~ "hunter2"
+      assert byte_size(args) <= 256 + 16
+    end
+
+    test "global and per call redact keys come on top of the defaults" do
+      s = settings(redact: ["card_number"], rules: [{{MyApp.Live, :handle_event}, ["pin"]}])
+      params = %{"card_number" => "4111", "pin" => "1234", "name" => "ann"}
+
+      assert [args] = args_of([call([params])], s)
+      refute args =~ "4111"
+      refute args =~ "1234"
+      assert args =~ "ann"
+    end
+
+    test "a :hide rule prints nothing, per module, {m, f} and {m, f, a}" do
+      for rule <- [MyApp.Live, {MyApp.Live, :handle_event}, {MyApp.Live, :handle_event, 1}] do
+        assert args_of([call(["a"])], settings(rules: [{rule, :hide}])) == nil
+      end
+
+      assert [_] =
+               args_of([call(["a"])], settings(rules: [{{MyApp.Live, :handle_event, 2}, :hide}]))
+    end
+
+    test "the most specific rule wins" do
+      rules = [{MyApp.Live, :hide}, {{MyApp.Live, :handle_event}, []}]
+      assert [_] = args_of([call(["a"])], settings(rules: rules))
+
+      rules = [{{MyApp.Live, :handle_event}, []}, {{MyApp.Live, :handle_event, 1}, :hide}]
+      assert args_of([call(["a"])], settings(rules: rules)) == nil
+    end
+
+    test "kept parallel to the stacktrace, nil for frames with an arity" do
+      frames = [call(["a"]), {MyApp.Live, :other, 1, []}]
+      assert [_, nil] = args_of(frames, settings())
+      assert length(Truncate.exception_stacktrace(frames, nil)) == 2
+    end
+
+    test "a request stacktrace gets them too, and an arity-only one gets none" do
+      assert [_] = Truncate.stack_args([call(["a"])], [], settings())
+      assert Truncate.stack_args([{MyApp.Live, :f, 1, []}], [], settings()) == nil
     end
   end
 end

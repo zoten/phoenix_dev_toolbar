@@ -26,7 +26,7 @@ Store, built for IEx and agents:
   5 slowest, render totals, errors, and the events lost to the caps. The slowest
   queries, slowest callbacks and errors are briefs by default (no SQL, params,
   assigns changes, times or stacktrace; an error keeps its first frame as
-  `origin`; LiveView crashes carry their stacktrace in call order, cut after the last host frame plus one, and `origin` is their first host frame, ADR 07): `verbose: true` returns the full items, `queries/2`, `callbacks/2`
+  `origin`; LiveView crashes carry their stacktrace in call order, cut after the last host frame plus one, and `origin` is their first host frame, ADR 07; an error carries `stack_args`, the call arguments of its frames, only when the developer set `stack_args: [agents: true]`, ADR 03): `verbose: true` returns the full items, `queries/2`, `callbacks/2`
   and `errors/2` the detail.
 - A query's `origin` (queries, briefs, `unattributed.origins`) is the first stacktrace
   frame, else the task function (`initial_call`), else `task in View.callback "event"`

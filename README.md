@@ -97,6 +97,9 @@ config :phoenix_dev_toolbar,
   # Values of keys containing these words are shown as [REDACTED]; added to the
   # defaults (password, token, secret), which always apply
   redact: ["api_key"],
+  # Opt-in: call arguments of the crashing frame (a FunctionClauseError) in the
+  # panel, redacted and bounded. Agents (MCP, Report) get them only with agents: true
+  # stack_args: [bytes: 512, redact: ["card"], rules: [{MyApp.Payments, :hide}], agents: false],
   # Memory bounds (ADR 03), these are the defaults. A session is one request
   # or one LiveView process: a LiveView page has two.
   limits: [
@@ -246,6 +249,8 @@ plug PhoenixDevToolbar.Plug, nonce_assign: :csp_nonce # the default key; change 
 ```
 
 A `frame-src` or `child-src` that excludes your own origin still blocks the panel frame.
+
+**A crash stacktrace shows the arity, not the call's arguments.** Arguments can hold params, a socket or a conn, so they are off. `config :phoenix_dev_toolbar, stack_args: true` shows them in the panel, redacted by key name and cut per frame (a bare secret argument is not recognised: hide it with `rules: [{MyApp.Auth, :hide}]`). Agents never get them unless `stack_args: [agents: true]`.
 
 **The panel answers 403.** The host name you use is not allowed (a DNS rebinding guard). The panel answers IP addresses, `localhost` and your endpoint's url host; add other names with `allowed_hosts: ["myapp.test"]`.
 
