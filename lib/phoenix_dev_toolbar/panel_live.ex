@@ -50,7 +50,14 @@ defmodule PhoenixDevToolbar.PanelLive do
       socket
       |> assign(shell: shell, tabs: tabs, tab: default_tab(tabs), visible?: false)
       |> assign(panel_errors: %{}, quarantined: PageData.quarantined(shell.plugins))
-      |> assign(root: root, lookup: lookup, flush: nil, subscribed: [], stale: MapSet.new())
+      |> assign(
+        root: root,
+        lookup: lookup,
+        base: base(session),
+        flush: nil,
+        subscribed: [],
+        stale: MapSet.new()
+      )
       # What tabs need to act on host processes (ProcessActions, ADR 10): the
       # client's address (ClientPolicy) and this panel's own processes (Protected).
       |> assign(:monitors, %{})
@@ -107,7 +114,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   def handle_event("copy_markdown", _params, socket) do
     root = socket.assigns.page.root
 
-    {:noreply, push_event(socket, "pdt:markdown", markdown_data(root))}
+    {:noreply, push_event(socket, "pdt:markdown", markdown_data(root, socket.assigns.base))}
   end
 
   # From the PdtPanel hook: a client event the loader forwarded (untrusted
@@ -418,10 +425,15 @@ defmodule PhoenixDevToolbar.PanelLive do
   # form's data-pdt-page is absent too, so the hook shows it.
   @expired %{error: "the page expired, reload it"}
 
-  defp markdown_data(nil), do: @expired
+  defp markdown_data(nil, _base), do: @expired
 
-  defp markdown_data(root) do
-    case Report.markdown(root) do
+  # The footer links to the page in the panel: absolute when the plug gave the
+  # request's base URL (always, in a real host), else a link relative to the
+  # panel's own URL.
+  defp markdown_data(root, base) do
+    panel_url = (base && base <> "/panel?sid=" <> root) || "panel?sid=" <> root
+
+    case Report.markdown(root, panel_url: panel_url) do
       markdown when is_binary(markdown) -> %{text: markdown, page: root}
       nil -> Map.put(@expired, :page, root)
     end
@@ -443,6 +455,9 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   # How the plug resolved the page (see `PhoenixDevToolbar.Plug.panel_session/2`),
   # so the empty state can say why there is none. Never an atom from the session.
+  defp base(%{"pdt_base" => base}) when is_binary(base), do: base
+  defp base(_session), do: nil
+
   defp lookup(%{"pdt_lookup" => "path", "pdt_path" => path}) when is_binary(path),
     do: {:path, path}
 

@@ -455,14 +455,14 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       result = call!("compare_pages", %{"before" => before.sid, "after" => after_.sid})
 
       assert %{
-               "before" => %{"sid" => b},
-               "after" => %{"sid" => a},
+               "before" => %{"sid" => b, "panel_url" => before_url},
+               "after" => %{"sid" => a, "panel_url" => after_url},
                "queries" => %{"delta" => %{"count" => -4}},
                "n_plus_one" => %{"fixed" => [%{"sql" => @n1}], "new" => []},
-               "errors" => %{"fixed" => [%{"message" => message}], "new" => []},
-               "before_panel_url" => before_url,
-               "after_panel_url" => after_url
+               "errors" => %{"fixed" => [%{"message" => message}], "new" => []}
              } = result
+
+      refute Map.has_key?(result, "before_panel_url")
 
       assert {b, a} == {before.sid, after_.sid}
       assert message =~ "boom"
@@ -538,7 +538,7 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       mount = session(:live_view, path: "/posts", parent: req.sid, started_at: @t0 + 1)
       after_ = session(:request, path: "/posts", started_at: @t0 + 5)
 
-      assert %{"before" => %{"sid" => sid}, "before_panel_url" => url} =
+      assert %{"before" => %{"sid" => sid, "panel_url" => url}} =
                call!("compare_pages", %{"before" => mount.sid, "after" => after_.sid})
 
       assert sid == req.sid

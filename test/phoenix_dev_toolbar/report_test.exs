@@ -555,6 +555,19 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert Report.markdown("gone") == nil
     end
 
+    test "panel_url: ends with the sid and panel link footer, absent without it" do
+      s = session(:request, path: "/users")
+
+      refute Report.markdown(s.sid) =~ "panel:"
+
+      md = Report.markdown(s.sid, panel_url: "http://h/__pdt/panel?sid=" <> s.sid)
+
+      assert String.ends_with?(
+               md,
+               "\n---\nsid `#{s.sid}`, panel: http://h/__pdt/panel?sid=#{s.sid}\n"
+             )
+    end
+
     test "renders the sections of a page" do
       s = session(:live_view, path: "/users", view: DemoWeb.PageLive)
       request(s)

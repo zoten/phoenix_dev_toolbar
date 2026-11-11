@@ -169,7 +169,11 @@ defmodule PhoenixDevToolbar.Mcp.Endpoint do
       {500, @internal_error}
   end
 
-  defp base_url(conn, base_path) do
+  @doc false
+  # Absolute URL of the toolbar's own path as the request reached it (the MCP
+  # `panel_url`s and the panel's Markdown footer).
+  @spec base_url(Plug.Conn.t(), String.t()) :: String.t()
+  def base_url(conn, base_path) do
     "#{conn.scheme}://#{host_literal(conn.host)}#{port_suffix(conn.scheme, conn.port)}#{base_path}"
   end
 

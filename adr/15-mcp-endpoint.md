@@ -94,8 +94,8 @@ the default resolve to the request too. `list_pages` with both `path` and
 | `page_errors` | `sid`, `path`, `limit` (1..100, 20) | `sid`, `panel_url`, `total`, `returned`, `errors` |
 | `recent_errors` | `since` (a captured sid: errors after that page started, never its own sessions; or ISO 8601 time; same parsing and errors as `list_pages`), `limit` (1..100, 20) | `total`, `returned`, `errors` (`Report.recent_errors/1`, newest first), each with `page_sid` (the root: a connected mount reads as its request) and a `panel_url` to that page |
 | `page_report` | `sid`, `path` | `sid`, `panel_url`, `markdown` (`Report.markdown/2`) as `structuredContent`; the text block is the Markdown itself, not JSON |
-| `page_assigns_shape` | `sid`, `path` | `sid`, `view`, `live_view_sid` and `live_view_path` (the LiveView actually read: live navigation can make it a later one than the page's path), `panel_url`, `total_words`, `omitted`, `assigns` (at most 100, largest first, by `:erts_debug.flat_size/1` words of the untruncated value): `key` (inspect string), `type` (`list`, `map`, `struct Mod`, `binary`, ...), `length` (lists and maps), `words`, `stream?`. No values; each stream is its own entry, and a stream's words are what the server holds (its items live in the client). The LiveView is the page's newest one (a request page: its connected mount); no LiveView, a dead owner or a LiveView that is gone is a tool error saying the page must be open in a browser |
-| `compare_pages` | `before` (a captured sid, required), `after` (a captured sid) or `path` (the newest page at that path started after `before`; default: `before`'s path), not both | `Report.compare/3` (a connected mount reads as its request; `warning` when the sides differ in kind, session count or path) plus `before_panel_url` and `after_panel_url`; no page after `before` is a tool error asking to reload the page, and an `after` older than `before` is a tool error |
+| `page_assigns_shape` | `sid`, `path` | `sid`, `view`, `live_view_sid` and `live_view_path` (the LiveView actually read: live navigation can make it a later one than the page's path), `panel_url`, `total_words`, `omitted`, `assigns` (at most 100, largest first, by `:erts_debug.flat_size/1` words of the untruncated value): `key` (inspect string), `type` (`list`, `map`, `struct Mod`, `binary`, ...), `length` (lists and maps), `words`, `stream?`. No values; each stream is its own entry, and a stream's words are what the server holds (its items live in the client). The LiveView is the page's newest one (a request page: its connected mount). Without `sid`, a newest capture whose LiveView is not alive (a dead render, a curl, a closed tab) yields to the newest page at the same path with a live LiveView, and `note` names both sids. `warning` when the LiveView read has another path than the page (live navigation). Tool errors: "the page has no LiveView" (a dead render only) is told apart from "the LiveView is gone" (tab closed or navigated away: open the page in a browser) |
+| `compare_pages` | `before` (a captured sid, required), `after` (a captured sid) or `path` (the newest page at that path started after `before`; default: `before`'s path), not both | `Report.compare/3` (a connected mount reads as its request; `warning` when the sides differ in kind, session count or path), each side with its `panel_url` (`before.panel_url`, `after.panel_url`); no page after `before` is a tool error asking to reload the page, and an `after` older than `before` is a tool error |
 
 `panel_url` is absolute, built from the request's scheme, host and port (the
 port left out for 80 and 443): `http://localhost:4000/__pdt/panel?sid=...`, so the agent can hand it to the
@@ -104,7 +104,9 @@ developer. `path` and `path_prefix` are at most 2048 bytes.
 Results come as `structuredContent` and as the same JSON in a text block, except
 `page_report`, whose text block is its Markdown (ending in a footer with the sid and
 the `panel_url`, also in `markdown`, so a 2025-03-26 client, which has no
-`structuredContent`, and a pasted report keep the link). Keys
+`structuredContent`, and a pasted report keep the link). The footer is
+`Report.markdown/2` with `panel_url:` (ADR 13): the panel's "Copy as Markdown"
+passes an absolute link built from the panel request's base URL. Keys
 and values follow `Report` (ADR 13) through one JSON normalizer: string keys,
 modules and pids as `inspect/1` strings, timestamps in ISO 8601. Invalid
 arguments and a missing page are tool errors (`isError: true`) whose text says
@@ -136,12 +138,11 @@ not a breaking change, renaming or removing is (a CHANGELOG line).
 
 ## Open limits
 
-- `page_assigns_shape` reads the LiveView live (`Phoenix.LiveView.Debug.socket/1`, shared with the panel's Assigns snapshot, ADR 07): it needs the page open, copies the LiveView's assigns into a task of the request (large assigns are briefly held twice) and is a tool error after 2 s (a busy LiveView). Nested LiveViews and components are not covered; the task, not the LiveView, does the size walk.
+- `page_assigns_shape` reads the LiveView live (`Phoenix.LiveView.Debug.socket/1`, shared with the panel's Assigns snapshot, ADR 07): it needs the page open, copies the LiveView's assigns into a reader process (large assigns are briefly held twice) and is a tool error after 2 s (a busy LiveView). The reader is spawned and monitored, never linked to the request process (a host `max_heap_size` kill of the reader is a `gone` tool error, not a 500), and is killed at the timeout. Nested LiveViews and components are not covered; the reader, not the LiveView, does the size walk.
 - `page_assigns_shape`: concurrent calls each copy the socket.
 - `page_assigns_shape`: the 2 s timeout is soft (`flat_size` on a huge term does not yield).
 - `page_assigns_shape`: `words` overstate data shared between assigns.
-- `page_assigns_shape`: a host `max_heap_size` can kill the copying task and with it the request (a 500).
-- `page_assigns_shape`: a closed newest tab hides an older open tab of the same path, for up to `ttl_ms` (closed sessions are no longer dropped on DOWN).
+- `page_assigns_shape`: `live?` (is the owner alive) and the read are two steps: a tab closed between them is a `gone` tool error.
 - `recent_errors` with a sid that expires between validation and read returns no errors instead of a tool error.
 - `compare_pages` without `after` can pick a live navigation back to the same path (no reload) as the after page; `warning` flags a kind or session count mismatch, not that case.
 - A dev server bound to a Unix socket has no peer address to match: only

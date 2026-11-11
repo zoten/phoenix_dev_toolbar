@@ -49,12 +49,15 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
   Without either, tools read the newest page.
 - To check a change: `page_summary`, note its `sid`, edit, reload the page,
   then `compare_pages` with `before: sid` (the newest capture of the same path
-  after it, or pass `after` or `path`): deltas, N+1 and errors fixed or new.
+  after it, or pass `after` or `path`): deltas, N+1 and errors fixed or new
+  (`before.panel_url` and `after.panel_url` link both pages).
 - `page_report` returns a page as Markdown (tables, SQL in fenced blocks): use it
   to paste a finding into a bug report or answer.
 - `page_assigns_shape` weighs the assigns of the page's LiveView (type, length,
   words, `stream?`, no values): look for big lists that should be streams. It
-  reads the LiveView live, so the page must be open in a browser.
+  reads the LiveView live, so the page must be open in a browser. Read
+  `live_view_sid`, `note` and `warning` in the result: they say which LiveView
+  was read when it is not the one you asked for (older capture, live navigation).
 - The `audit_page` prompt (argument `path`) runs the whole audit of one page:
   summary, N+1, slowest queries, errors, assigns shape, then a report.
 - `recent_errors` after a change: crashes in `handle_info` or in other tabs that

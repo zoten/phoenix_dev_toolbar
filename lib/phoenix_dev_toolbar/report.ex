@@ -421,17 +421,24 @@ defmodule PhoenixDevToolbar.Report do
   lists: the request line, query and callback totals, the N+1 findings, the
   slowest queries and callbacks, unattributed origins and errors. Empty
   sections are left out, table cells are escaped to one line, SQL that is long
-  or multi-line goes in a fenced block. Options: `children:`, `threshold:`.
+  or multi-line goes in a fenced block. Options: `children:`, `threshold:`,
+  `panel_url:` (a link to the page in the panel: the report ends with a footer
+  naming the page's sid and the link, so a pasted report leads back to it).
   """
   @spec markdown(target(), keyword()) :: String.t() | nil
   def markdown(target, opts \\ []) do
-    opts = Keyword.take(opts, [:children, :threshold])
+    summary_opts = Keyword.take(opts, [:children, :threshold])
 
-    case summary(target, Keyword.put(opts, :verbose, true)) do
+    case summary(target, Keyword.put(summary_opts, :verbose, true)) do
       nil -> nil
-      summary -> Markdown.render(summary)
+      summary -> summary |> Markdown.render() |> footer(summary, opts[:panel_url])
     end
   end
+
+  defp footer(markdown, _summary, nil), do: markdown
+
+  defp footer(markdown, %{sids: [sid | _]}, panel_url) when is_binary(panel_url),
+    do: markdown <> "\n---\nsid `#{sid}`, panel: #{panel_url}\n"
 
   @doc """
   Two pages side by side, for checking a change: what got faster, which N+1

@@ -24,7 +24,9 @@ The data lives in the dev server's VM (`mix phx.server` or `mix dev`, in dev).
   `page_n_plus_one`, `page_queries`, `page_callbacks` (`sort: "slowest"`) and
   `page_errors` for the details, `page_report` for a Markdown page to paste
   (`Report.markdown/2`), `page_assigns_shape` for big lists in assigns that
-  should be streams (live read: the page must be open). The `audit_page`
+  should be streams (live read: the page must be open; `live_view_sid`, `note`
+  and `warning` say which LiveView was read). `compare_pages` gives each side
+  its `panel_url` (`before.panel_url`, `after.panel_url`). The `audit_page`
   prompt (`path`) chains them for one page. Same keys as `Report`. No VM access needed.
 - With Tidewave: run the code below through `project_eval`.
 - With only a browser tool: skip the Elixir below and read the standalone

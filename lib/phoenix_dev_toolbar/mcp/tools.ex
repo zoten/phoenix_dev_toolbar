@@ -221,25 +221,37 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
 
   defp execute("page_report", args, opts) do
     with {:ok, sid} <- resolve(args) do
-      case Report.markdown(sid) do
+      url = panel_url(opts, sid)
+
+      case Report.markdown(sid, panel_url: url) do
         nil -> {:error, no_page()}
-        markdown -> {:ok, report(markdown, sid, panel_url(opts, sid))}
+        markdown -> {:ok, %{sid: sid, panel_url: url, markdown: markdown}}
       end
     end
   end
 
   # A live read of the host LiveView, in a task with a timeout (AssignsShape).
   defp execute("page_assigns_shape", args, opts) do
-    with {:ok, sid} <- resolve(args) do
+    with {:ok, requested} <- resolve(args) do
+      {sid, note} = live_page(requested, args)
+
       case AssignsShape.read(sid, Keyword.get(opts, :assigns_timeout, 2_000)) do
         {:ok, shape} ->
-          {:ok, Map.merge(shape, %{sid: sid, panel_url: panel_url(opts, sid)})}
+          result = Map.merge(shape, %{sid: sid, panel_url: panel_url(opts, sid)})
+          {:ok, result |> put_note(note) |> navigation_warning(session_path(sid))}
 
         {:error, :timeout} ->
           {:error, "Reading the assigns timed out: the LiveView is busy. Try again in a moment."}
 
-        {:error, _no_live_view_or_gone} ->
-          {:error, "The page must be open in a browser (assigns are read live)."}
+        {:error, :no_live_view} ->
+          {:error,
+           "The page has no LiveView (a dead render only, e.g. a controller page or a curl " <>
+             "capture): there are no assigns to read."}
+
+        {:error, :gone} ->
+          {:error,
+           "The LiveView is gone (tab closed or navigated away): open the page in a browser, " <>
+             "then call page_assigns_shape again (assigns are read live)."}
       end
     end
   end
@@ -306,6 +318,47 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
     end
   end
 
+  # Without an explicit sid, a newest capture that cannot be read (a curl, a dead
+  # render, a closed tab) yields to the newest page at the same path with a live
+  # LiveView, and the result says which sid it read.
+  defp live_page(requested, args) do
+    with nil <- Map.get(args, "sid"),
+         false <- AssignsShape.live?(requested),
+         {:ok, filter} <- path_filter(args),
+         %{} = live <- find_live(filter) do
+      {live.sid,
+       "The newest capture (#{requested}) has no live LiveView: read the page #{live.sid} instead."}
+    else
+      _no_alternative -> {requested, nil}
+    end
+  end
+
+  defp path_filter(args) do
+    with {:ok, path} <- string_arg(args, "path"), do: {:ok, PageLookup.filter(path: path)}
+  end
+
+  defp find_live(filter) do
+    filter
+    |> pages(50)
+    |> Enum.map(&%{sid: PageLookup.root(&1.sid)})
+    |> Enum.find(&AssignsShape.live?(&1.sid))
+  end
+
+  defp put_note(result, nil), do: result
+  defp put_note(result, note), do: Map.put(result, :note, note)
+
+  # Live navigation: the LiveView read belongs to another path than the page.
+  defp navigation_warning(%{live_view_path: lv_path} = result, page_path)
+       when is_binary(lv_path) and is_binary(page_path) and lv_path != page_path do
+    Map.put(
+      result,
+      :warning,
+      "The tab navigated to #{lv_path}: these assigns are that LiveView's, not #{page_path}'s."
+    )
+  end
+
+  defp navigation_warning(result, _page_path), do: result
+
   defp in_order(%{before: b, after: a} = comparison, opts) do
     case DateTime.compare(a.started_at, b.started_at) do
       :lt ->
@@ -315,9 +368,11 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
 
       _later ->
         {:ok,
-         comparison
-         |> Map.put(:before_panel_url, panel_url(opts, b.sid))
-         |> Map.put(:after_panel_url, panel_url(opts, a.sid))}
+         %{
+           comparison
+           | before: Map.put(b, :panel_url, panel_url(opts, b.sid)),
+             after: Map.put(a, :panel_url, panel_url(opts, a.sid))
+         }}
     end
   end
 
@@ -577,13 +632,6 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   defp no_page_at(path) do
     "No captured page at #{String.slice(path, 0, 200)}. list_pages shows the captured paths; " <>
       "a live patch keeps its LiveView's mount path. Captured data expires after 10 minutes."
-  end
-
-  # The footer is part of the Markdown: the text block is all a 2025-03-26 client
-  # gets (no structuredContent), and a pasted report links back to the panel.
-  defp report(markdown, sid, panel_url) do
-    footer = "\n---\nsid `#{sid}`, panel: #{panel_url}\n"
-    %{sid: sid, panel_url: panel_url, markdown: markdown <> footer}
   end
 
   defp panel_url(opts, sid), do: Keyword.get(opts, :base_url, "") <> "/panel?sid=" <> sid

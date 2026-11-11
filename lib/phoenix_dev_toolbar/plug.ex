@@ -284,7 +284,7 @@ defmodule PhoenixDevToolbar.Plug do
     |> Conn.put_private(:phoenix_dev_toolbar_panel, Map.take(opts, [:path]))
     |> Phoenix.Controller.put_root_layout(html: {PhoenixDevToolbar.Layouts, :root})
     |> Phoenix.LiveView.Controller.live_render(PhoenixDevToolbar.PanelLive,
-      session: panel_session(conn)
+      session: Map.put(panel_session(conn), "pdt_base", Mcp.Endpoint.base_url(conn, opts.path))
     )
     |> Conn.halt()
   end

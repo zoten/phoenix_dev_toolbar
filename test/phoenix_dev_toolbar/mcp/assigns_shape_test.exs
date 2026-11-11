@@ -12,7 +12,8 @@ defmodule PhoenixDevToolbar.Mcp.AssignsShapeTest do
   @endpoint DemoWeb.Endpoint
   @opts [base_url: "http://localhost:4000/__pdt"]
   @fast_opts Keyword.put(@opts, :assigns_timeout, 50)
-  @page_open "must be open in a browser"
+  @gone "LiveView is gone (tab closed or navigated away): open the page in a browser"
+  @no_live_view "has no LiveView (a dead render only"
 
   setup do
     Store.reset()
@@ -60,8 +61,11 @@ defmodule PhoenixDevToolbar.Mcp.AssignsShapeTest do
     assert %{"type" => "map"} = entry(result, ":odd")
     assert result["live_view_sid"] == live.sid
     assert result["live_view_path"] == "/shape"
+    refute Map.has_key?(result, "warning")
+  end
 
-    # An explicit connected mount sid reads as its page (ADR 13).
+  test "an explicit connected mount sid reads as its page (ADR 13)",
+       %{request: request, live: live} do
     by_mount = shape!(%{"sid" => live.sid})
     assert by_mount["sid"] == request.sid
     assert by_mount["live_view_sid"] == live.sid
@@ -74,7 +78,7 @@ defmodule PhoenixDevToolbar.Mcp.AssignsShapeTest do
     assert_receive {:DOWN, ^ref, :process, _pid, _reason}
 
     assert {:error, message} = Tools.call("page_assigns_shape", %{}, @opts)
-    assert message =~ @page_open
+    assert message =~ @gone
 
     Store.reset()
     only_request = session(:request, path: "/plain")
@@ -82,7 +86,41 @@ defmodule PhoenixDevToolbar.Mcp.AssignsShapeTest do
     assert {:error, message} =
              Tools.call("page_assigns_shape", %{"sid" => only_request.sid}, @opts)
 
-    assert message =~ @page_open
+    assert message =~ @no_live_view
+    refute message =~ "gone"
+  end
+
+  test "a newer dead render yields to an older capture of the path with a live LiveView",
+       %{request: request, live: live} do
+    newer = session(:request, path: "/shape", started_at: 1_800_000_000_000_000 + 100)
+
+    result = shape!(%{"path" => "/shape"})
+    assert result["sid"] == request.sid
+    assert result["live_view_sid"] == live.sid
+    assert result["note"] =~ newer.sid
+    assert result["note"] =~ request.sid
+
+    # An explicit sid is read as asked: no silent swap.
+    assert {:error, message} = Tools.call("page_assigns_shape", %{"sid" => newer.sid}, @opts)
+    assert message =~ @no_live_view
+
+    # No note when the newest page is the live one.
+    Store.reset()
+    {:ok, view, _html} = live_isolated(build_conn(), DemoWeb.ShapeLive)
+    only = session(:request, path: "/shape")
+    session(:live_view, parent: only.sid, owner: view.pid, path: "/shape")
+    refute Map.has_key?(shape!(%{"path" => "/shape"}), "note")
+  end
+
+  test "a newest dead render with only closed tabs behind it has no LiveView to read",
+       %{view: view} do
+    session(:request, path: "/shape", started_at: 1_800_000_000_000_000 + 100)
+    ref = Process.monitor(view.pid)
+    GenServer.stop(view.pid)
+    assert_receive {:DOWN, ^ref, :process, _pid, _reason}
+
+    assert {:error, message} = Tools.call("page_assigns_shape", %{"path" => "/shape"}, @opts)
+    assert message =~ @no_live_view
   end
 
   test "after live navigation the result names the LiveView actually read",
@@ -104,15 +142,22 @@ defmodule PhoenixDevToolbar.Mcp.AssignsShapeTest do
     assert result["sid"] == request.sid
     assert result["live_view_sid"] == navigated.sid
     assert result["live_view_path"] == "/shape/next"
+    assert result["warning"] =~ "navigated to /shape/next"
+    assert result["warning"] =~ "/shape"
   end
 
   test "a busy LiveView is a timeout tool error and keeps running", %{view: view} do
+    Process.flag(:trap_exit, true)
     send(view.pid, {:block, self()})
     assert_receive :blocked
 
     assert {:error, message} = Tools.call("page_assigns_shape", %{}, @fast_opts)
     assert message =~ "timed out"
     assert message =~ "busy"
+
+    # The reader is not linked to the caller and leaves nothing behind.
+    refute_received {:EXIT, _pid, _reason}
+    refute_received {:DOWN, _ref, :process, _pid, _reason}
 
     send(view.pid, :unblock)
     assert %{"assigns" => [_ | _]} = shape!(%{})

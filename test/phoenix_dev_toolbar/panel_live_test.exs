@@ -545,6 +545,9 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
       assert_push_event(view, "pdt:markdown", %{text: text, page: ^request})
       assert text =~ "# /users"
       assert text =~ "SELECT 1 FROM users"
+
+      assert text =~
+               ~r{\n---\nsid `#{request}`, panel: http://[^ ]+/__pdt/panel\?sid=#{request}\n\z}
     end
 
     test "a page that expired answers with an error, not a crash", %{conn: conn, request: request} do

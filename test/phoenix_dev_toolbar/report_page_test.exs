@@ -3,11 +3,13 @@ defmodule PhoenixDevToolbar.ReportPageTest do
   # its queries read back without a panel.
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
   import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Report
+  alias PhoenixDevToolbar.Store
 
   @endpoint DemoWeb.Endpoint
 
@@ -39,12 +41,85 @@ defmodule PhoenixDevToolbar.ReportPageTest do
     render_hook(host, "sqlite", %{"sql" => "SELECT name FROM users WHERE id = ?", "params" => [1]})
 
     expected = Report.summary(sid)
+    summary = mcp_call("page_summary", %{"path" => "/demo"})
 
+    assert summary["queries"]["count"] == expected.queries.count
+    assert summary["queries"]["count"] == 1
+    assert [^sid, live_sid] = summary["sids"]
+    assert live_sid in expected.sids
+    assert String.ends_with?(summary["panel_url"], "/__pdt/panel?sid=" <> sid)
+  end
+
+  test "compare_pages over HTTP: the page visited twice (dead render and connected mount)" do
+    {first, before_sid} = visit("/demo")
+    {second, after_sid} = visit("/demo")
+    assert before_sid != after_sid
+
+    render_hook(second, "sqlite", %{
+      "sql" => "SELECT name FROM users WHERE id = ?",
+      "params" => [1]
+    })
+
+    _ = render(first)
+
+    result = mcp_call("compare_pages", %{"before" => before_sid})
+
+    assert %{"sid" => ^before_sid, "panel_url" => before_url} = result["before"]
+    assert %{"sid" => ^after_sid, "panel_url" => after_url} = result["after"]
+    assert before_url =~ "/__pdt/panel?sid=" <> before_sid
+    assert after_url =~ "/__pdt/panel?sid=" <> after_sid
+    assert %{"delta" => %{"count" => 1}} = result["queries"]
+  end
+
+  test "recent_errors over HTTP after a failing event on a real LiveView" do
+    {:ok, view, sid} = boom_view()
+    Process.flag(:trap_exit, true)
+
+    capture_log(fn ->
+      catch_exit(render_hook(view, "strict", %{"ok" => false}))
+    end)
+
+    assert %{"errors" => errors} = mcp_call("recent_errors", %{})
+    assert %{"page_sid" => ^sid, "path" => "/demo/boom", "panel_url" => url} = hd(errors)
+    assert url =~ "/__pdt/panel?sid=" <> sid
+  end
+
+  test "page_assigns_shape over HTTP reads the connected LiveView through its owner pid" do
+    {host, sid} = visit("/demo")
+    assert [%{owner: owner}] = for(s <- Store.sessions(), s.kind == :live_view, do: s)
+    assert owner == host.pid
+
+    shape = mcp_call("page_assigns_shape", %{"sid" => sid})
+
+    assert shape["sid"] == sid
+    assert shape["view"] == "DemoWeb.PageLive"
+    assert shape["live_view_path"] == "/demo"
+    refute Map.has_key?(shape, "warning")
+    assert %{"key" => _key, "words" => _words} = hd(shape["assigns"])
+  end
+
+  test "page_report over HTTP ends with the sid and panel link" do
+    {_host, sid} = visit("/demo")
+
+    assert %{"markdown" => markdown, "panel_url" => url} =
+             mcp_call("page_report", %{"sid" => sid})
+
+    assert String.ends_with?(markdown, "sid `#{sid}`, panel: #{url}\n")
+  end
+
+  defp boom_view do
+    {conn, sid} = load_page("/demo/boom")
+    {:ok, view, _html} = live(conn)
+    {:ok, view, sid}
+  end
+
+  # A tool call through the real endpoint: the structured result.
+  defp mcp_call(name, arguments) do
     body = %{
       "jsonrpc" => "2.0",
       "id" => 1,
       "method" => "tools/call",
-      "params" => %{"name" => "page_summary", "arguments" => %{"path" => "/demo"}}
+      "params" => %{"name" => name, "arguments" => arguments}
     }
 
     conn =
@@ -53,13 +128,9 @@ defmodule PhoenixDevToolbar.ReportPageTest do
       |> Plug.Conn.put_req_header("mcp-protocol-version", "2025-06-18")
       |> post("/__pdt/mcp", Jason.encode!(body))
 
-    assert %{"result" => %{"isError" => false, "structuredContent" => summary}} =
+    assert %{"result" => %{"isError" => false, "structuredContent" => result}} =
              json_response(conn, 200)
 
-    assert summary["queries"]["count"] == expected.queries.count
-    assert summary["queries"]["count"] == 1
-    assert [^sid, live_sid] = summary["sids"]
-    assert live_sid in expected.sids
-    assert String.ends_with?(summary["panel_url"], "/__pdt/panel?sid=" <> sid)
+    result
   end
 end

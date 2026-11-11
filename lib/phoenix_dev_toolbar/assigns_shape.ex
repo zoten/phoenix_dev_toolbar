@@ -2,10 +2,10 @@ defmodule PhoenixDevToolbar.AssignsShape do
   @moduledoc false
   # What a LiveView's assigns weigh, without their values (ADR 15, MCP
   # `page_assigns_shape`). Runs in the caller's process only to wait: the socket
-  # copy and the `:erts_debug.flat_size/1` walks happen in a task that is killed
-  # at the timeout, never in the LiveView.
+  # copy and the `:erts_debug.flat_size/1` walks happen in an unlinked process
+  # that is killed at the timeout, never in the LiveView.
   #
-  # Cost: `Debug.socket/1` copies the LiveView's assigns into the task, so a
+  # Cost: `Debug.socket/1` copies the LiveView's assigns into that process, so a
   # large assign is briefly held twice (once there, once here) while it is read.
 
   alias Phoenix.LiveView.LiveStream
@@ -60,17 +60,48 @@ defmodule PhoenixDevToolbar.AssignsShape do
     ArgumentError -> nil
   end
 
-  defp read_owner(owner, timeout) do
-    task = Task.async(fn -> compute(owner) end)
-
-    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
-      {:ok, result} -> result
-      {:exit, _reason} -> {:error, :gone}
-      nil -> {:error, :timeout}
+  @doc """
+  True when the page `sid` has a LiveView whose owner process is alive: the
+  page can be read now. A LiveView of a closed tab is not.
+  """
+  @spec live?(String.t()) :: boolean()
+  def live?(sid) do
+    case live_view(sid) do
+      %{owner: owner} when is_pid(owner) -> Process.alive?(owner)
+      _none -> false
     end
   end
 
-  # The task body never raises into the linked caller.
+  # Not linked to the caller: a host `max_heap_size` kill of the reader must not
+  # take the request (or MCP) process with it, so it is a monitored spawn.
+  defp read_owner(owner, timeout) do
+    parent = self()
+    ref = make_ref()
+    {pid, monitor} = spawn_monitor(fn -> send(parent, {ref, compute(owner)}) end)
+
+    receive do
+      {^ref, result} ->
+        Process.demonitor(monitor, [:flush])
+        result
+
+      {:DOWN, ^monitor, :process, ^pid, _reason} ->
+        {:error, :gone}
+    after
+      timeout ->
+        Process.exit(pid, :kill)
+        Process.demonitor(monitor, [:flush])
+
+        receive do
+          {^ref, _late} -> :ok
+        after
+          0 -> :ok
+        end
+
+        {:error, :timeout}
+    end
+  end
+
+  # The reader never raises.
   defp compute(owner) do
     case LiveViewAssigns.fetch(owner) do
       {:ok, assigns} -> {:ok, shape(owner, assigns)}
