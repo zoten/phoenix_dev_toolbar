@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - `since` cursor on Report.sessions and list_pages (ADR 13, 15)
+- Report.compare and MCP compare_pages: before and after a change (ADR 13, 15)
 - Release bump also updates the install snippets of README.md and guides/agent-setup.md (ADR 06)
 
 ## [0.0.3] - 2026-11-11

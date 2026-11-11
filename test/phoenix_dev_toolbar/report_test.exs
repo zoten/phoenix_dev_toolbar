@@ -426,6 +426,85 @@ defmodule PhoenixDevToolbar.ReportTest do
     end
   end
 
+  describe "compare/3" do
+    @n1 "SELECT * FROM posts WHERE user_id = ?"
+
+    defp page(path, started_at, fun) do
+      s = session(:request, path: path, started_at: started_at)
+      fun.(s)
+      s
+    end
+
+    test "an N+1 fixed, its deltas, and an error fixed" do
+      before =
+        page("/posts", @t0, fn s ->
+          for _ <- 1..5, do: query(s, sql: @n1, span: 2, us: 100)
+          query(s, sql: "SELECT 1", span: 3, us: 50)
+          callback(s, :handle_event, error: "** (RuntimeError) boom", us: 10)
+        end)
+
+      after_ =
+        page("/posts", @t0 + 5, fn s ->
+          query(s, sql: "SELECT * FROM posts", span: 2, us: 40)
+          query(s, sql: "SELECT 1", span: 3, us: 50)
+        end)
+
+      assert %{
+               before: %{sid: b, path: "/posts", started_at: %DateTime{}},
+               after: %{sid: a, path: "/posts"},
+               queries: %{
+                 before: %{count: 6, total_us: 550},
+                 after: %{count: 2, total_us: 90},
+                 delta: %{count: -4, total_us: -460}
+               },
+               callbacks: %{delta: %{count: -1}},
+               renders: %{delta: %{count: 0, total_us: 0}},
+               unattributed: %{before: %{count: _}, after: %{count: _}, delta: %{count: _}},
+               n_plus_one: %{fixed: [%{sql: @n1, origin: origin}], new: [], still: 0},
+               errors: %{fixed: [%{source: :live_view, message: message}], new: []}
+             } = Report.compare(before.sid, after_.sid, threshold: 5)
+
+      assert {b, a} == {before.sid, after_.sid}
+      assert origin == "lib/app.ex:10: App.list/0"
+      assert message =~ "boom"
+    end
+
+    test "an N+1 and an error that appear are new, one that stays is still" do
+      before =
+        page("/posts", @t0, fn s ->
+          for _ <- 1..5, do: query(s, sql: @n1, span: 2)
+          callback(s, :handle_event, error: "same", us: 10)
+        end)
+
+      after_ =
+        page("/posts", @t0 + 5, fn s ->
+          for _ <- 1..5, do: query(s, sql: @n1, span: 2)
+          for _ <- 1..5, do: query(s, sql: "SELECT * FROM tags WHERE id = ?", span: 3)
+          callback(s, :handle_event, error: "same", us: 10)
+          callback(s, :handle_event, error: "fresh", us: 10)
+        end)
+
+      assert %{
+               n_plus_one: %{
+                 fixed: [],
+                 new: [%{sql: "SELECT * FROM tags WHERE id = ?"}],
+                 still: 1
+               },
+               errors: %{fixed: [], new: [%{message: "fresh"}]}
+             } = Report.compare(before.sid, after_.sid, threshold: 5)
+    end
+
+    test "takes session maps, and is nil when either side is gone" do
+      a = session(:request, path: "/a", started_at: @t0)
+      b = session(:request, path: "/a", started_at: @t0 + 1)
+
+      assert %{before: %{sid: sid}} = Report.compare(Report.latest(path: "/a"), a.sid)
+      assert sid == b.sid
+      assert Report.compare(a.sid, "gone") == nil
+      assert Report.compare("gone", a.sid) == nil
+    end
+  end
+
   test "reads nothing while the toolbar is disabled" do
     s = session(:request, path: "/users")
     query(s)

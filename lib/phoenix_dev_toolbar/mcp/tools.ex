@@ -88,6 +88,26 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
         "List a page's errors",
         "Failures of a page: request exceptions, failed callbacks and renders, failed queries.",
         Map.merge(page_props(), %{"limit" => int_prop("Maximum errors to return.", 1, 100, 20)})
+      ),
+      tool(
+        "compare_pages",
+        "Compare two captures of a page",
+        "Before and after a change: query, callback, render and unattributed count and time deltas, N+1 findings and errors fixed or new. Note a page's sid from page_summary, edit, reload the page, then call this with before: sid. The after page is the newest capture at that path started after before, unless after or path says otherwise.",
+        %{
+          "before" => %{
+            "type" => "string",
+            "description" => "Sid of the earlier capture (from list_pages or page_summary)."
+          },
+          "after" => %{
+            "type" => "string",
+            "description" => "Sid of the later capture. Not with path. Default: see path."
+          },
+          "path" => %{
+            "type" => "string",
+            "description" =>
+              "Exact request path: compare with its newest capture started after before. Default: before's own path."
+          }
+        }
       )
     ]
   end
@@ -172,6 +192,25 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
     end
   end
 
+  defp execute("compare_pages", args, opts) do
+    with {:ok, before_sid} <- sid_arg(args, "before", true),
+         {:ok, after_sid} <- sid_arg(args, "after", false),
+         {:ok, path} <- string_arg(args, "path"),
+         :ok <- after_xor_path(after_sid, path),
+         {:ok, after_sid} <- after_page(before_sid, after_sid, path) do
+      case Report.compare(before_sid, after_sid) do
+        nil ->
+          {:error, "A page expired before it could be compared. " <> @no_page_hint}
+
+        comparison ->
+          {:ok,
+           comparison
+           |> Map.put(:before_panel_url, panel_url(opts, before_sid))
+           |> Map.put(:after_panel_url, panel_url(opts, after_sid))}
+      end
+    end
+  end
+
   defp execute("page_queries", args, opts), do: rows("queries", &Report.queries/1, args, opts)
 
   defp execute("page_callbacks", args, opts),
@@ -202,6 +241,67 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
          "errors" => Enum.take(errors, limit)
        }}
     end
+  end
+
+  # A sid argument that must be well formed and still captured.
+  defp sid_arg(args, key, required?) do
+    case Map.get(args, key) do
+      nil when required? ->
+        {:error,
+         "#{key} is required: the sid of the earlier capture (page_summary or list_pages)."}
+
+      nil ->
+        {:ok, nil}
+
+      value when is_binary(value) ->
+        captured_sid(value, key)
+
+      _other ->
+        {:error, "#{key} must be a string"}
+    end
+  end
+
+  defp captured_sid(value, key) do
+    with true <- PageLookup.valid_sid?(value),
+         sid when is_binary(sid) <- existing(value) do
+      {:ok, sid}
+    else
+      _unusable ->
+        {:error,
+         "#{key}: no captured page with that sid (sessions are capped and expire after 10 minutes). " <>
+           "Capture the page again with page_summary."}
+    end
+  end
+
+  defp after_xor_path(after_sid, path) when is_binary(after_sid) and is_binary(path),
+    do: {:error, "Use after or path, not both."}
+
+  defp after_xor_path(_after_sid, _path), do: :ok
+
+  defp after_page(_before_sid, after_sid, _path) when is_binary(after_sid), do: {:ok, after_sid}
+
+  # The newest page at the path that started after `before`.
+  defp after_page(before_sid, nil, path) do
+    path = path || session_path(before_sid)
+
+    case pages(Keyword.merge(PageLookup.filter(path: path), since: before_sid), 1) do
+      [%{sid: sid}] -> {:ok, sid}
+      [] -> {:error, no_page_after(path)}
+    end
+  end
+
+  defp session_path(sid) do
+    case Store.session(sid) do
+      {:ok, session} -> session.path
+      :error -> nil
+    end
+  rescue
+    ArgumentError -> nil
+  end
+
+  defp no_page_after(path) do
+    "No page captured at #{String.slice(to_string(path), 0, 200)} after before. " <>
+      "Reload the page in the browser (or curl it with Accept: text/html) after your edit, then call compare_pages again."
   end
 
   # A sid, else an ISO 8601 timestamp.

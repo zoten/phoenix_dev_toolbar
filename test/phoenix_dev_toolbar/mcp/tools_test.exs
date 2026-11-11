@@ -28,11 +28,11 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
     message
   end
 
-  test "list/0 describes six read-only tools with strict schemas" do
+  test "list/0 describes seven read-only tools with strict schemas" do
     tools = Tools.list()
 
     assert Enum.map(tools, & &1["name"]) ==
-             ~w(list_pages page_summary page_queries page_callbacks page_n_plus_one page_errors)
+             ~w(list_pages page_summary page_queries page_callbacks page_n_plus_one page_errors compare_pages)
 
     for tool <- tools do
       assert tool["annotations"] == %{"readOnlyHint" => true}
@@ -316,6 +316,91 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
                call!("page_n_plus_one", %{"sid" => s.sid})
 
       assert count >= 5
+    end
+  end
+
+  describe "compare_pages" do
+    @n1 "SELECT * FROM posts WHERE user_id = ?"
+
+    defp slow_page(path, at) do
+      s = session(:request, path: path, started_at: at)
+      for _ <- 1..5, do: query(s, sql: @n1, span: 2)
+      callback(s, :handle_event, error: "boom", us: 10)
+      s
+    end
+
+    test "after: a sid compares two pages, with both panel urls" do
+      before = slow_page("/posts", @t0)
+      after_ = session(:request, path: "/posts", started_at: @t0 + 5)
+      query(after_, sql: "SELECT * FROM posts", span: 2)
+
+      result = call!("compare_pages", %{"before" => before.sid, "after" => after_.sid})
+
+      assert %{
+               "before" => %{"sid" => b},
+               "after" => %{"sid" => a},
+               "queries" => %{"delta" => %{"count" => -4}},
+               "n_plus_one" => %{"fixed" => [%{"sql" => @n1}], "new" => []},
+               "errors" => %{"fixed" => [%{"message" => message}], "new" => []},
+               "before_panel_url" => before_url,
+               "after_panel_url" => after_url
+             } = result
+
+      assert {b, a} == {before.sid, after_.sid}
+      assert message =~ "boom"
+      assert before_url == "http://localhost:4000/__pdt/panel?sid=" <> before.sid
+      assert after_url == "http://localhost:4000/__pdt/panel?sid=" <> after_.sid
+    end
+
+    test "without after it takes the newest page started after before, at before's path" do
+      before = slow_page("/posts", @t0)
+      _other = session(:request, path: "/other", started_at: @t0 + 2)
+      _older = session(:request, path: "/posts", started_at: @t0 + 3)
+      newest = session(:request, path: "/posts", started_at: @t0 + 4)
+      _mount = session(:live_view, path: "/posts", parent: newest.sid, started_at: @t0 + 5)
+
+      assert %{"after" => %{"sid" => sid}} = call!("compare_pages", %{"before" => before.sid})
+      assert sid == newest.sid
+    end
+
+    test "path picks the page after before at another path" do
+      before = slow_page("/posts", @t0)
+      other = session(:request, path: "/other", started_at: @t0 + 2)
+
+      assert %{"after" => %{"sid" => sid}} =
+               call!("compare_pages", %{"before" => before.sid, "path" => "/other"})
+
+      assert sid == other.sid
+    end
+
+    test "no page after before is a tool error telling to reload" do
+      before = slow_page("/posts", @t0)
+      _earlier = session(:request, path: "/posts", started_at: @t0 - 5)
+
+      assert call_error("compare_pages", %{"before" => before.sid}) =~ "Reload"
+    end
+
+    test "a missing, gone or malformed side is a tool error" do
+      before = slow_page("/posts", @t0)
+
+      assert call_error("compare_pages", %{}) =~ "before"
+      assert call_error("compare_pages", %{"before" => "gone"}) =~ "before"
+      assert call_error("compare_pages", %{"before" => "bad sid!"}) =~ "before"
+      assert call_error("compare_pages", %{"before" => 5}) =~ "before"
+      assert call_error("compare_pages", %{"before" => before.sid, "after" => "gone"}) =~ "after"
+    end
+
+    test "after and path together is a tool error" do
+      before = slow_page("/posts", @t0)
+
+      msg =
+        call_error("compare_pages", %{
+          "before" => before.sid,
+          "after" => before.sid,
+          "path" => "/posts"
+        })
+
+      assert msg =~ "after" and msg =~ "path"
     end
   end
 

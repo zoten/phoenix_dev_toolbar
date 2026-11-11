@@ -15,7 +15,10 @@ defmodule PhoenixDevToolbar.Mcp.Protocol do
 
   @instructions "Read-only access to what Phoenix Dev Toolbar captured in the running dev app: " <>
                   "list_pages, then page_summary, page_queries, page_callbacks, page_n_plus_one " <>
-                  "and page_errors for a page. Load the page first (a browser, or curl with " <>
+                  "and page_errors for a page. list_pages takes since (a sid or a time) for " <>
+                  "pages captured after an earlier call. To check a change: page_summary, note " <>
+                  "its sid, edit, reload the page, then compare_pages with before: sid. " <>
+                  "Load the page first (a browser, or curl with " <>
                   "Accept: text/html): only pages captured in the last 10 minutes are available."
 
   @type headers :: %{String.t() => String.t()}

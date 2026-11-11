@@ -47,6 +47,9 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
   `since` to get only the new pages), then `page_summary` with
   the page's `sid` or its `path` (compact; `verbose: true` for full items).
   Without either, tools read the newest page.
+- To check a change: `page_summary`, note its `sid`, edit, reload the page,
+  then `compare_pages` with `before: sid` (the newest capture of the same path
+  after it, or pass `after` or `path`): deltas, N+1 and errors fixed or new.
 - `page_queries`, `page_callbacks` (`sort: "slowest"`, `limit`),
   `page_n_plus_one`, `page_errors` for the details.
 - A "No page captured" error means the page was not loaded in the last 10

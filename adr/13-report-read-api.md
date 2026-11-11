@@ -30,6 +30,12 @@ Store, built for IEx and agents:
   assigns changes, times or stacktrace; an error keeps its first frame as
   `origin`; LiveView crashes carry their stacktrace in call order, cut after the last host frame plus one, and `origin` is their first host frame, ADR 07; an error carries `stack_args`, the call arguments of its frames, only when the developer set `stack_args: [agents: true]`, ADR 03): `verbose: true` returns the full items, `queries/2`, `callbacks/2`
   and `errors/2` the detail.
+- `compare/3` puts two targets side by side, built from two compact `summary/2`
+  calls (options pass through; nil when either side is gone): `queries`,
+  `callbacks`, `renders` and `unattributed` as `%{before, after, delta}` of
+  `count` and `total_us` (delta is after minus before), `n_plus_one` as
+  `%{fixed, new, still}` matched on SQL plus origin, `errors` as `%{fixed, new}`
+  matched on source plus message.
 - A query's `origin` (queries, briefs, `unattributed.origins`) is the first stacktrace
   frame, else the task function (`initial_call`), else `task in View.callback "event"`
   or `task in View` for a query run inside `Task.async` or `start_async` (ADR 08).

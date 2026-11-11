@@ -70,7 +70,9 @@ Check, in this order:
 `path: "/posts"`) and keep the session whose
 `started_at` follows your trigger. For a before/after check, remember the sid
 you measured, then use `Report.sessions(since: sid)` (over MCP, `list_pages`
-with `since`).
+with `since`). Over MCP the loop is: `page_summary`, note the sid, edit,
+reload, `compare_pages(before: sid)`; in Elixir, `Report.compare(before_sid,
+after_sid)` returns the same deltas.
 
 ## 4. Change the code, trigger again, compare
 

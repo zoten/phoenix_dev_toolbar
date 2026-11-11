@@ -266,6 +266,35 @@ defmodule PhoenixDevToolbar.Report do
           trimmed: non_neg_integer()
         }
 
+  @typedoc "Count and time of one kind of work, on one side of a `t:comparison/0`."
+  @type tally :: %{count: non_neg_integer(), total_us: non_neg_integer()}
+
+  @typedoc "The same work on both pages: `delta` is `after` minus `before`, so negative means less."
+  @type tally_change :: %{
+          before: tally(),
+          after: tally(),
+          delta: %{count: integer(), total_us: integer()}
+        }
+
+  @typedoc """
+  Two pages side by side (`compare/3`). `n_plus_one` matches findings on SQL
+  plus origin: `fixed` ones were only in `before`, `new` ones only in `after`,
+  `still` counts those in both. `errors` match on source plus message.
+  """
+  @type comparison :: %{
+          before: %{sid: sid(), path: String.t() | nil, started_at: DateTime.t()},
+          after: %{sid: sid(), path: String.t() | nil, started_at: DateTime.t()},
+          queries: tally_change(),
+          callbacks: tally_change(),
+          renders: tally_change(),
+          unattributed: tally_change(),
+          n_plus_one: %{fixed: [n_plus_one()], new: [n_plus_one()], still: non_neg_integer()},
+          errors: %{
+            fixed: [error_brief() | error()],
+            new: [error_brief() | error()]
+          }
+        }
+
   ## Sessions
 
   @doc """
@@ -339,6 +368,51 @@ defmodule PhoenixDevToolbar.Report do
           trimmed: sessions |> Enum.map(& &1.trimmed) |> Enum.sum()
         }
     end
+  end
+
+  @doc """
+  Two pages side by side, for checking a change: what got faster, which N+1
+  and errors were fixed, which are new. Built from two `summary/2` calls, so
+  `before` and `after` are targets and the options (`threshold:`, `children:`)
+  pass through. Nil when either page is gone.
+  """
+  @spec compare(target(), target(), keyword()) :: comparison() | nil
+  def compare(before_target, after_target, opts \\ []) do
+    with %{} = before_summary <- summary(before_target, opts),
+         %{} = after_summary <- summary(after_target, opts) do
+      b = before_summary
+      a = after_summary
+      {fixed, new, still} = diff(b.n_plus_one, a.n_plus_one, &{&1.sql, &1.origin})
+      {errors_fixed, errors_new, _still} = diff(b.errors, a.errors, &{&1.source, &1.message})
+
+      %{
+        before: side(b.session),
+        after: side(a.session),
+        queries: tally_change(b.queries, a.queries),
+        callbacks: tally_change(b.callbacks, a.callbacks),
+        renders: tally_change(b.renders, a.renders),
+        unattributed: tally_change(b.unattributed, a.unattributed),
+        n_plus_one: %{fixed: fixed, new: new, still: still},
+        errors: %{fixed: errors_fixed, new: errors_new}
+      }
+    end
+  end
+
+  defp side(session), do: Map.take(session, [:sid, :path, :started_at])
+
+  defp tally_change(before, after_) do
+    b = Map.take(before, [:count, :total_us])
+    a = Map.take(after_, [:count, :total_us])
+    %{before: b, after: a, delta: %{count: a.count - b.count, total_us: a.total_us - b.total_us}}
+  end
+
+  defp diff(before, after_, key) do
+    before_keys = MapSet.new(before, key)
+    after_keys = MapSet.new(after_, key)
+
+    {Enum.reject(before, &(key.(&1) in after_keys)),
+     Enum.reject(after_, &(key.(&1) in before_keys)),
+     MapSet.size(MapSet.intersection(before_keys, after_keys))}
   end
 
   @doc """
