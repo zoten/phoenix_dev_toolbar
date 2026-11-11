@@ -21,7 +21,7 @@ you are working on.
 - **Ecto tab**: every query with its params (values under sensitive key names are redacted, positional params are not: see `redact:`), timings (total, queue, query, decode) and origin, attributed to the request, the LiveView callback or the `Task` that ran it.
 - **N+1 detection**: the same query from the same origin repeated 5 times in one callback is flagged (the threshold is configurable).
 - **EXPLAIN**: one click on a SELECT, run in a transaction that is rolled back, never `EXPLAIN ANALYZE`.
-- **JSON export** of the page's queries, short or with EXPLAIN plans.
+- **JSON export** of the page's queries, short or with EXPLAIN plans, and **Copy as Markdown** of the whole page report, ready to paste into an issue or an agent chat.
 - **LiveView tab**: lifecycle timings (`mount`, `handle_params`, `handle_event`, `render`), assigns with a diff per event, an event log that includes client `phx:` events, and the component tree.
 - **Process tab**: memory, message queue, reductions and garbage collection of the page's LiveView, with links, monitors and nested LiveViews.
 - **System tab**: open any process by pid or name, read its info and stacktrace, walk its supervision and application trees, and list the top processes by memory, reductions or queue. Opt-in actions (`actions:` option): state read, kill, suspend, message peek and a message trace (OTP 27+).
