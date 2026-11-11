@@ -326,6 +326,62 @@ defmodule PhoenixDevToolbar.ReportTest do
     end
   end
 
+  describe "recent_errors/1" do
+    defp failing(kind, path, started_at, message, at) do
+      s = session(kind, path: path, started_at: started_at)
+      callback(s, :handle_info, error: message, at: at)
+      s
+    end
+
+    test "errors from every page, newest first, with the session sid and path" do
+      a = failing(:request, "/a", @t0, "first", @t0 + 10)
+      # A LiveView callback outside the page the agent would look at.
+      b = failing(:live_view, "/b", @t0 + 1, "from handle_info", @t0 + 30)
+      _c = session(:request, path: "/quiet", started_at: @t0 + 2)
+      query(a, result: {:error, "no such table"}, at: @t0 + 20)
+
+      assert [
+               %{sid: sid_b, path: "/b", message: "from handle_info", source: :live_view},
+               %{path: "/a", message: "no such table", source: :ecto},
+               %{sid: sid_a, path: "/a", message: "first"}
+             ] = Report.recent_errors()
+
+      assert {sid_a, sid_b} == {a.sid, b.sid}
+    end
+
+    test "since: a sid or a DateTime keeps errors that happened after it" do
+      a = failing(:request, "/a", @t0, "a", @t0)
+      _b = failing(:request, "/b", @t0 + 5, "b", @t0 + 6)
+      _c = failing(:request, "/c", @t0 + 9, "c", @t0 + 10)
+
+      messages = fn opts -> opts |> Report.recent_errors() |> Enum.map(& &1.message) end
+
+      assert ["c", "b"] == messages.(since: a.sid)
+      assert ["c"] == messages.(since: DateTime.from_unix!(@t0 + 6, :microsecond))
+      assert [] == messages.(since: "gone")
+      assert ["c", "b", "a"] == messages.(since: nil)
+    end
+
+    test "since: a sid keeps later errors of the cursor's own page" do
+      a = failing(:request, "/a", @t0, "early", @t0)
+      callback(a, :handle_event, error: "late", at: @t0 + 9)
+
+      assert ["late"] == Report.recent_errors(since: a.sid) |> Enum.map(& &1.message)
+    end
+
+    test "limit caps the list, default 20, nil is unlimited" do
+      for n <- 1..25, do: failing(:request, "/p#{n}", @t0 + n, "e#{n}", @t0 + n)
+
+      assert 20 == length(Report.recent_errors())
+      assert ["e25", "e24"] == Report.recent_errors(limit: 2) |> Enum.map(& &1.message)
+      assert 25 == length(Report.recent_errors(limit: nil))
+    end
+
+    test "an empty Store gives no errors" do
+      assert [] == Report.recent_errors()
+    end
+  end
+
   describe "summary/2" do
     test "one compact map per page" do
       root = session(:request, path: "/users")

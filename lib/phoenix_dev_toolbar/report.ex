@@ -219,6 +219,17 @@ defmodule PhoenixDevToolbar.Report do
           origin: String.t() | nil
         }
 
+  @typedoc "An `t:error_brief/0` with its `at` time and the `path` of its session, from `recent_errors/1`."
+  @type recent_error :: %{
+          seq: pos_integer(),
+          sid: sid(),
+          source: :request | :live_view | :ecto,
+          message: String.t(),
+          origin: String.t() | nil,
+          at: DateTime.t(),
+          path: String.t() | nil
+        }
+
   @typedoc "The dead render request: its route and response."
   @type request :: %{
           method: String.t() | nil,
@@ -570,6 +581,61 @@ defmodule PhoenixDevToolbar.Report do
   def errors(target, opts \\ []) do
     {sessions, events} = read(target, opts)
     errors_of(events, owners(events, sessions))
+  end
+
+  @doc """
+  The newest failures across every page the Store holds, newest first, as
+  `t:recent_error/0` items: the `t:error_brief/0` plus the session `path` and
+  the error's `at`. It sees LiveView callbacks (a `handle_info` crash, another
+  tab) that no page lookup would point at.
+
+  Options: `:since` (a sid: errors that happened after that session started,
+  including later ones on that page; a `DateTime`: errors after it; an unknown
+  sid or any other value gives `[]`) and `:limit` (default 20, `nil` for all).
+  Reads the events of at most the capped number of sessions the Store holds.
+  """
+  @spec recent_errors(keyword()) :: [recent_error()]
+  def recent_errors(opts \\ []) do
+    all = all_sessions()
+
+    case cursor_us(all, opts[:since]) do
+      :none ->
+        []
+
+      after_us ->
+        all
+        |> Enum.flat_map(&session_errors(&1, after_us))
+        |> Enum.sort_by(&{DateTime.to_unix(&1.at, :microsecond), &1.seq}, :desc)
+        |> limit(Keyword.get(opts, :limit, 20))
+        |> Enum.map(&recent_error/1)
+    end
+  end
+
+  defp cursor_us(_all, nil), do: 0
+  defp cursor_us(_all, %DateTime{} = cursor), do: DateTime.to_unix(cursor, :microsecond)
+
+  defp cursor_us(all, sid) when is_binary(sid) do
+    case Enum.find(all, &(&1.sid == sid)) do
+      %Session{started_at: us} -> us
+      nil -> :none
+    end
+  end
+
+  defp cursor_us(_all, _other), do: :none
+
+  defp session_errors(%Session{} = session, after_us) do
+    {_sessions, events} = read(session.sid, children: false)
+
+    events
+    |> errors_of(owners(events, [session]))
+    |> Enum.filter(&(DateTime.to_unix(&1.at, :microsecond) > after_us))
+    |> Enum.map(&Map.put(&1, :path, session.path))
+  end
+
+  defp recent_error(error) do
+    error
+    |> error_item(&Map.take/2)
+    |> Map.merge(Map.take(error, [:at, :path]))
   end
 
   ## Reading the Store

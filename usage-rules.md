@@ -50,6 +50,8 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
 - To check a change: `page_summary`, note its `sid`, edit, reload the page,
   then `compare_pages` with `before: sid` (the newest capture of the same path
   after it, or pass `after` or `path`): deltas, N+1 and errors fixed or new.
+- `recent_errors` after a change: crashes in `handle_info` or in other tabs that
+  the page lookups miss (`since` takes a sid or time, `limit`).
 - `page_queries`, `page_callbacks` (`sort: "slowest"`, `limit`),
   `page_n_plus_one`, `page_errors` for the details.
 - A "No page captured" error means the page was not loaded in the last 10

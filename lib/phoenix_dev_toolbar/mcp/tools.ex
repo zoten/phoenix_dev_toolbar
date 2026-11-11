@@ -90,6 +90,19 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
         Map.merge(page_props(), %{"limit" => int_prop("Maximum errors to return.", 1, 100, 20)})
       ),
       tool(
+        "recent_errors",
+        "List recent errors across pages",
+        "The newest failures across every captured page, newest first, each with its page path and panel_url. Catches crashes the page lookups miss: a handle_info crash, another browser tab. Check it after a change.",
+        %{
+          "since" => %{
+            "type" => "string",
+            "description" =>
+              "Only errors after this: a sid from an earlier list_pages (errors since that page started) or an ISO 8601 timestamp."
+          },
+          "limit" => int_prop("Maximum errors to return.", 1, 100, 20)
+        }
+      ),
+      tool(
         "compare_pages",
         "Compare two captures of a page",
         "Before and after a change: query, callback, render and unattributed count and time deltas, N+1 findings and errors fixed or new. Note a page's sid from page_summary, edit, reload the page, then call this with before: sid. The after page is the newest capture at that path started after before, unless after or path says otherwise.",
@@ -238,6 +251,39 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
          "errors" => Enum.take(errors, limit)
        }}
     end
+  end
+
+  defp execute("recent_errors", args, opts) do
+    with {:ok, since} <- since_arg(args),
+         {:ok, limit} <- int_arg(args, "limit", 20, 1, 100) do
+      all = recent_errors(since)
+
+      errors =
+        all
+        |> Enum.take(limit)
+        |> Enum.map(&Map.put(&1, :panel_url, panel_url(opts, page_sid(&1.sid))))
+
+      {:ok, %{"total" => length(all), "returned" => length(errors), "errors" => errors}}
+    end
+  end
+
+  # A Store that is restarting (its tables missing) holds no errors.
+  defp recent_errors(since) do
+    Report.recent_errors(Keyword.put(since, :limit, nil))
+  rescue
+    ArgumentError -> []
+  end
+
+  # A connected mount belongs to its request's page (see `reject_mounts/1`).
+  defp page_sid(sid) do
+    with {:ok, %{kind: :live_view, parent: parent}} when is_binary(parent) <- Store.session(sid),
+         {:ok, %{kind: :request}} <- Store.session(parent) do
+      parent
+    else
+      _own_page -> sid
+    end
+  rescue
+    ArgumentError -> sid
   end
 
   defp in_order(%{before: b, after: a} = comparison, opts) do

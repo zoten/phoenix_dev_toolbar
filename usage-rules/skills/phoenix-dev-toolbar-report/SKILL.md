@@ -80,7 +80,7 @@ Re-run steps 2 and 3 (code reloading applies the change on the next request)
 and compare: `compare_pages(before: sid)` over MCP, `Report.compare(before_sid,
 after_sid)` in Elixir (deltas, N+1 and errors fixed or new; mind its
 `warning`). Report the delta: "/posts: 23 queries (21 ms) ->
-3 queries (4 ms), N+1 on `comments` gone".
+3 queries (4 ms), N+1 on `comments` gone". Also check `recent_errors` (`Report.recent_errors(since: sid)`) after a change: it shows crashes in `handle_info` or other tabs that the page does not.
 
 ## Going deeper
 

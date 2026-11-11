@@ -28,11 +28,11 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
     message
   end
 
-  test "list/0 describes seven read-only tools with strict schemas" do
+  test "list/0 describes eight read-only tools with strict schemas" do
     tools = Tools.list()
 
     assert Enum.map(tools, & &1["name"]) ==
-             ~w(list_pages page_summary page_queries page_callbacks page_n_plus_one page_errors compare_pages)
+             ~w(list_pages page_summary page_queries page_callbacks page_n_plus_one page_errors recent_errors compare_pages)
 
     for tool <- tools do
       assert tool["annotations"] == %{"readOnlyHint" => true}
@@ -316,6 +316,61 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
                call!("page_n_plus_one", %{"sid" => s.sid})
 
       assert count >= 5
+    end
+  end
+
+  describe "recent_errors" do
+    defp failing(kind, path, started_at, message, opts \\ []) do
+      s = session(kind, Keyword.merge([path: path, started_at: started_at], opts))
+      callback(s, :handle_info, error: message, at: started_at)
+      s
+    end
+
+    test "errors across pages with total, returned and a panel_url per page" do
+      a = failing(:request, "/a", @t0, "boom a")
+      b = failing(:live_view, "/b", @t0 + 1, "boom b")
+
+      assert %{"total" => 2, "returned" => 2, "errors" => [first, second]} =
+               call!("recent_errors")
+
+      assert %{"message" => "boom b", "path" => "/b", "panel_url" => url_b} = first
+      assert %{"message" => "boom a", "panel_url" => url_a} = second
+      assert url_b == "http://localhost:4000/__pdt/panel?sid=" <> b.sid
+      assert url_a == "http://localhost:4000/__pdt/panel?sid=" <> a.sid
+    end
+
+    test "an error of a connected mount links to its request's page" do
+      req = session(:request, path: "/a", started_at: @t0)
+      mount = failing(:live_view, "/a", @t0 + 1, "in handle_info", parent: req.sid)
+
+      assert %{"errors" => [%{"sid" => sid, "panel_url" => url}]} = call!("recent_errors")
+      assert sid == mount.sid
+      assert url == "http://localhost:4000/__pdt/panel?sid=" <> req.sid
+    end
+
+    test "since takes a sid or a time, limit caps, bad values are tool errors" do
+      a = failing(:request, "/a", @t0, "a")
+      _b = failing(:request, "/b", @t0 + 5_000_000, "b")
+      _c = failing(:request, "/c", @t0 + 9_000_000, "c")
+
+      assert %{"errors" => [%{"message" => "c"}, %{"message" => "b"}]} =
+               call!("recent_errors", %{"since" => a.sid})
+
+      iso =
+        @t0 |> Kernel.+(5_000_000) |> DateTime.from_unix!(:microsecond) |> DateTime.to_iso8601()
+
+      assert %{"errors" => [%{"message" => "c"}]} = call!("recent_errors", %{"since" => iso})
+
+      assert %{"total" => 3, "returned" => 1, "errors" => [%{"message" => "c"}]} =
+               call!("recent_errors", %{"limit" => 1})
+
+      assert call_error("recent_errors", %{"limit" => 101}) =~ "limit"
+      assert call_error("recent_errors", %{"since" => "not a time"}) =~ "since"
+      assert call_error("recent_errors", %{"since" => 5}) =~ "since"
+    end
+
+    test "an empty Store gives an empty list" do
+      assert %{"total" => 0, "returned" => 0, "errors" => []} = call!("recent_errors")
     end
   end
 
