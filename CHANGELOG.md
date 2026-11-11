@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- README screenshots and demo GIF in `media/`, kept out of the Hex package (ADR 01)
+
 ## [0.0.4] - 2026-11-11
 
 - One page root rule and one `since` meaning, page_sid, compare path warning (ADR 13, 15)

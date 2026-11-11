@@ -9,7 +9,7 @@ you are working on.
 
 > Status: early development. 0.0.x releases may break between versions. See the [roadmap](https://github.com/zoten/phoenix_dev_toolbar/blob/main/docs/2026-11-05-roadmap.md).
 
-<!-- TODO(owner): add a screenshot or GIF recorded from `mix dev` -->
+![The toolbar docked at the bottom, flagging an N+1 query in the Ecto tab](https://raw.githubusercontent.com/zoten/phoenix_dev_toolbar/main/media/hero.png)
 
 > **Disclaimer:** this project is currently fully AI-coded and has not been reviewed
 > by a human yet. Use it at your own risk.
@@ -28,6 +28,65 @@ you are working on.
 - **Cluster and Eval plugins** (experimental, opt-in): connected nodes, and read queries or code evaluated on the node.
 - **Plugin API**: your own tabs and badges, with a [guide](https://hexdocs.pm/phoenix_dev_toolbar/writing-a-plugin.html).
 - **Docks and resize**: bottom, top, left or right, draggable size, collapse to a thin bar or hide to a pill. It follows LiveView live navigation.
+
+### Screenshots
+
+<details>
+<summary>A tour and every tab, recorded from <code>mix dev</code></summary>
+
+**A tour: N+1, EXPLAIN, a preload fix, event timings, the Process tab and the docks**
+
+![A tour: N+1, EXPLAIN, a preload fix, event timings, the Process tab and the docks](https://raw.githubusercontent.com/zoten/phoenix_dev_toolbar/main/media/toolbar-demo.gif)
+
+**Dark theme**
+
+![Dark theme](https://raw.githubusercontent.com/zoten/phoenix_dev_toolbar/main/media/hero-dark.png)
+
+**EXPLAIN and query details**
+
+![EXPLAIN and query details](https://raw.githubusercontent.com/zoten/phoenix_dev_toolbar/main/media/explain.png)
+
+**A failing query**
+
+![A failing query](https://raw.githubusercontent.com/zoten/phoenix_dev_toolbar/main/media/query-error.png)
+
+**LiveView profiler: a slow handle_event**
+
+![LiveView profiler: a slow handle_event](https://raw.githubusercontent.com/zoten/phoenix_dev_toolbar/main/media/liveview-profiler.png)
+
+**Assigns, redacted, with the last change highlighted**
+
+![Assigns, redacted, with the last change highlighted](https://raw.githubusercontent.com/zoten/phoenix_dev_toolbar/main/media/liveview-assigns.png)
+
+**LiveView event log**
+
+![LiveView event log](https://raw.githubusercontent.com/zoten/phoenix_dev_toolbar/main/media/liveview-events.png)
+
+**Component tree**
+
+![Component tree](https://raw.githubusercontent.com/zoten/phoenix_dev_toolbar/main/media/liveview-components.png)
+
+**Process tab under load**
+
+![Process tab under load](https://raw.githubusercontent.com/zoten/phoenix_dev_toolbar/main/media/process.png)
+
+**System tab: inspecting a process**
+
+![System tab: inspecting a process](https://raw.githubusercontent.com/zoten/phoenix_dev_toolbar/main/media/system.png)
+
+**Docked on the right**
+
+![Docked on the right](https://raw.githubusercontent.com/zoten/phoenix_dev_toolbar/main/media/dock-right.png)
+
+**Collapsed to a thin bar**
+
+![Collapsed to a thin bar](https://raw.githubusercontent.com/zoten/phoenix_dev_toolbar/main/media/collapsed.png)
+
+**Hidden to a corner badge**
+
+![Hidden to a corner badge](https://raw.githubusercontent.com/zoten/phoenix_dev_toolbar/main/media/hidden.png)
+
+</details>
 
 ## Requirements
 

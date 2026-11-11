@@ -40,6 +40,9 @@ Post-hoc review and remediation used to cost 3 to 7 times the feature build itse
   - Soft cap of about 500 lines per ADR: past it, split by subtopic
 - Plans live in `docs/` as dated files (`docs/YYYY-MM-DD-<topic>-plan.md`), one per phase or feature batch, each with a "Risks" section. The roadmap is [docs/2026-11-05-roadmap.md](./docs/2026-11-05-roadmap.md): tick phases there when they land
 - `CHANGELOG.md` is a short reminder for me, not release notes: one line per feature or fix (under ~100 chars), a noun phrase plus the ADR number, no explanations of behavior (those live in the ADR and commits). Group related fixes into one line; a feature batch adds 5 to 10 lines at most
+- Media (screenshots, GIFs) lives in `media/` and never reaches a host app's install: `media/` stays out of the Hex `package` `files` (`mix.exs`), and the README links it with absolute `https://raw.githubusercontent.com/zoten/phoenix_dev_toolbar/main/media/...` URLs (relative paths break on hexdocs)
+  - When building a user-visible feature, decide whether it deserves a screenshot: a new tab or view, or behavior a reader cannot picture from text. When changing a feature that has media, retake it in the same batch
+  - Capture from `mix dev` at 1440x900, toolbar docked at the bottom (unless the shot is about docks or collapse), harness fixture data only. Keep PNGs under ~300 KB and GIFs under ~5 MB; videos for posts stay out of the repo
 - Always use `mix precommit` alias when you are done with all changes and fix any pending issues
   - Alternatively use `mix compile --warnings-as-errors`, `mix test`, `mix credo --strict`, `mix dialyzer` and `mix docs --warnings-as-errors`
   - Never report `mix precommit` as passing unless the command fully completed with exit code 0
