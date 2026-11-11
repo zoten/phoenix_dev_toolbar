@@ -117,6 +117,16 @@ defmodule PhoenixDevToolbar.ReportTest do
                Enum.filter(Report.callbacks(request.sid), & &1.inferred)
     end
 
+    test "a failed query in a task has the query origin in errors" do
+      s = session(:live_view, view: DemoWeb.PageLive)
+      callback(s, :handle_event, event: "save", span: 3)
+      query(s, span: 3, caller?: true, stacktrace: [], result: {:error, "no such table"})
+
+      assert [%{source: :ecto, origin: origin}] = Report.errors(s.sid)
+      assert origin == ~s(task in DemoWeb.PageLive.handle_event "save")
+      assert [%{origin: ^origin}] = Report.queries(s.sid)
+    end
+
     test "an error brief origin is the first host frame the plugin stored" do
       s = session(:live_view, path: "/users")
 

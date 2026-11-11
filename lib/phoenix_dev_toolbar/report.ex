@@ -328,7 +328,7 @@ defmodule PhoenixDevToolbar.Report do
             slowest: callbacks |> slowest() |> Enum.map(&brief.(&1, @callback_brief))
           },
           renders: %{count: length(renders), total_us: total(renders)},
-          errors: events |> errors_of() |> Enum.map(&error_item(&1, brief)),
+          errors: events |> errors_of(owners) |> Enum.map(&error_item(&1, brief)),
           dropped: sessions |> Enum.map(& &1.dropped) |> Enum.sum(),
           trimmed: sessions |> Enum.map(& &1.trimmed) |> Enum.sum()
         }
@@ -369,8 +369,8 @@ defmodule PhoenixDevToolbar.Report do
   @doc "Every failure of `target`, oldest first. Option: `children:`."
   @spec errors(target(), keyword()) :: [error()]
   def errors(target, opts \\ []) do
-    {_sessions, events} = read(target, opts)
-    errors_of(events)
+    {sessions, events} = read(target, opts)
+    errors_of(events, owners(events, sessions))
   end
 
   ## Reading the Store
@@ -708,21 +708,24 @@ defmodule PhoenixDevToolbar.Report do
   defp duration(nil), do: nil
   defp duration(%Event{duration: duration}), do: duration
 
-  defp errors_of(events), do: Enum.flat_map(events, &error/1)
+  defp errors_of(events, owners), do: Enum.flat_map(events, &error(&1, owners))
 
-  defp error(%Event{plugin: :request, kind: :exception, data: data} = event),
-    do: [error(event, :request, data[:error], data[:stacktrace])]
+  defp error(%Event{plugin: :request, kind: :exception, data: data} = event, _owners),
+    do: [error(event, :request, data[:error], data[:stacktrace], event.data[:origin])]
 
-  defp error(%Event{plugin: :live_view, kind: kind, data: %{error: message}} = event)
+  defp error(%Event{plugin: :live_view, kind: kind, data: %{error: message}} = event, _owners)
        when kind in [:callback, :render] and is_binary(message),
-       do: [error(event, :live_view, message, event.data[:stacktrace])]
+       do: [error(event, :live_view, message, event.data[:stacktrace], event.data[:origin])]
 
-  defp error(%Event{plugin: :ecto, kind: :query, data: %{result: {:error, message}}} = event),
-    do: [error(event, :ecto, message, event.data[:stacktrace])]
+  defp error(
+         %Event{plugin: :ecto, kind: :query, data: %{result: {:error, message}}} = event,
+         owners
+       ),
+       do: [error(event, :ecto, message, event.data[:stacktrace], origin(event, owners))]
 
-  defp error(_event), do: []
+  defp error(_event, _owners), do: []
 
-  defp error(event, source, message, stacktrace) do
+  defp error(event, source, message, stacktrace, origin) do
     %{
       sid: event.sid,
       seq: event.seq,
@@ -730,7 +733,7 @@ defmodule PhoenixDevToolbar.Report do
       source: source,
       message: to_string(message),
       stacktrace: stacktrace || [],
-      origin: event.data[:origin] || List.first(stacktrace || [])
+      origin: origin || List.first(stacktrace || [])
     }
   end
 

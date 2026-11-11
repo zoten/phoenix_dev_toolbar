@@ -89,6 +89,8 @@ defmodule PhoenixDevToolbar.Collector do
     end
   rescue
     _ -> nil
+  catch
+    _kind, _reason -> nil
   end
 
   defp mix_roots do

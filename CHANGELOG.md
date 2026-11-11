@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Stack frames with call arguments print the arity only: no params or socket in stacktraces (ADR 03)
 - MCP docs: clients connect at agent start (`ECONNREFUSED`, `/mcp`), LAN and `${PHX_IP:-...}` URLs (ADR 15)
 - Query origin inside `Task.async` and `start_async`: app frame, task function or owning callback (ADR 08, 13)
 - Panel loads tab rows when the tab opens: mount 82 KB to 60 KB, new events 7.7 KB to 0.3 KB (ADR 04)

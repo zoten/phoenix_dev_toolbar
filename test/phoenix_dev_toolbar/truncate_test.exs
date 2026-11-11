@@ -13,6 +13,38 @@ defmodule PhoenixDevToolbar.TruncateTest do
     {result, later - before}
   end
 
+  describe "frames carrying call arguments" do
+    @args [
+      "save",
+      %{"user" => %{"password" => "hunter2"}},
+      %{blob: String.duplicate("x", 100_000)}
+    ]
+    @frame {DemoWeb.PageLive, :handle_event, @args, [file: ~c"lib/x.ex", line: 1]}
+
+    test "stacktrace, exception_stacktrace and exception_origin print the arity only" do
+      host? = fn module -> module == DemoWeb.PageLive end
+
+      lines = [
+        Truncate.stacktrace([@frame]),
+        Truncate.exception_stacktrace([@frame], host?),
+        [Truncate.exception_origin([@frame], host?)]
+      ]
+
+      for [line] <- lines do
+        assert line =~ "lib/x.ex:1: DemoWeb.PageLive.handle_event/3"
+        refute line =~ "["
+        refute line =~ "hunter2"
+      end
+    end
+
+    test "a formatted line is bounded" do
+      frame = {Mod, :f, 0, [file: String.to_charlist(String.duplicate("f", 5_000)), line: 1]}
+
+      assert [line] = Truncate.stacktrace([frame])
+      assert byte_size(line) <= 2_100
+    end
+  end
+
   describe "sql/1" do
     test "caps long SQL and marks it truncated" do
       sql = "SELECT " <> String.duplicate("a", 10_000)

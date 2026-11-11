@@ -356,5 +356,18 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
       assert message =~ "bad render"
       assert first =~ "DemoWeb.BoomLive.state/1"
     end
+
+    test "a FunctionClauseError prints the arity, never the call's params or socket" do
+      view = boom_view()
+      params = %{"user" => %{"password" => "hunter2", "bio" => String.duplicate("x", 50_000)}}
+      crash(fn -> render_hook(view, "strict", params) end)
+
+      assert [%{stacktrace: [first | _] = frames, origin: origin} = error] = boom_errors()
+      assert first =~ "DemoWeb.BoomLive.handle_event/3"
+      assert origin =~ "DemoWeb.BoomLive.handle_event/3"
+      refute inspect(error) =~ "hunter2"
+      assert frames |> Enum.map(&byte_size/1) |> Enum.sum() < 5_000
+      assert byte_size(origin) < 1_000
+    end
   end
 end

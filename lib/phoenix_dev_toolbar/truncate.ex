@@ -115,6 +115,10 @@ defmodule PhoenixDevToolbar.Truncate do
       iex> PhoenixDevToolbar.Truncate.stacktrace(nil)
       []
 
+      iex> frame = {MyApp.Live, :handle_event, ["save", %{"password" => "hunter2"}], []}
+      iex> PhoenixDevToolbar.Truncate.stacktrace([frame])
+      ["MyApp.Live.handle_event/2"]
+
   """
   @spec stacktrace(Exception.stacktrace() | nil, [module()]) :: [String.t()]
   def stacktrace(frames, skip \\ [])
@@ -128,7 +132,7 @@ defmodule PhoenixDevToolbar.Truncate do
     frames
     |> Stream.reject(&skipped_frame?(&1, skip))
     |> Enum.take(@frames)
-    |> Enum.map(&Exception.format_stacktrace_entry/1)
+    |> Enum.map(&format_frame/1)
   end
 
   @doc """
@@ -155,7 +159,7 @@ defmodule PhoenixDevToolbar.Truncate do
     |> Enum.reject(&skipped_frame?(&1, @own_frames))
     |> cut_after_host(host?)
     |> Enum.take(@frames)
-    |> Enum.map(&Exception.format_stacktrace_entry/1)
+    |> Enum.map(&format_frame/1)
   end
 
   @doc """
@@ -171,9 +175,17 @@ defmodule PhoenixDevToolbar.Truncate do
 
     case Enum.find(frames, &host_frame?(&1, host?)) || List.first(frames) do
       nil -> nil
-      frame -> Exception.format_stacktrace_entry(frame)
+      frame -> format_frame(frame)
     end
   end
+
+  # A `FunctionClauseError` (and some `:undef`) frame carries the call's
+  # arguments instead of the arity: formatting would inspect params and the
+  # whole socket or conn, unredacted. Print the arity only, and cap the line.
+  defp format_frame({module, fun, args, location}) when is_list(args),
+    do: format_frame({module, fun, length(args), location})
+
+  defp format_frame(frame), do: frame |> Exception.format_stacktrace_entry() |> string()
 
   defp cut_after_host(frames, nil), do: frames
 

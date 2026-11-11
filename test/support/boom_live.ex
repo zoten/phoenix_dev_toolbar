@@ -10,6 +10,10 @@ defmodule DemoWeb.BoomLive do
   @impl Phoenix.LiveView
   def handle_event("break", _params, socket), do: {:noreply, assign(socket, broken?: true)}
 
+  # No clause matches other params: a FunctionClauseError whose top frame
+  # carries the call's arguments (params and socket).
+  def handle_event("strict", %{"ok" => true}, socket), do: {:noreply, socket}
+
   @impl Phoenix.LiveView
   def render(assigns) do
     ~H"""
