@@ -57,6 +57,7 @@ Post-hoc review and remediation used to cost 3 to 7 times the feature build itse
 - Avoid big chained shell commands with multiline commit messages (can get stuck in quote prompts). Use short single commands per step or `git commit -F <tempfile>`
 - Before any commit, run `git status --short` and explicitly decide what to do with untracked files; do not accidentally absorb them into unrelated slices
 - Don't use hypens ("—") when creating content. Prefer ":" or other solutions that fit the content
+- This is a public repository: never write the maintainer's personal information (name, email, local paths, machine names) or the names of other projects, apps or clients outside this one into code, tests, comments, docs, ADRs, plans, CHANGELOG or commit messages. Use the fixtures (`dev.exs`, `fixtures/host_app`, `Demo*` modules) or generic wording ("a host app", "an agent") instead. The only exceptions are the license holder in `LICENSE` and the project's own repository URL
 
 ### Library guidelines
 

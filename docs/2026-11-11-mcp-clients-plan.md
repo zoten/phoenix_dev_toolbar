@@ -2,7 +2,7 @@
 
 ADR 15 is the source of truth once this lands; this plan records the intent.
 
-A dev server bound to a LAN address (Hajime's `run.sh` sets `PHX_IP` to the
+A dev server bound to a LAN address (a host app whose start script sets `PHX_IP` to the
 machine's LAN IP, so phones can reach it) is not listening on 127.0.0.1. An agent
 on the same laptop reaches `http://192.168.x.y:4000/__pdt/mcp`, its peer address
 is the laptop's own LAN address, and the loopback-only rule refuses it.
