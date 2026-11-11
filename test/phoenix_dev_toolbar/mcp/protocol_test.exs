@@ -236,6 +236,8 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
       refute text =~ "b\nc"
       assert text =~ "page_n_plus_one with sid set to that sid"
       assert text =~ "sort: \"slowest\""
+      assert text =~ "page_assigns_shape with path #{inspect(path)}"
+      assert text =~ "live_view_sid"
     end
 
     test "prompts/get accepts a 2048-byte path" do

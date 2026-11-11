@@ -112,6 +112,24 @@ defmodule PhoenixDevToolbar.Mcp.AssignsShapeTest do
     refute Map.has_key?(shape!(%{"path" => "/shape"}), "note")
   end
 
+  test "with no arguments the fallback stays on the newest page's path",
+       %{request: request, live: live} do
+    # The newest capture is a dead render of another path: a LiveView of /shape
+    # must not be read for it.
+    other = session(:request, path: "/other", started_at: 1_800_000_000_000_000 + 100)
+
+    assert {:error, message} = Tools.call("page_assigns_shape", %{}, @opts)
+    assert message =~ @no_live_view
+
+    # Same path: the fallback still applies.
+    newer = session(:request, path: "/shape", started_at: 1_800_000_000_000_000 + 200)
+    result = shape!(%{})
+    assert result["sid"] == request.sid
+    assert result["live_view_sid"] == live.sid
+    assert result["note"] =~ newer.sid
+    refute result["note"] =~ other.sid
+  end
+
   test "a newest dead render with only closed tabs behind it has no LiveView to read",
        %{view: view} do
     session(:request, path: "/shape", started_at: 1_800_000_000_000_000 + 100)
@@ -151,9 +169,13 @@ defmodule PhoenixDevToolbar.Mcp.AssignsShapeTest do
     send(view.pid, {:block, self()})
     assert_receive :blocked
 
+    {:messages, before} = Process.info(self(), :messages)
+
     assert {:error, message} = Tools.call("page_assigns_shape", %{}, @fast_opts)
     assert message =~ "timed out"
     assert message =~ "busy"
+    # The killed reader leaves nothing behind in the caller's mailbox.
+    assert {:messages, ^before} = Process.info(self(), :messages)
 
     # The reader is not linked to the caller and leaves nothing behind.
     refute_received {:EXIT, _pid, _reason}

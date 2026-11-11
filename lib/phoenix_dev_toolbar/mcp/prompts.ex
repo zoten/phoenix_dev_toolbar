@@ -61,7 +61,7 @@ defmodule PhoenixDevToolbar.Mcp.Prompts do
     2. Call page_n_plus_one with sid set to that sid: repeated queries that should be one query or a preload. Use the sid in every later call, so a reload in between does not switch captures.
     3. Call page_queries with sid set to that sid and sort: "slowest": the slowest queries and where they are called from.
     4. Call page_errors with sid set to that sid: failures during the page's requests and callbacks.
-    5. If the page is a LiveView, call page_assigns_shape with sid set to that sid (the page must be open in a browser): look for large lists that should be streams.
+    5. If the page is a LiveView, call page_assigns_shape with path #{quoted} (the page must be open in a browser; not the pinned sid, so a curl capture can fall back to the open tab) and read its note and live_view_sid to know what was read: look for large lists that should be streams.
 
     Then report the findings, most important first, each with the evidence (query, count, duration, assign name) and a proposed fix, and end with the panel_url so the developer can open the page in the toolbar.
 

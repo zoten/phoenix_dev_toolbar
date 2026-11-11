@@ -89,7 +89,12 @@ defmodule PhoenixDevToolbar.AssignsShape do
     after
       timeout ->
         Process.exit(pid, :kill)
-        Process.demonitor(monitor, [:flush])
+
+        # The DOWN arrives after any message the reader sent before dying, so the
+        # late result flush below cannot miss it.
+        receive do
+          {:DOWN, ^monitor, _type, _pid, _reason} -> :ok
+        end
 
         receive do
           {^ref, _late} -> :ok

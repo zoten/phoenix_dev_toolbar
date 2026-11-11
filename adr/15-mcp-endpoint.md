@@ -145,6 +145,7 @@ not a breaking change, renaming or removing is (a CHANGELOG line).
 - `page_assigns_shape`: `live?` (is the owner alive) and the read are two steps: a tab closed between them is a `gone` tool error.
 - `recent_errors` with a sid that expires between validation and read returns no errors instead of a tool error.
 - `compare_pages` without `after` can pick a live navigation back to the same path (no reload) as the after page; `warning` flags a kind or session count mismatch, not that case.
+- Behind a TLS-terminating proxy, `panel_url` and the Markdown footer use the transport scheme (`http`).
 - A dev server bound to a Unix socket has no peer address to match: only
   `clients: :any` lets its clients in.
 - Anything on this machine that relays to the dev server counts as this machine,

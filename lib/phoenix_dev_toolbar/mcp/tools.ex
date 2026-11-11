@@ -133,7 +133,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "page_assigns_shape",
         "Weigh a LiveView's assigns",
-        "The size of each assign of the page's LiveView, largest first, with no values: type, length, words (memory) and stream?. Look for big lists that should be streams. A stream's words are what the server holds; its items live in the client. Read live: the page must be open in a browser. live_view_sid and live_view_path name the LiveView read, which may be a later one than the page's path after live navigation.",
+        "The size of each assign of the page's LiveView, largest first, with no values: type, length, words (memory) and stream?. Look for big lists that should be streams. A stream's words are what the server holds; its items live in the client. Read live: the page must be open in a browser. live_view_sid and live_view_path name the LiveView read, which may be a later one than the page's path after live navigation. note says the newest capture had no live LiveView and an open tab of the same path was read instead; warning says the tab navigated away from the page's path.",
         page_props()
       )
     ]
@@ -324,7 +324,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   defp live_page(requested, args) do
     with nil <- Map.get(args, "sid"),
          false <- AssignsShape.live?(requested),
-         {:ok, filter} <- path_filter(args),
+         {:ok, filter} <- path_filter(args, requested),
          %{} = live <- find_live(filter) do
       {live.sid,
        "The newest capture (#{requested}) has no live LiveView: read the page #{live.sid} instead."}
@@ -333,8 +333,10 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
     end
   end
 
-  defp path_filter(args) do
-    with {:ok, path} <- string_arg(args, "path"), do: {:ok, PageLookup.filter(path: path)}
+  # The requested path, else the newest page's own path: never another page.
+  defp path_filter(args, requested) do
+    with {:ok, path} <- string_arg(args, "path"),
+         do: {:ok, PageLookup.filter(path: path || session_path(requested))}
   end
 
   defp find_live(filter) do
