@@ -115,6 +115,18 @@ every tool call fails with `ECONNREFUSED` until the client reconnects, even once
 server is up. Tell the user to start the dev server first, or to reconnect after
 starting it (and after each server restart).
 
+Besides the per-page tools (`page_summary`, `page_queries`, `page_n_plus_one`,
+`page_errors`, `page_assigns_shape`), the server has `page_report` (a page as
+Markdown) and an `audit_page` prompt (`path`) that runs a whole audit of one page.
+
+The before/after loop for checking a change:
+
+1. `page_summary` for the page, and note its `sid`.
+2. Change the code and reload the page in the browser.
+3. `compare_pages` with `before: sid`: query and time deltas, N+1 and errors fixed
+   or new.
+4. `recent_errors` with `since: sid`: crashes the page lookups miss.
+
 If the dev server listens on a LAN address (check the endpoint's `http: [ip: ...]`
 in `config/dev.exs`), use that address in the URL. When it comes from an environment
 variable such as `PHX_IP`, write the URL as

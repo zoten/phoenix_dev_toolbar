@@ -157,7 +157,7 @@ Agents that drive a browser can open the panel in a tab of its own: `/__pdt/pane
 
 ### MCP server
 
-The toolbar is also an MCP server, at `http://localhost:4000/__pdt/mcp` while your dev server runs. Its read-only tools (`list_pages`, `page_summary`, `page_queries`, `page_callbacks`, `page_n_plus_one`, `page_errors`) return the same data as `Report`. It is on whenever the toolbar is, answers only clients on this machine (no proxy), and `config :phoenix_dev_toolbar, mcp: false` turns it off.
+The toolbar is also an MCP server, at `http://localhost:4000/__pdt/mcp` while your dev server runs. Its read-only tools (`list_pages`, `page_summary`, `page_queries`, `page_callbacks`, `page_n_plus_one`, `page_errors`, `recent_errors`, `page_report`, `page_assigns_shape`, `compare_pages`) return the same data as `Report`, and the `audit_page` prompt runs a whole audit of one page. It is on whenever the toolbar is, answers only clients on this machine (no proxy), and `config :phoenix_dev_toolbar, mcp: false` turns it off.
 
 Check it with a ping, which answers a JSON result:
 
