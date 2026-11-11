@@ -47,11 +47,21 @@ Store, built for IEx and agents:
   frame, else the task function (`initial_call`), else `task in View.callback "event"`
   or `task in View` for a query run inside `Task.async` or `start_async` (ADR 08).
   `queries/2`, `callbacks/2`, `n_plus_one/2` and `errors/2` return the full lists.
+- Each query also carries `caller` (the web-layer frame above the origin, ADR 08),
+  `noise` (framework queries, ADR 08) and where it ran: `callback` and `event` of the
+  `:callback` (else `:render`) event owning its `{sid, span}`; for a LiveView
+  session no event owns, `:handle_info` or `:async` as the inferred entries below;
+  for a request, `:request` (the plug pipeline, a controller). Briefs keep
+  `callback` and `caller`. `summary.queries` counts, times and lists the queries
+  without noise and adds `noise: %{count, total_us}`, so `compare/3` deltas ignore
+  it too; `markdown/2` adds one "framework queries not counted" sentence, and
+  `Callback` and `Caller` columns to the slowest queries (the caller only where it
+  differs from the origin).
 - LiveView emits no telemetry for `handle_info`, so a query of a `:live_view`
   session whose `{sid, span}` no `:callback` or `:render` event owns is
   unattributed (`handle_info`, a PubSub reload, or a task). `summary/2` reports
   `unattributed: %{count, total_us, origins}` (top 5 origins by time; compact
-  and verbose alike), and `callbacks/2` adds inferred entries (`inferred: true`, no duration, `origin` of
+  and verbose alike), and `callbacks/2` adds inferred entries (`inferred: true`, `duration_us: nil`, never 0, so a sum or sort must default it; `origin` of
   their first query): one per `{sid, span}` and source, `callback: :handle_info`
   for queries run by the LiveView process, `callback: :async` for task queries
   (`assign_async`, `start_async`, `Task.start`, those with `caller?`), split
@@ -70,7 +80,11 @@ Store, built for IEx and agents:
 - Callbacks carry the number and time of the queries run in them, matched by
   `{sid, span}` (ADR 02), tasks included through `$callers`.
 - N+1 groups and the `n_plus_one?` flag reuse the Ecto tab's fold (ADR 08),
-  with the Ecto plugin's configured threshold unless `threshold:` is given.
+  with the Ecto plugin's configured threshold unless `threshold:` is given. A group
+  adds `ran_in` (its last 10 spans, newest first, as `sid`, `span`, `seq` of the
+  owning callback or nil, `view`, `component`, `callback`, `event` and the `count`
+  reached there) and `callers` (the distinct `caller` frames of its queries in those
+  spans with counts, top 5). `markdown/2` shows both as N+1 columns.
 - Reads run in the caller's process and touch nothing else: no GenServer call,
   no telemetry handler change. While the toolbar is disabled, or the Store is
   not running, every function returns `[]` or `nil`.

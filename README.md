@@ -18,8 +18,8 @@ you are working on.
 
 - **Summary bar**: one badge per tab (query count, N+1 flag, LiveView callbacks, dropped events), always visible on the page.
 - **Request tab**: the routed request, its route, status and duration, and exceptions with the stacktrace.
-- **Ecto tab**: every query with its params (values under sensitive key names are redacted, positional params are not: see `redact:`), timings (total, queue, query, decode) and origin, attributed to the request, the LiveView callback or the `Task` that ran it.
-- **N+1 detection**: the same query from the same origin repeated 5 times in one callback is flagged (the threshold is configurable).
+- **Ecto tab**: every query with its params (values under sensitive key names are redacted, positional params are not: see `redact:`), timings (total, queue, query, decode) and origin, attributed to the request, the LiveView callback or the `Task` that ran it. Framework queries that run on every dev request (`Phoenix.Ecto.CheckRepoStatus`) are dimmed and left out of the count.
+- **N+1 detection**: the same query from the same origin repeated 5 times in one callback is flagged (the threshold is configurable). Through `Report` and MCP, each group names the callbacks it repeated in and its callers: the LiveView, controller or `on_mount` frame above the Repo call.
 - **EXPLAIN**: one click on a SELECT, run in a transaction that is rolled back, never `EXPLAIN ANALYZE`.
 - **JSON export** of the page's queries, short or with EXPLAIN plans, and **Copy as Markdown** of the whole page report, ready to paste into an issue or an agent chat.
 - **LiveView tab**: lifecycle timings (`mount`, `handle_params`, `handle_event`, `render`), assigns with a diff per event, an event log that includes client `phx:` events, and the component tree.
@@ -258,6 +258,8 @@ url = "http://localhost:4000/__pdt/mcp"
 Claude Code asks once to approve a server from the project's `.mcp.json`; `/mcp` shows whether it is connected. Older Codex releases also need `experimental_use_rmcp_client = true` for HTTP servers.
 
 MCP clients connect when the agent starts. If the dev server was not running then, the tools fail with a refused connection (`ECONNREFUSED`) until the client reconnects, even after the server is up: start the dev server first, or reconnect it from the agent (`/mcp` in Claude Code). A dev server restart drops the connection the same way.
+
+After upgrading `phoenix_dev_toolbar`, reconnect the MCP client (`/mcp` in Claude Code): a client keeps the tool list it read when it connected, so new tools and fields stay hidden until then. The server cannot push a tool list change (it answers POST only); `serverInfo.version` in its `initialize` reply names the release.
 
 If the dev server listens on a LAN address (so phones can reach it), use that address in the URL (`http://192.168.1.20:4000/__pdt/mcp`): the agent on the same machine is still accepted. When the address comes from an environment variable (say `PHX_IP`, read by your endpoint's `http: [ip: ...]` config), Claude Code expands it in `.mcp.json`, with a default for everyone else:
 

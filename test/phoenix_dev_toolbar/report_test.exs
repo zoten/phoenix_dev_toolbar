@@ -211,6 +211,61 @@ defmodule PhoenixDevToolbar.ReportTest do
     end
   end
 
+  describe "query place, caller and noise" do
+    @web_stack [
+      "lib/demo/policy.ex:7: Demo.Policy.allowed?/2",
+      "lib/demo/policy.ex:20: Demo.Policy.dispatch/3",
+      "lib/demo_web/live/page_live.ex:63: DemoWeb.PageLive.mount/3"
+    ]
+
+    test "each query names its callback, event and caller" do
+      root = session(:request, path: "/users")
+      live = session(:live_view, path: "/users", parent: root.sid, view: DemoWeb.PageLive)
+      query(root, span: 0)
+      callback(live, :mount, span: 1)
+      query(live, span: 1, stacktrace: @web_stack)
+      callback(live, :handle_event, span: 2, event: "save")
+      query(live, span: 2)
+      query(live, span: 3)
+      query(live, span: 4, caller?: true)
+
+      assert [request, mount, event, info, task] = Report.queries(root.sid)
+
+      assert %{callback: :request, event: nil, caller: nil} = request
+
+      assert %{
+               callback: :mount,
+               event: nil,
+               origin: "lib/demo/policy.ex:7: Demo.Policy.allowed?/2",
+               caller: "lib/demo_web/live/page_live.ex:63: DemoWeb.PageLive.mount/3",
+               noise: nil
+             } = mount
+
+      assert %{callback: :handle_event, event: "save"} = event
+      assert %{callback: :handle_info, event: nil} = info
+      assert %{callback: :async} = task
+    end
+
+    test "framework noise is tagged, kept in queries/2 and counted apart in summary/2" do
+      s = session(:request, path: "/users")
+      query(s, sql: ~s(CREATE TABLE IF NOT EXISTS "schema_migrations" (x\)), us: 400)
+      query(s, sql: ~s(SELECT s0."version" FROM "schema_migrations" AS s0), us: 300)
+      query(s, us: 100)
+
+      assert ["check_repo_status", "check_repo_status", nil] ==
+               s.sid |> Report.queries() |> Enum.map(& &1.noise)
+
+      assert %{count: 1, total_us: 100, slowest: [%{duration_us: 100}], noise: noise} =
+               Report.summary(s.sid).queries
+
+      assert noise == %{count: 2, total_us: 700}
+
+      md = Report.markdown(s.sid)
+      assert md =~ "1 query, 0.1 ms. Plus 2 framework queries"
+      refute md =~ "schema_migrations"
+    end
+  end
+
   describe "n_plus_one/2" do
     test "groups repeated SQL from one origin in one callback span" do
       s = session(:live_view, path: "/users")
@@ -232,6 +287,44 @@ defmodule PhoenixDevToolbar.ReportTest do
 
       assert [false, false, false, false, true, false] ==
                s.sid |> Report.queries(threshold: 5) |> Enum.map(& &1.n_plus_one?)
+    end
+
+    test "names the callbacks it repeated in and the callers above the origin" do
+      s = session(:live_view, path: "/events", view: DemoWeb.PageLive)
+      sql = "SELECT * FROM teams WHERE event_id = ?"
+      origin = "lib/demo/policy.ex:7: Demo.Policy.allowed?/2"
+      mount = ["lib/demo_web/live/page_live.ex:63: DemoWeb.PageLive.mount/3"]
+      header = ["lib/demo_web/live/header.ex:9: DemoWeb.Header.update/2"]
+
+      callback(s, :mount, span: 1)
+      for _ <- 1..4, do: query(s, sql: sql, span: 1, stacktrace: [origin | mount])
+      for _ <- 1..2, do: query(s, sql: sql, span: 1, stacktrace: [origin | header])
+      callback(s, :handle_event, span: 2, event: "open")
+      for _ <- 1..5, do: query(s, sql: sql, span: 2, stacktrace: [origin | mount])
+      # An orphan span: an inferred handle_info.
+      for _ <- 1..5, do: query(s, sql: sql, span: 3, stacktrace: [origin | mount])
+
+      assert [group] = Report.n_plus_one(s.sid, threshold: 5)
+      assert %{origin: ^origin, count: 6, callbacks: 3, ran_in: ran_in, callers: callers} = group
+
+      assert [
+               %{callback: :handle_info, event: nil, seq: nil, count: 5, span: 3},
+               %{callback: :handle_event, event: "open", seq: event_seq, count: 5, span: 2},
+               %{callback: :mount, view: DemoWeb.PageLive, seq: mount_seq, count: 6, span: 1}
+             ] = ran_in
+
+      assert [%{seq: ^mount_seq}, %{seq: ^event_seq}] =
+               s.sid |> Report.callbacks() |> Enum.reject(& &1.inferred)
+
+      assert callers == [
+               %{frame: hd(mount), count: 14},
+               %{frame: hd(header), count: 2}
+             ]
+
+      md = Report.markdown(s.sid, threshold: 5)
+      assert md =~ "| Callbacks | Callers |"
+      assert md =~ "`DemoWeb.PageLive handle_event open` ×5"
+      assert md =~ "`#{hd(mount)}` ×14"
     end
   end
 
@@ -526,7 +619,7 @@ defmodule PhoenixDevToolbar.ReportTest do
              } = Report.summary(root.sid)
 
       assert Map.keys(brief) |> Enum.sort() ==
-               ~w(duration_us error n_plus_one? origin rows seq sid source)a
+               ~w(callback caller duration_us error n_plus_one? origin rows seq sid source)a
 
       assert brief.origin == "lib/app.ex:10: App.list/0"
 
@@ -698,7 +791,14 @@ defmodule PhoenixDevToolbar.ReportTest do
 
     test "verbose details never reach the report" do
       s = session(:live_view, path: "/x", view: DemoWeb.PageLive)
-      query(s, stacktrace: ["lib/a.ex:1: A.a/0", "lib/deep_frame.ex:2: Deep.frame/0"])
+      # The caller (the frame after the origin here) is shown, deeper frames are not.
+      query(s,
+        stacktrace: [
+          "lib/a.ex:1: A.a/0",
+          "lib/b.ex:1: B.b/0",
+          "lib/deep_frame.ex:2: Deep.frame/0"
+        ]
+      )
 
       callback(s, :mount,
         error: "** (RuntimeError) boom",

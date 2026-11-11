@@ -126,6 +126,38 @@ defmodule PhoenixDevToolbar.Plugins.EctoTest do
     end
   end
 
+  test "caller_modules: defaults to the Web patterns, takes regexes or prefixes, and is validated" do
+    assert {:ok, %{caller_modules: [%Regex{}, %Regex{}]}} = EctoPlugin.init([])
+
+    assert {:ok, %{caller_modules: ["Demo.Policy", %Regex{}]}} =
+             EctoPlugin.init(caller_modules: ["Demo.Policy", ~r/Live\z/])
+
+    for bad <- [:web, [:web], "Demo"] do
+      assert {:error, "caller_modules must be" <> _} = EctoPlugin.init(caller_modules: bad)
+    end
+  end
+
+  test "framework queries are left out of the badge counts, named in its title" do
+    summary =
+      [
+        Event.new(
+          :ecto,
+          :query,
+          %{sql: ~s(SELECT s0."version" FROM "schema_migrations" AS s0), stacktrace: []},
+          duration: 900
+        ),
+        Event.new(:ecto, :query, %{sql: "SELECT 1", stacktrace: [], result: {:ok, 1}},
+          duration: 10
+        )
+      ]
+      |> Enum.reduce(EctoPlugin.summary_init(%{n_plus_one: 5}), &EctoPlugin.summary_add(&2, &1))
+
+    assert [%{id: "ecto-queries", text: "1 query · " <> _, title: title}] =
+             EctoPlugin.badges(summary)
+
+    assert title =~ "1 framework query"
+  end
+
   test "keeps the raw params of a SELECT for EXPLAIN, not of a write", %{sid: sid} do
     run_query(sid, query_metadata(%{}))
     run_query(sid, query_metadata(%{query: "UPDATE users SET name = $1", params: ["ada"]}))

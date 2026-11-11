@@ -10,9 +10,10 @@ defmodule PhoenixDevToolbar.PanelLive do
   # Generic glue (ADR 05): every tab is a plugin's panel component, fed its
   # plugin's events (PhoenixDevToolbar.Panel); badges come from the plugins'
   # summaries (PhoenixDevToolbar.Shell). Being under `PhoenixDevToolbar.`, this
-  # LiveView is never tracked itself.
+  # LiveView is never tracked itself. `log: false`: its mounts and events
+  # (`pdt:client` on every host navigation) stay out of the host's log (ADR 04).
 
-  use Phoenix.LiveView
+  use Phoenix.LiveView, log: false
 
   alias PhoenixDevToolbar.ClientPolicy
   alias PhoenixDevToolbar.Collector

@@ -13,7 +13,9 @@ defmodule PhoenixDevToolbar.NPlusOne do
   # (processes of one sid, nested LiveViews, interleave their spans), at most
   # @max_keys distinct queries per span, keyed by a hash of SQL and origin;
   # groups are capped at @max_groups, most recent first, while `detected` keeps
-  # the true number of distinct groups.
+  # the true number of distinct groups. Each group keeps its last
+  # @spans_per_group callback spans (`spans`, newest first) with the count
+  # reached in each, so a reader can name the callbacks (Report, ADR 13).
   #
   # The origin is the first stacktrace frame outside Ecto, DBConnection and the
   # repo: for queries run by Ecto's own tasks (parallel preloads) it is a weak
@@ -26,6 +28,7 @@ defmodule PhoenixDevToolbar.NPlusOne do
   @max_groups 50
   @spans_per_sid 4
   @sids_per_group 4
+  @spans_per_group 10
 
   defstruct threshold: 5, spans: %{}, groups: [], detected: 0
 
@@ -37,7 +40,14 @@ defmodule PhoenixDevToolbar.NPlusOne do
           callbacks: pos_integer(),
           sids: [String.t()],
           seq: pos_integer() | nil,
-          at: integer() | nil
+          at: integer() | nil,
+          spans: [span_count()]
+        }
+  @type span_count :: %{
+          sid: String.t(),
+          span: non_neg_integer() | nil,
+          caller?: boolean(),
+          count: pos_integer()
         }
   @type t :: %NPlusOne{
           threshold: pos_integer() | false,
@@ -88,6 +98,10 @@ defmodule PhoenixDevToolbar.NPlusOne do
   @spec detected(t()) :: non_neg_integer()
   def detected(%NPlusOne{detected: detected}), do: detected
 
+  @doc "The group key of a query event: a hash of its SQL and origin."
+  @spec group_key(Event.t()) :: integer()
+  def group_key(%Event{} = event), do: :erlang.phash2(key(event))
+
   defp key(%Event{data: data}), do: {data[:sql], origin(data)}
 
   defp origin(%{stacktrace: [first | _]}), do: first
@@ -117,6 +131,7 @@ defmodule PhoenixDevToolbar.NPlusOne do
   defp detect(state, %Event{sid: sid, seq: seq, at: at} = event, count) do
     {sql, origin} = key(event)
     key = :erlang.phash2({sql, origin})
+    span = span_count(event, count)
 
     case Enum.split_with(state.groups, &(&1.key == key)) do
       {[group], others} ->
@@ -125,7 +140,8 @@ defmodule PhoenixDevToolbar.NPlusOne do
           | count: max(group.count, count),
             callbacks: group.callbacks + 1,
             sids: Enum.take(Enum.uniq([sid | group.sids]), @sids_per_group),
-            at: at
+            at: at,
+            spans: Enum.take([span | group.spans], @spans_per_group)
         }
 
         %{state | groups: [group | others]}
@@ -139,22 +155,40 @@ defmodule PhoenixDevToolbar.NPlusOne do
           callbacks: 1,
           sids: [sid],
           seq: seq,
-          at: at
+          at: at,
+          spans: [span]
         }
 
         %{state | groups: Enum.take([group | groups], @max_groups), detected: state.detected + 1}
     end
   end
 
-  defp grow(state, %Event{} = event, count) do
+  defp grow(state, %Event{sid: sid, span: span} = event, count) do
     key = :erlang.phash2(key(event))
 
     groups =
       Enum.map(state.groups, fn
-        %{key: ^key} = group -> %{group | count: max(group.count, count)}
-        group -> group
+        %{key: ^key} = group ->
+          %{
+            group
+            | count: max(group.count, count),
+              spans: grow_span(group.spans, sid, span, count)
+          }
+
+        group ->
+          group
       end)
 
     %{state | groups: groups}
   end
+
+  defp grow_span(spans, sid, span, count) do
+    Enum.map(spans, fn
+      %{sid: ^sid, span: ^span} = entry -> %{entry | count: count}
+      entry -> entry
+    end)
+  end
+
+  defp span_count(%Event{sid: sid, span: span, data: data}, count),
+    do: %{sid: sid, span: span, caller?: data[:caller?] == true, count: count}
 end

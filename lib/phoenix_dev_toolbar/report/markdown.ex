@@ -53,7 +53,7 @@ defmodule PhoenixDevToolbar.Report.Markdown do
     """
     ## Queries
 
-    #{count(queries.count, "query", "queries")}#{failed}, #{ms(queries.total_us) || "0 ms"}.
+    #{count(queries.count, "query", "queries")}#{failed}, #{ms(queries.total_us) || "0 ms"}.#{noise(queries)}
 
     ## Callbacks and renders
 
@@ -62,6 +62,12 @@ defmodule PhoenixDevToolbar.Report.Markdown do
     #{count(summary.renders.count, "render", "renders")}.\
     """
   end
+
+  defp noise(%{noise: %{count: n}}) when n > 0,
+    do:
+      " Plus #{count(n, "framework query", "framework queries")} (Phoenix.Ecto.CheckRepoStatus) not counted."
+
+  defp noise(_queries), do: ""
 
   defp count(1, singular, _plural), do: "1 #{singular}"
   defp count(n, _singular, plural), do: "#{n} #{plural}"
@@ -72,12 +78,22 @@ defmodule PhoenixDevToolbar.Report.Markdown do
     sql_table(
       "## N+1",
       "N",
-      ["SQL", "Origin", "Count"],
+      ["SQL", "Origin", "Count", "Callbacks", "Callers"],
       for g <- groups do
-        {g.sql, [code(g.origin), g.count]}
+        {g.sql, [code(g.origin), g.count, ran_in(g.ran_in), callers(g.callers)]}
       end
     )
   end
+
+  # "`DemoWeb.PageLive mount` ×7, ..." in one cell.
+  defp ran_in([]), do: nil
+
+  defp ran_in(places) do
+    Enum.map_join(places, ", ", fn place -> "#{code(callback_name(place))} ×#{place.count}" end)
+  end
+
+  defp callers([]), do: nil
+  defp callers(callers), do: Enum.map_join(callers, ", ", &"#{code(&1.frame)} ×#{&1.count}")
 
   defp slowest_queries([]), do: nil
 
@@ -85,9 +101,16 @@ defmodule PhoenixDevToolbar.Report.Markdown do
     sql_table(
       "## Slowest queries",
       "Q",
-      ["SQL", "Time", "Rows", "Origin"],
+      ["SQL", "Time", "Rows", "Callback", "Origin", "Caller"],
       for q <- queries do
-        {q.sql, [ms(q.duration_us), q.rows, code(q.origin)]}
+        {q.sql,
+         [
+           ms(q.duration_us),
+           q.rows,
+           code(query_callback(q)),
+           code(q.origin),
+           code(if(q.caller != q.origin, do: q.caller))
+         ]}
       end
     )
   end
@@ -111,9 +134,12 @@ defmodule PhoenixDevToolbar.Report.Markdown do
   defp callback_name(c) do
     owner = c.component || c.view
     event = if c.event, do: " #{c.event}"
-    inferred = if c.inferred, do: " (inferred)"
+    inferred = if c[:inferred], do: " (inferred)"
     "#{if owner, do: inspect(owner) <> " "}#{c.callback}#{event}#{inferred}"
   end
+
+  defp query_callback(%{callback: callback, event: nil}), do: to_string(callback)
+  defp query_callback(%{callback: callback, event: event}), do: "#{callback} #{event}"
 
   defp unattributed(%{count: 0}), do: nil
 

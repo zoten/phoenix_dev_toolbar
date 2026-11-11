@@ -13,6 +13,7 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   | --- | --- | --- |
   | `repos:` | list of repo modules | the top level `repos` config, else the `:ecto_repos` of the loaded applications |
   | `n_plus_one:` | integer `>= 2`, or `false` to turn the detector off | `5` |
+  | `caller_modules:` | list of regexes (matched against the module name) or module name prefixes: where a query's `caller` is | a `*Web` namespace, a `*Live` or `*Controller` module |
 
   `repos:` in the plugin entry wins over the top level config:
 
@@ -21,6 +22,11 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
 
   With no repos found, the tab stays empty and one warning names the config line.
   Set `stacktrace: true` in the repo's config to see where each query comes from.
+  Each query then has an `origin` (the Repo call site) and a `caller`: the
+  first frame of a module matching `caller_modules:` or of a LiveView callback
+  (`mount/3`, `handle_event/3`, `on_mount/4`, ...), else the frame after the
+  origin. `Phoenix.Ecto.CheckRepoStatus` queries (`schema_migrations`) are
+  tagged as framework noise and left out of the counts.
   `ecto_sql` is an optional dependency: without it this plugin attaches to nothing.
   """
 
@@ -44,6 +50,7 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   alias PhoenixDevToolbar.Explain
   alias PhoenixDevToolbar.NPlusOne
   alias PhoenixDevToolbar.Panels
+  alias PhoenixDevToolbar.QueryFrames
   alias PhoenixDevToolbar.Truncate
 
   # Frames hidden from the query origin: the caller's code is what matters.
@@ -59,10 +66,25 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
     repos = Keyword.get_lazy(opts, :repos, &configured_or_declared_repos/0)
 
     with {:ok, repos} <- repos(repos),
-         {:ok, threshold} <- threshold(Keyword.get(opts, :n_plus_one, @n_plus_one)) do
-      {:ok, %{repos: repos, n_plus_one: threshold}}
+         {:ok, threshold} <- threshold(Keyword.get(opts, :n_plus_one, @n_plus_one)),
+         {:ok, patterns} <- caller_patterns(Keyword.get(opts, :caller_modules)) do
+      {:ok, %{repos: repos, n_plus_one: threshold, caller_modules: patterns}}
     end
   end
+
+  defp caller_patterns(nil), do: {:ok, QueryFrames.default_patterns()}
+
+  defp caller_patterns(patterns) when is_list(patterns) do
+    case Enum.all?(patterns, &(is_struct(&1, Regex) or is_binary(&1))) do
+      true -> {:ok, patterns}
+      false -> caller_patterns(:invalid)
+    end
+  end
+
+  defp caller_patterns(other),
+    do:
+      {:error,
+       "caller_modules must be a list of regexes or module name prefixes, got: #{inspect(other, limit: 5)}"}
 
   defp configured_or_declared_repos do
     case Application.get_env(:phoenix_dev_toolbar, :repos) do
@@ -113,6 +135,12 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
   def n_plus_one(%{n_plus_one: threshold}), do: threshold
   def n_plus_one(_config), do: @n_plus_one
 
+  @doc false
+  # The module patterns that name a query's caller (ADR 08).
+  @spec caller_modules(term()) :: [QueryFrames.pattern()]
+  def caller_modules(%{caller_modules: patterns}) when is_list(patterns), do: patterns
+  def caller_modules(_config), do: QueryFrames.default_patterns()
+
   @impl PhoenixDevToolbar.Plugin
   def telemetry_events(%{repos: repos}) do
     for repo <- repos, prefix = telemetry_prefix(repo), do: List.insert_at(prefix, -1, :query)
@@ -128,22 +156,14 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
       db_us: 0,
       slowest_us: 0,
       failed: 0,
+      noise: 0,
       n_plus_one: NPlusOne.new(n_plus_one(config))
     }
 
   @impl PhoenixDevToolbar.Plugin
   def summary_add(summary, %Event{kind: :query, duration: duration, data: data} = event) do
-    duration = duration || 0
     {n_plus_one, _result} = NPlusOne.add(summary.n_plus_one, event)
-
-    %{
-      summary
-      | queries: summary.queries + 1,
-        db_us: summary.db_us + duration,
-        slowest_us: max(summary.slowest_us, duration),
-        failed: summary.failed + failed(data),
-        n_plus_one: n_plus_one
-    }
+    add_query(%{summary | n_plus_one: n_plus_one}, QueryFrames.noise(data), duration || 0, data)
   end
 
   def summary_add(summary, %Event{kind: :n_plus_one_cleared} = event) do
@@ -153,11 +173,40 @@ defmodule PhoenixDevToolbar.Plugins.Ecto do
 
   def summary_add(summary, %Event{}), do: summary
 
+  # Framework queries (CheckRepoStatus) are counted apart (ADR 08).
+  defp add_query(summary, nil, duration, data) do
+    %{
+      summary
+      | queries: summary.queries + 1,
+        db_us: summary.db_us + duration,
+        slowest_us: max(summary.slowest_us, duration),
+        failed: summary.failed + failed(data)
+    }
+  end
+
+  defp add_query(summary, _noise, _duration, _data),
+    do: Map.update(summary, :noise, 1, &(&1 + 1))
+
   @impl PhoenixDevToolbar.Plugin
   def badges(%{queries: queries, db_us: db_us, failed: failed} = summary) do
     text = "#{queries} #{noun(queries)} · #{Components.duration(db_us)}"
-    [%{id: "ecto-queries", text: text, level: queries_level(failed)} | n_plus_one_badge(summary)]
+
+    badge =
+      %{id: "ecto-queries", text: text, level: queries_level(failed)}
+      |> noise_title(Map.get(summary, :noise, 0))
+
+    [badge | n_plus_one_badge(summary)]
   end
+
+  defp noise_title(badge, 0), do: badge
+
+  defp noise_title(badge, noise),
+    do:
+      Map.put(
+        badge,
+        :title,
+        "Plus #{noise} framework #{noun(noise)} (Phoenix.Ecto.CheckRepoStatus) not counted"
+      )
 
   defp n_plus_one_badge(%{n_plus_one: n_plus_one}) do
     case NPlusOne.detected(n_plus_one) do

@@ -94,6 +94,29 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     assert has_element?(view, "#pdt-query-#{connected.seq} .pdt-tag--live")
   end
 
+  test "dims framework queries and leaves them out of the query count",
+       %{conn: conn, request: request} do
+    noise = query(request, ~s(SELECT s0."version" FROM "schema_migrations" AS s0))
+    app = query(request, "SELECT 1")
+
+    view = open(conn, request)
+
+    assert has_element?(view, "#pdt-badge-ecto-queries", "1 query")
+
+    assert has_element?(
+             view,
+             ~s(#pdt-query-#{noise.seq}.pdt-row--noise[data-pdt-noise="check_repo_status"])
+           )
+
+    assert has_element?(view, "#pdt-noise-#{noise.seq}", "framework")
+    refute has_element?(view, "#pdt-query-#{app.seq}.pdt-row--noise")
+    refute has_element?(view, "#pdt-noise-#{app.seq}")
+  end
+
+  test "keeps its own LiveView events out of the host log (log: false)" do
+    assert PhoenixDevToolbar.PanelLive.__live__().log == false
+  end
+
   test "says how many events the flood guard dropped", %{conn: conn, request: request} do
     Store.put_limits(events_per_second: 1)
     event = Event.new(:test, :ping, %{}, at: 0)

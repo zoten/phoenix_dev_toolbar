@@ -304,6 +304,10 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
 .pdt-row:nth-child(even) { background: var(--pdt-bg-alt); }
 .pdt-row--error { background: var(--pdt-error-bg) !important; box-shadow: inset 3px 0 0 var(--pdt-error); }
 
+/* Framework queries (CheckRepoStatus, ADR 08): kept, but out of the way. */
+.pdt-row--noise { opacity: 0.55; }
+.pdt-row--noise:hover, .pdt-row--noise:focus-within { opacity: 1; }
+
 .pdt-row__head { display: flex; align-items: baseline; gap: 8px; }
 
 .pdt-row__meta {

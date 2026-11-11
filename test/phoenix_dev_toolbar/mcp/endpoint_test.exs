@@ -300,7 +300,13 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
 
       conn = post(rpc("initialize", %{"protocolVersion" => "2025-06-18"}))
       assert conn.status == 200
-      assert %{"result" => %{"protocolVersion" => "2025-06-18"}} = json(conn)
+
+      assert %{"result" => %{"protocolVersion" => "2025-06-18", "serverInfo" => info}} =
+               json(conn)
+
+      # The release version: a client sees it change after an upgrade (ADR 15).
+      assert info["version"] == to_string(Application.spec(:phoenix_dev_toolbar, :vsn))
+      assert info["version"] != "0.0.0"
 
       conn = post(%{"jsonrpc" => "2.0", "method" => "notifications/initialized"})
       assert conn.status == 202

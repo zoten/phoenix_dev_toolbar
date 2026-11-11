@@ -54,7 +54,9 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   `pdt:state` (`open`, `dock` and `reserve`).
   Both sides check `event.origin` and `event.source`. The loader also forwards LiveView's
   own `phx:*` window events as `pdt:client` messages (passive listeners, sanitized, rate
-  limited: ADR 07). Page
+  limited: ADR 07). The panel LiveView is `use Phoenix.LiveView, log: false`: its
+  mount and these events (one per host navigation) stay out of the host's dev log,
+  which shows the host app only. Page
   correlation, including live navigation, happens server side (ADR 02), so the
   toolbar keeps working when the loader cannot reach `window.liveSocket`.
 - **Docks and page space**: the toolbar docks `bottom` (default), `top`, `left` or `right`,

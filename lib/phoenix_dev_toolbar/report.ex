@@ -46,6 +46,7 @@ defmodule PhoenixDevToolbar.Report do
   alias PhoenixDevToolbar.NPlusOne
   alias PhoenixDevToolbar.PageLookup
   alias PhoenixDevToolbar.Plugins
+  alias PhoenixDevToolbar.QueryFrames
   alias PhoenixDevToolbar.Report.Compare
   alias PhoenixDevToolbar.Report.Markdown
   alias PhoenixDevToolbar.Session
@@ -55,7 +56,19 @@ defmodule PhoenixDevToolbar.Report do
   @compare_cap Compare.cap()
   @burst_gap_us 100_000
   @unattributed_origins 5
-  @query_brief [:seq, :sid, :origin, :duration_us, :rows, :source, :n_plus_one?, :error]
+  @n_plus_one_callers 5
+  @query_brief [
+    :seq,
+    :sid,
+    :callback,
+    :origin,
+    :caller,
+    :duration_us,
+    :rows,
+    :source,
+    :n_plus_one?,
+    :error
+  ]
   @callback_brief [
     :seq,
     :sid,
@@ -103,9 +116,21 @@ defmodule PhoenixDevToolbar.Report do
   query inside `Task.async` or `start_async`, whose `fn -> Repo.all(q) end`
   tail calls the repo) it is the task's function (`Mod.fun/arity`), else
   `"task in View.callback"` (plus the event name) of the callback that started
-  the task, else nil. `span` is the callback the query ran in:
-  see `callbacks/2`. `n_plus_one?` marks the query that reached the N+1
-  threshold and every repetition after it, as the Ecto tab does.
+  the task, else nil. `caller` is the web-layer frame that led to the query
+  (see `t:place/0`), from the same stacktrace.
+
+  `span` is the callback the query ran in (see `callbacks/2`), named by
+  `callback` and `event`: a LiveView or LiveComponent callback, `:render`,
+  `:handle_info` or `:async` for a LiveView query no callback owns (as the
+  inferred entries of `callbacks/2`), `:request` for a request query outside
+  any LiveView callback (the plug pipeline, a controller).
+
+  `noise` tags a framework query: `"check_repo_status"` for
+  `Phoenix.Ecto.CheckRepoStatus` (the `schema_migrations` checks of every dev
+  request), `"framework"` when no stacktrace frame is outside the framework.
+  `summary/2` leaves them out of its counts. `n_plus_one?` marks the query
+  that reached the N+1 threshold and every repetition after it, as the Ecto
+  tab does.
   """
   @type query :: %{
           sid: sid(),
@@ -121,9 +146,24 @@ defmodule PhoenixDevToolbar.Report do
           error: String.t() | nil,
           times: %{atom() => non_neg_integer()},
           origin: String.t() | nil,
+          caller: String.t() | nil,
+          callback: atom(),
+          event: String.t() | nil,
+          noise: String.t() | nil,
           stacktrace: [String.t()],
           n_plus_one?: boolean()
         }
+
+  @typedoc """
+  Where a query's `caller` is found: the first stacktrace frame (the origin
+  included) of a module matching the Ecto plugin's `caller_modules:` (by
+  default a `*Web` namespace, a `*Live` or `*Controller` module) or of a
+  LiveView callback (`mount/3`, `handle_params/3`, `handle_event/3`,
+  `handle_info/2`, `handle_async/3`, `on_mount/4`), outside Phoenix and
+  the other framework modules; else the frame after the origin; nil without a
+  stacktrace. A frame string, like `origin`.
+  """
+  @type place :: String.t() | nil
 
   @typedoc """
   One LiveView or LiveComponent callback (`:mount`, `:handle_params`,
@@ -139,7 +179,8 @@ defmodule PhoenixDevToolbar.Report do
   They have no duration, event, params or changes, and `origin` is the origin
   of the first query (see `t:query/0`; nil on real callbacks). Several
   `handle_info` within 100 ms in one span merge into one entry; one that runs no
-  query is invisible.
+  query is invisible. Their `duration_us` is nil, never 0: sum or sort with
+  `duration_us || 0` (the MCP `sort: "slowest"` puts them last).
   """
   @type callback :: %{
           inferred: boolean(),
@@ -163,14 +204,33 @@ defmodule PhoenixDevToolbar.Report do
 
   @typedoc """
   A repeated query: the same SQL from the same origin run `count` times in one
-  callback, in `callbacks` callbacks so far.
+  callback, in `callbacks` callbacks so far. `ran_in` names those callbacks
+  (the last 10, newest first; `callback` and `event` as on `t:query/0`, `seq`
+  the callback's own, nil for an inferred one, `count` the repetitions in it).
+  `callers` are the distinct `caller` frames of its repetitions in those
+  callbacks, most frequent first (at most #{@n_plus_one_callers}): the code
+  that led to the repeated call, where `origin` is the Repo call site.
   """
   @type n_plus_one :: %{
           sql: String.t() | nil,
           origin: String.t() | nil,
           count: pos_integer(),
           callbacks: pos_integer(),
-          sids: [sid()]
+          sids: [sid()],
+          ran_in: [ran_in()],
+          callers: [%{frame: String.t(), count: pos_integer()}]
+        }
+
+  @typedoc "One callback an N+1 group repeated in: see `t:n_plus_one/0`."
+  @type ran_in :: %{
+          sid: sid(),
+          span: non_neg_integer() | nil,
+          seq: pos_integer() | nil,
+          view: module() | nil,
+          component: module() | nil,
+          callback: atom(),
+          event: String.t() | nil,
+          count: pos_integer()
         }
 
   @typedoc "A failure: a request exception, a failed callback or render, a failed query. Request, LiveView and Ecto errors carry a formatted stacktrace in call order (LiveView: cut after the last host frame plus one, ADR 07). `stack_args`, parallel to `stacktrace` (the call arguments of a frame, redacted and bounded), is present only when the developer set `stack_args: [agents: true]` (ADR 03)."
@@ -189,7 +249,9 @@ defmodule PhoenixDevToolbar.Report do
   @type query_brief :: %{
           seq: pos_integer(),
           sid: sid(),
+          callback: atom(),
           origin: String.t() | nil,
+          caller: String.t() | nil,
           duration_us: non_neg_integer() | nil,
           rows: non_neg_integer() | nil,
           source: String.t() | nil,
@@ -273,7 +335,8 @@ defmodule PhoenixDevToolbar.Report do
   Each `slowest` list holds at most #{@slowest} items, slowest first. Items are
   briefs unless `summary/2` got `verbose: true`.
   `dropped` and `trimmed` add up the events lost to the caps.
-  `callbacks` counts real callbacks only. `unattributed` counts the queries of
+  `queries` leaves out framework noise (see `t:query/0`), counted apart in
+  `queries.noise`. `callbacks` counts real callbacks only. `unattributed` counts the queries of
   LiveView sessions that no callback or render owns (usually `handle_info` or
   PubSub reloads), with its top #{@unattributed_origins} `origins` by time.
   """
@@ -285,7 +348,8 @@ defmodule PhoenixDevToolbar.Report do
             count: non_neg_integer(),
             failed: non_neg_integer(),
             total_us: non_neg_integer(),
-            slowest: [query_brief() | query()]
+            slowest: [query_brief() | query()],
+            noise: tally()
           },
           n_plus_one: [n_plus_one()],
           unattributed: %{
@@ -408,7 +472,8 @@ defmodule PhoenixDevToolbar.Report do
 
       {[first | _] = sessions, events} ->
         owners = owners(events, sessions)
-        queries = queries_of(events, owners, threshold(opts))
+        places = places(events, sessions)
+        {noise, queries} = events |> queries_of(owners, places, threshold(opts)) |> noise()
         callbacks = callbacks_of(events)
         orphans = orphans_of(events, sessions)
         renders = for %Event{plugin: :live_view, kind: :render} = event <- events, do: event
@@ -422,9 +487,10 @@ defmodule PhoenixDevToolbar.Report do
             count: length(queries),
             failed: Enum.count(queries, &(&1.error != nil)),
             total_us: total(queries),
-            slowest: queries |> slowest() |> Enum.map(&brief.(&1, @query_brief))
+            slowest: queries |> slowest() |> Enum.map(&brief.(&1, @query_brief)),
+            noise: %{count: length(noise), total_us: total(noise)}
           },
-          n_plus_one: n_plus_one_of(events, threshold(opts)),
+          n_plus_one: n_plus_one_of(events, places, threshold(opts)),
           unattributed: unattributed(orphans, owners),
           callbacks: %{
             count: length(callbacks),
@@ -493,7 +559,7 @@ defmodule PhoenixDevToolbar.Report do
   @spec queries(target(), keyword()) :: [query()]
   def queries(target, opts \\ []) do
     {sessions, events} = read(target, opts)
-    queries_of(events, owners(events, sessions), threshold(opts))
+    queries_of(events, owners(events, sessions), places(events, sessions), threshold(opts))
   end
 
   @doc """
@@ -504,8 +570,8 @@ defmodule PhoenixDevToolbar.Report do
   """
   @spec n_plus_one(target(), keyword()) :: [n_plus_one()]
   def n_plus_one(target, opts \\ []) do
-    {_sessions, events} = read(target, opts)
-    n_plus_one_of(events, threshold(opts))
+    {sessions, events} = read(target, opts)
+    n_plus_one_of(events, places(events, sessions), threshold(opts))
   end
 
   @doc "Every LiveView and LiveComponent callback of `target`, oldest first. Option: `children:`."
@@ -694,6 +760,13 @@ defmodule PhoenixDevToolbar.Report do
   defp ecto_threshold({Plugins.Ecto, config}), do: Plugins.Ecto.n_plus_one(config)
   defp ecto_threshold(nil), do: Plugins.Ecto.n_plus_one(nil)
 
+  defp caller_patterns do
+    case List.keyfind(Collector.plugins(), Plugins.Ecto, 0) do
+      {Plugins.Ecto, config} -> Plugins.Ecto.caller_modules(config)
+      nil -> Plugins.Ecto.caller_modules(nil)
+    end
+  end
+
   ## Shapes
 
   defp session(%Session{} = session) do
@@ -711,10 +784,13 @@ defmodule PhoenixDevToolbar.Report do
     }
   end
 
-  defp queries_of(events, owners, threshold) do
+  defp queries_of(events, owners, places, threshold) do
     flagged = flagged(events, threshold)
 
     for %Event{plugin: :ecto, kind: :query, data: data} = event <- events do
+      place = place(event, places)
+      stacktrace = data[:stacktrace] || []
+
       %{
         sid: event.sid,
         seq: event.seq,
@@ -729,11 +805,64 @@ defmodule PhoenixDevToolbar.Report do
         error: query_error(data[:result]),
         times: data[:times] || %{},
         origin: origin(event, owners),
-        stacktrace: data[:stacktrace] || [],
+        caller: QueryFrames.caller(stacktrace, places.patterns),
+        callback: place.callback,
+        event: place.event,
+        noise: QueryFrames.noise(data),
+        stacktrace: stacktrace,
         n_plus_one?: MapSet.member?(flagged, event.seq)
       }
     end
   end
+
+  # {noise, counted}: framework queries are counted apart.
+  defp noise(queries), do: Enum.split_with(queries, &is_binary(&1.noise))
+
+  # Where the queries ran: the callback (first) or render owning each
+  # {sid, span}, the session kinds and views for the others, and the caller
+  # patterns of the Ecto plugin.
+  defp places(events, sessions) do
+    owned =
+      for %Event{plugin: :live_view, kind: kind, data: data} = event <- events,
+          kind in [:callback, :render],
+          reduce: %{} do
+        acc ->
+          Map.put_new(acc, {event.sid, event.span}, %{
+            seq: event.seq,
+            view: data[:view],
+            component: data[:component],
+            callback: if(kind == :render, do: :render, else: data[:callback]),
+            event: data[:event],
+            kind: kind
+          })
+      end
+
+    # A callback wins over a render of the same span.
+    callbacks =
+      for {key, %{kind: :callback} = place} <- owned, into: %{}, do: {key, place}
+
+    %{
+      spans: Map.merge(owned, callbacks),
+      sessions: Map.new(sessions, &{&1.sid, {&1.kind, &1.view}}),
+      patterns: caller_patterns()
+    }
+  end
+
+  defp place(%Event{sid: sid, span: span, data: data}, places),
+    do: place_of(sid, span, data[:caller?] == true, places)
+
+  defp place_of(sid, span, caller?, %{spans: spans, sessions: sessions}) do
+    case spans do
+      %{{^sid, ^span} => place} -> place
+      _unowned -> unowned(Map.get(sessions, sid), caller?)
+    end
+  end
+
+  defp unowned({:live_view, view}, caller?),
+    do: %{seq: nil, view: view, component: nil, callback: inferred_callback(caller?), event: nil}
+
+  defp unowned(_request, _caller?),
+    do: %{seq: nil, view: nil, component: nil, callback: :request, event: nil}
 
   # The seqs the Ecto tab tags N+1: the same fold, Clear markers included.
   defp flagged(events, threshold) do
@@ -750,15 +879,61 @@ defmodule PhoenixDevToolbar.Report do
     flagged
   end
 
-  defp n_plus_one_of(events, threshold) do
-    events
-    |> Enum.filter(&(&1.plugin == :ecto))
-    |> Enum.reduce(NPlusOne.new(threshold), fn event, state ->
-      {state, _result} = NPlusOne.add(state, event)
-      state
+  defp n_plus_one_of(events, places, threshold) do
+    ecto = Enum.filter(events, &(&1.plugin == :ecto))
+
+    groups =
+      ecto
+      |> Enum.reduce(NPlusOne.new(threshold), fn event, state ->
+        {state, _result} = NPlusOne.add(state, event)
+        state
+      end)
+      |> NPlusOne.groups()
+
+    by_key =
+      case groups do
+        [] ->
+          %{}
+
+        _groups ->
+          for(%Event{kind: :query} = e <- ecto, do: e) |> Enum.group_by(&NPlusOne.group_key/1)
+      end
+
+    Enum.map(groups, fn group ->
+      group
+      |> Map.take([:sql, :origin, :count, :callbacks, :sids])
+      |> Map.put(:ran_in, Enum.map(group.spans, &ran_in(&1, places)))
+      |> Map.put(:callers, callers(group, Map.get(by_key, group.key, []), places.patterns))
     end)
-    |> NPlusOne.groups()
-    |> Enum.map(&Map.take(&1, [:sql, :origin, :count, :callbacks, :sids]))
+  end
+
+  defp ran_in(%{sid: sid, span: span, caller?: caller?, count: count}, places) do
+    place = place_of(sid, span, caller?, places)
+
+    %{
+      sid: sid,
+      span: span,
+      seq: place.seq,
+      view: place.view,
+      component: place.component,
+      callback: place.callback,
+      event: place.event,
+      count: count
+    }
+  end
+
+  # The caller frames of the group's repetitions, in the spans it repeated in.
+  defp callers(group, queries, patterns) do
+    spans = MapSet.new(group.spans, &{&1.sid, &1.span})
+
+    queries
+    |> Enum.filter(&MapSet.member?(spans, {&1.sid, &1.span}))
+    |> Enum.map(&QueryFrames.caller(&1.data[:stacktrace] || [], patterns))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.frequencies()
+    |> Enum.sort_by(fn {frame, count} -> {-count, frame} end)
+    |> Enum.take(@n_plus_one_callers)
+    |> Enum.map(fn {frame, count} -> %{frame: frame, count: count} end)
   end
 
   defp callbacks_of(events) do

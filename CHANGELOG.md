@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - README screenshots and demo GIF in `media/`: shipped with the docs, not the Hex package (ADR 01)
+- N+1 groups name their callbacks (`ran_in`), queries their `callback` and `event` (ADR 08, 13, 15)
+- Query `caller` and N+1 `callers`, Ecto plugin option `caller_modules:` (ADR 08, 13)
+- CheckRepoStatus queries tagged `noise`, dimmed and left out of the counts (ADR 08, 13)
+- MCP: reconnect after an upgrade documented, serverInfo.version tested (ADR 15)
+- MCP argument errors say what is expected and where to get it (ADR 15)
+- Inferred callbacks: `duration_us` stays null, documented, sorted last (ADR 13, 15)
+- Panel LiveView `log: false`: no toolbar lines in the host's dev log (ADR 04)
 
 ## [0.0.4] - 2026-11-11
 

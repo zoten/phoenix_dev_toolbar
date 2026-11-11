@@ -115,9 +115,25 @@ every tool call fails with `ECONNREFUSED` until the client reconnects, even once
 server is up. Tell the user to start the dev server first, or to reconnect after
 starting it (and after each server restart).
 
+After a `phoenix_dev_toolbar` upgrade, the client keeps the tool list it read at
+connect time: tell the user to reconnect it (`/mcp` in Claude Code) to see new
+tools and fields. `serverInfo.version` in the `initialize` reply names the
+running release.
+
 Besides the per-page tools (`page_summary`, `page_queries`, `page_n_plus_one`,
 `page_errors`, `page_assigns_shape`), the server has `page_report` (a page as
 Markdown) and an `audit_page` prompt (`path`) that runs a whole audit of one page.
+
+Query and N+1 fields worth knowing (with the repo's `stacktrace: true`):
+
+- `origin` is the Repo call site; `caller` is the LiveView, controller or
+  `on_mount` frame above it (the Ecto plugin's `caller_modules:` option tunes it).
+- Each query names the `callback` and `event` it ran in (`request` outside any
+  LiveView callback); each N+1 group lists `ran_in` (view, callback, event, seq,
+  count) and `callers` (frame and count).
+- `noise: "check_repo_status"` tags `Phoenix.Ecto.CheckRepoStatus` queries:
+  summary counts leave them out (`queries.noise`).
+- Inferred `handle_info` callbacks have `duration_us: null`.
 
 The before/after loop for checking a change:
 

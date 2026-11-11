@@ -38,6 +38,9 @@ The data lives in the dev server's VM (`mix phx.server` or `mix dev`, in dev).
 - Never `mix run` or a fresh `iex -S mix`: another VM, nothing captured.
 
 Check first: for the Elixir paths, `PhoenixDevToolbar.enabled?()` must be `true`. For MCP, a `ping` or a `list_pages` call that works is the check.
+A tool or field named here but missing from your MCP tool list means the
+client connected before a `phoenix_dev_toolbar` upgrade: ask the user to
+reconnect it (`/mcp` in Claude Code).
 
 ## 2. Trigger the page
 
@@ -65,8 +68,10 @@ Check, in this order:
   `queries.slowest`, `callbacks.slowest`, `unattributed`: queries of a
   LiveView page no callback owns (`callbacks/2` lists them as `inferred: true`:
   `:handle_info` for queries of the LiveView process, such as PubSub reloads,
-  `:async` for task queries, such as `assign_async` or `start_async`).
-  These items are compact (no SQL,
+  `:async` for task queries, such as `assign_async` or `start_async`; their
+  `duration_us` is nil, so sum or sort with a default).
+  `queries` counts leave out framework noise (`Phoenix.Ecto.CheckRepoStatus`,
+  counted in `queries.noise`). These items are compact (no SQL,
   params or assigns): use `queries/2` and `callbacks/2`, or `summary(page,
   verbose: true)` (`page_summary` with `verbose: true`), for the detail.
 
@@ -89,7 +94,12 @@ after_sid)` in Elixir (deltas, N+1 and errors fixed or new; mind its
 
 ## Going deeper
 
-- `Report.n_plus_one(page)`: repeated SQL with its `origin` (the calling line).
+- `Report.n_plus_one(page)`: repeated SQL with its `origin` (the calling line),
+  `ran_in` (the callbacks it repeated in: `view`, `callback`, `event`, `seq`,
+  `count`) and `callers` (the distinct `caller` frames with counts). `caller`
+  (also on each query) is the LiveView, controller or `on_mount` frame above
+  the Repo call: for a check repeated by a shared helper, the callers say
+  which pages trigger it, in one call.
   `origin` (also on queries, briefs, inferred callbacks and errors) is the first
   app stack frame, else the function a task was started with, else
   `task in View.callback` or `task in View`. `nil` usually means the repo lacks
@@ -98,7 +108,10 @@ after_sid)` in Elixir (deltas, N+1 and errors fixed or new; mind its
 - `Report.callbacks(page)`: each LiveView callback with its duration and the
   `queries` and `query_us` it caused; find the expensive `mount` or
   `handle_event`.
-- `Report.queries(page)`: every query with SQL, params, rows and timings.
+- `Report.queries(page)`: every query with SQL, params, rows and timings, the
+  `callback` and `event` it ran in (`:request` outside any LiveView callback),
+  `caller`, and `noise` (`"check_repo_status"` or `"framework"` for queries
+  the framework runs on every dev request; nil for the app's own).
 - `Report.errors(page)`: request exceptions, failed callbacks and renders,
   failed queries. A crash's call arguments (`stack_args`) are absent unless the
   developer enabled `stack_args: [agents: true]`: do not ask for them. The panel, including

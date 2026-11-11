@@ -63,7 +63,15 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
 - `recent_errors` after a change: crashes in `handle_info` or in other tabs that
   the page lookups miss (`since` takes the sid you measured: errors after that page started, never that page's own; or a time; `limit`).
 - `page_queries`, `page_callbacks` (`sort: "slowest"`, `limit`),
-  `page_n_plus_one`, `page_errors` for the details.
+  `page_n_plus_one`, `page_errors` for the details. Queries carry `callback`,
+  `event`, `origin` (the Repo call site), `caller` (the LiveView, controller
+  or `on_mount` frame above it) and `noise` (framework queries such as
+  `Phoenix.Ecto.CheckRepoStatus`, left out of `page_summary` counts). N+1
+  groups carry `ran_in` (the callbacks) and `callers` (frames with counts).
+  Inferred `handle_info` callbacks have `duration_us: null`: sum with a default.
+- Tools or fields missing from your tool list after a `phoenix_dev_toolbar`
+  upgrade: the client connected before it. Ask the user to reconnect
+  (`/mcp` in Claude Code).
 - A "No page captured" error means the page was not loaded in the last 10
   minutes, or not as an HTML document: load it again, then retry.
 - Results carry `panel_url`: give it to the user to see the page in the panel.

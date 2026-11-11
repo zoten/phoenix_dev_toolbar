@@ -34,6 +34,30 @@ panel: in the Ecto summary for the badge and in the Ecto tab for the list).
 - Bounds: counts for the last 4 spans of each sid (processes of one sid, nested
   LiveViews, interleave their spans), at most 500 distinct queries per span, keyed by
   a hash of SQL and origin; at most 50 groups kept, newest first, with the true total.
+  Each group keeps its last 10 spans (sid, span, count reached), so `Report` names
+  the callbacks it repeated in (`ran_in`, ADR 13).
+
+**Caller** (`PhoenixDevToolbar.QueryFrames`, read time only: `Report`, never a
+telemetry handler). `origin` is the Repo call site, so a shared helper (a permission
+check, a loader) reports the same origin for every page. `caller` is the first stored
+frame, the origin included, of a module matching the Ecto plugin's
+`caller_modules:` (regexes on the module name or module name prefixes; default a
+`*Web` namespace, a `*Live` or `*Controller` module) or of a LiveView callback by
+name and arity (`mount/3`, `handle_params/3`, `handle_event/3`, `handle_info/2`,
+`handle_async/3`, `on_mount/4`), outside Phoenix, Plug, Ecto and other framework
+modules; else the frame after the origin; nil without a stacktrace. Frames are parsed
+as strings: no atom is created. N+1 groups stay keyed by SQL and origin and list
+their distinct callers with counts (at most 5), so one call shows which pages
+trigger a repeated check. The stored stacktrace has at most 10 frames (ADR 03): a
+caller deeper than that falls back to the frame after the origin.
+
+**Framework noise**. `Phoenix.Ecto.CheckRepoStatus` runs `CREATE TABLE IF NOT EXISTS
+"schema_migrations"` and a `SELECT` on it at every dev request. A query whose SQL
+names `schema_migrations` or whose stacktrace holds a `Phoenix.Ecto.CheckRepoStatus`
+frame is `noise: "check_repo_status"`; one whose every frame is framework code is
+`noise: "framework"`; no stacktrace is never noise. Noise is kept (queries, export,
+the tab, dimmed with a `framework` tag) but left out of the counts: the Ecto badge
+(named in its title) and `Report.summary/2`, which counts it in `queries.noise`.
 
 **EXPLAIN** (`PhoenixDevToolbar.Explain`).
 - Capture, in `collect/3` (the host process): a query whose SQL starts with `SELECT`

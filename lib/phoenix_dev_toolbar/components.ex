@@ -7,6 +7,7 @@ defmodule PhoenixDevToolbar.Components do
 
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Explain
+  alias PhoenixDevToolbar.QueryFrames
 
   attr :badges, :list,
     required: true,
@@ -60,14 +61,17 @@ defmodule PhoenixDevToolbar.Components do
   attr :target, :any, default: nil, doc: "the Ecto tab component, for the EXPLAIN button"
 
   def query_row(assigns) do
+    assigns = assign(assigns, :noise, QueryFrames.noise(assigns.event.data))
+
     ~H"""
     <li
       id={@id}
-      class={["pdt-row", failed?(@event) && "pdt-row--error"]}
+      class={["pdt-row", failed?(@event) && "pdt-row--error", @noise && "pdt-row--noise"]}
       {row_attrs("query", @event,
         "data-pdt-source": @event.data.source,
         "data-pdt-error": failed?(@event),
-        "data-pdt-n-plus-one": @event.data[:n_plus_one?] == true
+        "data-pdt-n-plus-one": @event.data[:n_plus_one?] == true,
+        "data-pdt-noise": @noise
       )}
     >
       <div class="pdt-row__head">
@@ -79,6 +83,14 @@ defmodule PhoenixDevToolbar.Components do
         <span :if={@event.data.source} class="pdt-tag">{@event.data.source}</span>
         <span class="pdt-tag">{result(@event.data.result)}</span>
         <span :if={@event.data.caller?} class="pdt-tag" title="Run by a Task.async child of the page">task</span>
+        <span
+          :if={@noise}
+          id={"pdt-noise-#{@event.seq}"}
+          class="pdt-tag"
+          title="A framework query (Phoenix.Ecto.CheckRepoStatus runs it on every dev request): left out of the query count"
+        >
+          framework
+        </span>
         <span
           :if={@event.data[:n_plus_one?]}
           class="pdt-tag pdt-tag--warn"

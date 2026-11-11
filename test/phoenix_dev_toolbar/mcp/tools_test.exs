@@ -175,8 +175,10 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       assert call_error("page_summary", %{}) =~ "10 minutes"
       assert call_error("page_summary", %{"path" => "/x"}) =~ "No captured page at /x. list_pages"
       assert call_error("page_queries", %{"sid" => "unknown"}) =~ "No page captured"
-      assert call_error("page_queries", %{"sid" => "../etc"}) =~ "sid must match"
-      assert call_error("page_queries", %{"sid" => 5}) =~ "sid must be a string"
+      assert call_error("page_queries", %{"sid" => "../etc"}) =~ "sid: a page sid from list_pages"
+
+      assert call_error("page_queries", %{"sid" => 5}) =~
+               "sid: a page sid string from list_pages or page_summary"
     end
   end
 
@@ -205,7 +207,8 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       assert %{"queries" => %{"slowest" => [%{"sql" => _}]}} =
                call!("page_summary", %{"sid" => s.sid, "verbose" => true})
 
-      assert call_error("page_summary", %{"verbose" => "yes"}) =~ "verbose must be a boolean"
+      assert call_error("page_summary", %{"verbose" => "yes"}) =~
+               "verbose: true or false, got a string"
     end
 
     test "an explicit connected mount sid reads its whole page" do
@@ -284,6 +287,37 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       assert call_error("page_queries", %{"sid" => sid, "limit" => 201}) =~ "limit"
       assert call_error("page_queries", %{"sid" => sid, "sort" => "fastest"}) =~ "sort"
     end
+
+    test "each query carries its callback, event, caller and noise tag" do
+      s = session(:live_view, path: "/q", view: DemoWeb.PageLive)
+      callback(s, :handle_event, span: 1, event: "save")
+
+      query(s,
+        span: 1,
+        stacktrace: [
+          "lib/demo/posts.ex:3: Demo.Posts.get/1",
+          "lib/demo_web/live/page_live.ex:9: DemoWeb.PageLive.handle_event/3"
+        ]
+      )
+
+      query(s, span: 1, sql: ~s(SELECT s0."version" FROM "schema_migrations" AS s0))
+
+      assert %{"queries" => [query, noise]} = call!("page_queries", %{"sid" => s.sid})
+
+      assert %{
+               "span" => 1,
+               "callback" => "handle_event",
+               "event" => "save",
+               "origin" => "lib/demo/posts.ex:3: Demo.Posts.get/1",
+               "caller" => "lib/demo_web/live/page_live.ex:9: DemoWeb.PageLive.handle_event/3",
+               "noise" => nil
+             } = query
+
+      assert %{"noise" => "check_repo_status"} = noise
+
+      assert %{"queries" => %{"count" => 1, "noise" => %{"count" => 1}}} =
+               call!("page_summary", %{"sid" => s.sid})
+    end
   end
 
   describe "page_callbacks" do
@@ -301,6 +335,21 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
 
       assert last["callback"] == "handle_info"
       assert %{"callbacks" => [%{"view" => "DemoWeb.PageLive"} | _]} = call!("page_callbacks")
+    end
+
+    test "sort slowest puts inferred entries (null duration_us) last" do
+      s = session(:live_view, path: "/i")
+      callback(s, :mount, span: 1, us: 100)
+      query(s, span: 2, us: 30)
+      callback(s, :handle_event, event: "go", span: 3, us: 500)
+
+      assert %{
+               "callbacks" => [
+                 %{"callback" => "handle_event"},
+                 %{"callback" => "mount"},
+                 %{"callback" => "handle_info", "inferred" => true, "duration_us" => nil}
+               ]
+             } = call!("page_callbacks", %{"sid" => s.sid, "sort" => "slowest"})
     end
   end
 
@@ -340,6 +389,39 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
                call!("page_n_plus_one", %{"sid" => s.sid})
 
       assert count >= 5
+    end
+
+    test "each group lists the callbacks it ran in and its callers" do
+      s = session(:live_view, path: "/n", view: DemoWeb.PageLive)
+      callback(s, :mount, span: 1)
+      caller = "lib/demo_web/live/page_live.ex:63: DemoWeb.PageLive.mount/3"
+
+      for _ <- 1..5,
+          do:
+            query(s,
+              span: 1,
+              stacktrace: ["lib/demo/policy.ex:7: Demo.Policy.allowed?/2", caller]
+            )
+
+      assert %{
+               "n_plus_one" => [
+                 %{
+                   "callbacks" => 1,
+                   "ran_in" => [
+                     %{
+                       "view" => "DemoWeb.PageLive",
+                       "callback" => "mount",
+                       "event" => nil,
+                       "seq" => seq,
+                       "count" => 5
+                     }
+                   ],
+                   "callers" => [%{"frame" => ^caller, "count" => 5}]
+                 }
+               ]
+             } = call!("page_n_plus_one", %{"sid" => s.sid})
+
+      assert is_integer(seq)
     end
   end
 
@@ -530,6 +612,24 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       assert call_error("compare_pages", %{"before" => "bad sid!"}) =~ "before"
       assert call_error("compare_pages", %{"before" => 5}) =~ "before"
       assert call_error("compare_pages", %{"before" => before.sid, "after" => "gone"}) =~ "after"
+    end
+
+    test "a wrong argument type says what is expected and how to get it" do
+      assert call_error("compare_pages", %{"before" => %{"path" => "/x"}}) ==
+               "before: a page sid string (from list_pages or page_summary), got an object. " <>
+                 ~s(For the page at "/x", call list_pages with path: "/x" and pass its sid; ) <>
+                 ~s(to pick the after page by path, use path: "/x".)
+
+      assert call_error("compare_pages", %{"before" => 5}) =~
+               "before: a page sid string (from list_pages or page_summary), got a number"
+
+      assert call_error("page_summary", %{"path" => ["/x"]}) ==
+               ~s(path: an exact request path string, such as "/posts", got an array.)
+
+      assert call_error("list_pages", %{"limit" => 0}) == "limit: an integer from 1 to 50, got 0."
+
+      assert call_error("page_summary", %{"bogus" => 1}) =~
+               "Unknown argument(s): \"bogus\". Accepted: path, sid, verbose."
     end
 
     test "an after older than before is a tool error" do

@@ -88,9 +88,9 @@ the default resolve to the request too. `list_pages` with both `path` and
 |---|---|---|
 | `list_pages` | `path`, `path_prefix`, `since` (a captured sid or ISO 8601 time: only later pages; a sid no longer in the Store is a tool error naming `started_at` as the fallback), `limit` (1..50, 10) | `pages`, newest first, each with `started_at` (ISO 8601) and `panel_url`; a connected mount is part of its request's page, not a page of its own |
 | `page_summary` | `sid`, `path`, `verbose` (boolean, false) | `Report.summary/2` (compact items unless `verbose`) plus `panel_url` |
-| `page_queries` | `sid`, `path`, `limit` (1..200, 50), `sort` (`order`, `slowest`) | `sid`, `panel_url`, `total`, `returned`, `queries` |
-| `page_callbacks` | as `page_queries` | `sid`, `panel_url`, `total`, `returned`, `callbacks` |
-| `page_n_plus_one` | `sid`, `path` | `sid`, `panel_url`, `n_plus_one` |
+| `page_queries` | `sid`, `path`, `limit` (1..200, 50), `sort` (`order`, `slowest`) | `sid`, `panel_url`, `total`, `returned`, `queries`, each with `span`, `callback`, `event`, `origin`, `caller` and `noise` (ADR 13) |
+| `page_callbacks` | as `page_queries` | `sid`, `panel_url`, `total`, `returned`, `callbacks`; inferred entries have `duration_us: null` (stated in the tool description) and `sort: "slowest"` puts every null duration last |
+| `page_n_plus_one` | `sid`, `path` | `sid`, `panel_url`, `n_plus_one`, each group with `ran_in` and `callers` (ADR 13) |
 | `page_errors` | `sid`, `path`, `limit` (1..100, 20) | `sid`, `panel_url`, `total`, `returned`, `errors` |
 | `recent_errors` | `since` (a captured sid: errors after that page started, never its own sessions; or ISO 8601 time; same parsing and errors as `list_pages`), `limit` (1..100, 20) | `total`, `returned`, `errors` (`Report.recent_errors/1`, newest first), each with `page_sid` (the root: a connected mount reads as its request) and a `panel_url` to that page |
 | `page_report` | `sid`, `path` | `sid`, `panel_url`, `markdown` (`Report.markdown/2`) as `structuredContent`; the text block is the Markdown itself, not JSON |
@@ -110,7 +110,11 @@ passes an absolute link built from the panel request's base URL. Keys
 and values follow `Report` (ADR 13) through one JSON normalizer: string keys,
 modules and pids as `inspect/1` strings, timestamps in ISO 8601. Invalid
 arguments and a missing page are tool errors (`isError: true`) whose text says
-what to do; an unknown tool is `-32602`. Input is never turned into atoms; a sid
+what to do: an argument error names the argument, what it takes, the JSON type it
+got (never the value) and where to get a valid one (`before: a page sid string
+(from list_pages or page_summary), got an object`, plus the `list_pages` call to
+make when that object holds a `path`); an unknown argument lists the accepted
+ones. An unknown tool is `-32602`. Input is never turned into atoms; a sid
 must match `\A[A-Za-z0-9_-]{1,64}\z`.
 
 **Prompts.** The `prompts` capability (`listChanged: false`) is advertised in
@@ -125,6 +129,15 @@ with the sid). An unknown prompt or a bad `path` is `-32602`; on 2026-07-28
 
 Tool names, arguments and result keys are a contract like `Report`'s: adding is
 not a breaking change, renaming or removing is (a CHANGELOG line).
+
+**Upgrades.** The server cannot push `notifications/tools/list_changed`: it has
+no SSE stream, so `tools.listChanged` is `false`. A client keeps the tool list it
+read at connect time, so after a `phoenix_dev_toolbar` upgrade new tools and
+fields stay hidden until it reconnects (`/mcp` in Claude Code). `serverInfo.version`
+in `initialize` (and `server/discover`) is the running release
+(`Application.spec(:phoenix_dev_toolbar, :vsn)`); the README, the agent setup
+guide, the usage rules and the shipped skill tell the user to reconnect after an
+upgrade.
 
 ## Consequences
 

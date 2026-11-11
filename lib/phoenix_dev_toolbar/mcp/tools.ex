@@ -51,7 +51,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "page_summary",
         "Summarize a page",
-        "A compact page at a glance: request, query count and time, N+1 findings, slowest queries and callbacks, errors. Items carry no SQL, params or assigns: pass verbose: true, or use page_queries and page_callbacks, for detail.",
+        "A compact page at a glance: request, query count and time, N+1 findings, slowest queries and callbacks, errors. Query counts leave out framework noise (Phoenix.Ecto.CheckRepoStatus), counted in queries.noise. Items carry no SQL, params or assigns: pass verbose: true, or use page_queries and page_callbacks, for detail.",
         %{
           "sid" => @sid_prop,
           "path" => @path_prop,
@@ -65,7 +65,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "page_queries",
         "List a page's Ecto queries",
-        "The Ecto queries run for a page, with SQL, timings and origin.",
+        "The Ecto queries run for a page, with SQL, timings, origin (the Repo call site), caller (the LiveView, controller or on_mount frame that led to it; needs the repo's stacktrace: true), and the callback and event they ran in (span is the callback's seq group, as in page_callbacks; callback is request for a query outside any LiveView callback). noise tags framework queries (check_repo_status: Phoenix.Ecto.CheckRepoStatus), which page_summary leaves out of its counts.",
         Map.merge(page_props(), %{
           "limit" => int_prop("Maximum queries to return.", 1, 200, 50),
           "sort" => sort_prop()
@@ -74,7 +74,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "page_callbacks",
         "List a page's LiveView callbacks",
-        "The LiveView and LiveComponent callbacks of a page (mount, handle_event, ...) with timings and assigns changes.",
+        "The LiveView and LiveComponent callbacks of a page (mount, handle_event, ...) with timings and assigns changes. inferred: true entries stand for handle_info (or async task) queries no callback owns: their duration_us is null, never 0, so sum with a default; sort: \"slowest\" puts them last.",
         Map.merge(page_props(), %{
           "limit" => int_prop("Maximum callbacks to return.", 1, 200, 50),
           "sort" => sort_prop()
@@ -83,7 +83,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "page_n_plus_one",
         "Find N+1 queries on a page",
-        "Repeated queries (same SQL from the same origin) found on a page.",
+        "Repeated queries (same SQL from the same origin) found on a page. ran_in names the callbacks each repeated in (view, callback, event, seq, count); callers lists the distinct caller frames (the LiveView, controller or on_mount code above the Repo call) with counts, most frequent first.",
         page_props()
       ),
       tool(
@@ -112,7 +112,8 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
         %{
           "before" => %{
             "type" => "string",
-            "description" => "Sid of the earlier capture (from list_pages or page_summary)."
+            "description" =>
+              "Sid of the earlier capture (from list_pages or page_summary), a string. To start from a path, call list_pages with path first."
           },
           "after" => %{
             "type" => "string",
@@ -395,10 +396,23 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       value when is_binary(value) ->
         captured_sid(value, key)
 
-      _other ->
-        {:error, "#{key} must be a string"}
+      other ->
+        {:error, page_sid_message(key, other)}
     end
   end
+
+  defp page_sid_message(key, %{"path" => path}) when is_binary(path) do
+    path = inspect(String.slice(path, 0, 200))
+
+    "#{key}: a page sid string (from list_pages or page_summary), got an object. " <>
+      "For the page at #{path}, call list_pages with path: #{path} and pass its sid" <>
+      if(key == "before", do: "; to pick the after page by path, use path: #{path}.", else: ".")
+  end
+
+  defp page_sid_message(key, other),
+    do:
+      "#{key}: a page sid string (from list_pages or page_summary), got #{kind(other)}. " <>
+        ~s(To compare by path, pass before: <sid> and path: "/posts".)
 
   defp captured_sid(value, key) do
     with true <- PageLookup.valid_sid?(value),
@@ -544,12 +558,20 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
     known = definition |> get_in(["inputSchema", "properties"]) |> Map.keys()
 
     case Map.keys(args) -- known do
-      [] -> {:ok, args}
-      unknown -> {:error, "Unknown argument(s): #{Enum.map_join(unknown, ", ", &safe_key/1)}"}
+      [] ->
+        {:ok, args}
+
+      unknown ->
+        {:error,
+         "Unknown argument(s): #{Enum.map_join(unknown, ", ", &safe_key/1)}. " <>
+           "Accepted: #{accepted(known)}."}
     end
   end
 
   defp check_args(_args, _definition), do: {:error, "arguments must be an object"}
+
+  defp accepted([]), do: "none"
+  defp accepted(known), do: known |> Enum.sort() |> Enum.join(", ")
 
   defp safe_key(key) when is_binary(key), do: inspect(String.slice(key, 0, 40))
   defp safe_key(key), do: inspect(key, limit: 5)
@@ -558,10 +580,26 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
     case Map.get(args, key) do
       nil -> {:ok, nil}
       value when is_binary(value) -> {:ok, value}
-      _other -> {:error, "#{key} must be a string"}
+      other -> {:error, "#{key}: #{expected(key)}, got #{kind(other)}."}
     end
     |> check_size(key)
   end
+
+  defp expected("sid"),
+    do:
+      ~s(a page sid string from list_pages or page_summary; to pick a page by path, use path: "/posts")
+
+  defp expected("path"), do: ~s(an exact request path string, such as "/posts")
+  defp expected("path_prefix"), do: ~s(a path prefix string, such as "/admin")
+  defp expected(_key), do: "a string"
+
+  # What an argument was, for an error message: the type, never the value.
+  defp kind(value) when is_map(value), do: "an object"
+  defp kind(value) when is_list(value), do: "an array"
+  defp kind(value) when is_boolean(value), do: "a boolean"
+  defp kind(value) when is_number(value), do: "a number"
+  defp kind(value) when is_binary(value), do: "a string"
+  defp kind(_value), do: "null"
 
   defp check_size({:ok, value} = ok, key) when key in ["path", "path_prefix"] do
     case is_binary(value) and byte_size(value) > @max_path do
@@ -575,21 +613,21 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   defp bool_arg(args, key) do
     case Map.get(args, key, false) do
       value when is_boolean(value) -> {:ok, value}
-      _other -> {:error, "#{key} must be a boolean"}
+      other -> {:error, "#{key}: true or false, got #{kind(other)}."}
     end
   end
 
   defp int_arg(args, key, default, min, max) do
     case Map.get(args, key, default) do
       value when is_integer(value) and value >= min and value <= max -> {:ok, value}
-      _other -> {:error, "#{key} must be an integer between #{min} and #{max}"}
+      other -> {:error, "#{key}: an integer from #{min} to #{max}, got #{int_got(other)}."}
     end
   end
 
   defp sort_arg(args) do
     case Map.get(args, "sort", "order") do
       sort when sort in ["order", "slowest"] -> {:ok, sort}
-      _other -> {:error, "sort must be \"order\" or \"slowest\""}
+      _other -> {:error, ~s[sort: "order" (oldest first) or "slowest" (longest first).]}
     end
   end
 
@@ -613,7 +651,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   defp resolve_page(sid, _path) do
     case PageLookup.valid_sid?(sid) do
       true -> found(sid |> existing() |> root())
-      false -> {:error, "sid must match [A-Za-z0-9_-], 1 to 64 characters"}
+      false -> {:error, "sid: a page sid from list_pages ([A-Za-z0-9_-], 1 to 64 characters)."}
     end
   end
 
@@ -632,6 +670,9 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
 
   defp found(nil), do: {:error, no_page()}
   defp found(sid), do: {:ok, sid}
+
+  defp int_got(value) when is_integer(value), do: Integer.to_string(value)
+  defp int_got(value), do: kind(value)
 
   defp no_page, do: "No page captured. " <> @no_page_hint
 

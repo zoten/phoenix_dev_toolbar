@@ -108,6 +108,32 @@ defmodule PhoenixDevToolbar.NPlusOneTest do
     assert [%{callbacks: 3, count: 3, sids: ["live", "http"]}] = NPlusOne.groups(state)
   end
 
+  test "a group keeps the spans it repeated in, newest first, with the count in each" do
+    # The single query of span 3 is below the threshold: not a span of the group.
+    events =
+      for {sid, span, n} <- [{"http", 1, 3}, {"live", 2, 5}, {"live", 3, 1}],
+          _n <- 1..n,
+          do: query("SELECT u", sid: sid, span: span)
+
+    {_results, state} = fold(NPlusOne.new(3), events)
+
+    assert [%{spans: spans}] = NPlusOne.groups(state)
+
+    assert spans == [
+             %{sid: "live", span: 2, caller?: false, count: 5},
+             %{sid: "http", span: 1, caller?: false, count: 3}
+           ]
+  end
+
+  test "a group keeps its last 10 spans" do
+    events = for span <- 1..15, _n <- 1..2, do: query("SELECT u", sid: "s#{span}", span: span)
+    {_results, state} = fold(NPlusOne.new(2), events)
+
+    assert [%{callbacks: 15, spans: spans}] = NPlusOne.groups(state)
+    assert length(spans) == 10
+    assert %{span: 15} = hd(spans)
+  end
+
   test "a clear marker starts over, keeping the threshold" do
     {_results, state} = fold(NPlusOne.new(2), [query("SELECT u"), query("SELECT u")])
     assert NPlusOne.detected(state) == 1
