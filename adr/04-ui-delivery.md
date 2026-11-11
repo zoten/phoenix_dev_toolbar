@@ -91,7 +91,8 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   root: collapsed on a side, the header turns into a full height strip
   (`writing-mode: vertical-rl`, header sizes are logical properties), and an open panel
   under 760px wide (a side dock, a 600px bottom dock) puts the tabs on their own row
-  and wraps the header controls.
+  and wraps the header controls. Collapsed, the tabs shrink and scroll sideways first, so
+  hide and collapse always stay in view.
 - **Panel JS**: the root layout loads, deferred and in order, `phoenix.js`, `live_view.js`
   and `panel.js` (about 8.5 KB: no client bundled; `loader.js` is about 9.5 KB and `panel.css` about 17 KB). `panel.js` takes `window.Phoenix` and
   `window.LiveView`, connects the panel through its own socket (`<path>/live`, see Panel

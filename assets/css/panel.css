@@ -102,6 +102,10 @@ html:not(.pdt-open) .pdt-markdown { display: none; }
 .pdt-badge--error { color: #fff; background: var(--pdt-error) !important; }
 
 .pdt-tabs { display: flex; gap: 2px; margin-inline-start: auto; }
+/* Collapsed bar on a narrow viewport: the tabs give way first and scroll
+   sideways, so hide and collapse always stay in view. */
+html:not(.pdt-open) .pdt-tabs { min-inline-size: 0; overflow-x: auto; scrollbar-width: none; }
+html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
 
 .pdt-tab {
   block-size: 24px;

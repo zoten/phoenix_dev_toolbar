@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Report.recent_errors and MCP recent_errors across pages (ADR 13, 15)
 - Report.markdown and MCP page_report: a page as Markdown (ADR 13, 15)
 - Panel Copy as Markdown (ADR 04, 13)
+- Narrow viewports: header wraps when open, collapsed bar keeps hide and collapse in view (ADR 04)
 - MCP page_assigns_shape: assign sizes without values (ADR 07, 15)
 - MCP prompt audit_page (ADR 15)
 - Release bump also updates the install snippets of README.md and guides/agent-setup.md (ADR 06)
