@@ -57,7 +57,9 @@ Check, in this order:
 - `dropped` and `trimmed`: above 0 means events were lost to the caps, so a
   missing query or N+1 proves nothing.
 - `errors`, `n_plus_one`, `queries.count`, `queries.total_us`,
-  `queries.slowest`, `callbacks.slowest`.
+  `queries.slowest`, `callbacks.slowest`. These items are compact (no SQL,
+  params or assigns): use `queries/2` and `callbacks/2`, or `summary(page,
+  verbose: true)` (`page_summary` with `verbose: true`), for the detail.
 
 `latest/1` can pick up a page the user opened in another tab. When unsure, use
 `Report.sessions(path: "/posts", limit: 5)` (over MCP, `list_pages` with

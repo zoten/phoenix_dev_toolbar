@@ -85,7 +85,7 @@ the default resolve to the request. `list_pages` with both `path` and
 | Tool | Arguments | Result |
 |---|---|---|
 | `list_pages` | `path`, `path_prefix`, `limit` (1..50, 10) | `pages`, newest first, each with `panel_url`; a connected mount is part of its request's page, not a page of its own |
-| `page_summary` | `sid`, `path` | `Report.summary/2` plus `panel_url` |
+| `page_summary` | `sid`, `path`, `verbose` (boolean, false) | `Report.summary/2` (compact items unless `verbose`) plus `panel_url` |
 | `page_queries` | `sid`, `path`, `limit` (1..200, 50), `sort` (`order`, `slowest`) | `sid`, `panel_url`, `total`, `returned`, `queries` |
 | `page_callbacks` | as `page_queries` | `sid`, `panel_url`, `total`, `returned`, `callbacks` |
 | `page_n_plus_one` | `sid`, `path` | `sid`, `panel_url`, `n_plus_one` |

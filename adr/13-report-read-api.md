@@ -23,7 +23,11 @@ Store, built for IEx and agents:
   regex), `:view`, `:kind`, `:limit`; `latest/1` is the newest match.
 - `summary/2` gives one compact map per page: the request, query count, failures
   and total time with the 5 slowest queries, N+1 groups, callback totals with the
-  5 slowest, render totals, errors, and the events lost to the caps.
+  5 slowest, render totals, errors, and the events lost to the caps. The slowest
+  queries, slowest callbacks and errors are briefs by default (no SQL, params,
+  assigns changes, times or stacktrace; an error keeps its first frame as
+  `origin`): `verbose: true` returns the full items, `queries/2`, `callbacks/2`
+  and `errors/2` the detail.
   `queries/2`, `callbacks/2`, `n_plus_one/2` and `errors/2` return the full lists.
 - A target is a sid, a session map or a list of sids. A request target includes
   the LiveView sessions whose parent it is (its connected mount, `children: true`

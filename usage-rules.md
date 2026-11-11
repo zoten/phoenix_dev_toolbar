@@ -30,8 +30,9 @@ Report.sessions(path: ~r{^/posts}, limit: 5)
   another VM where nothing was captured.
 - Use it to check claims about a page ("N+1 fixed", "fewer queries", "no
   errors") with numbers before and after a change.
-- Start with `summary/2`; read `queries/2` or `callbacks/2` only when you need
-  the full list.
+- Start with `summary/2`: its slowest queries, callbacks and errors are compact
+  (no SQL or assigns). Read `queries/2` or `callbacks/2`, or pass `verbose: true`,
+  when you need the detail.
 - Data expires after 10 minutes by default: trigger the page again rather than
   looking for old sessions.
 - It is read-only. EXPLAIN and process actions are in the browser panel only.
@@ -42,7 +43,8 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
 (`http://localhost:4000/__pdt/mcp`), prefer its tools to evaluating code:
 
 - `list_pages` (filter with `path` or `path_prefix`), then `page_summary` with
-  the page's `sid` or its `path`. Without either, tools read the newest page.
+  the page's `sid` or its `path` (compact; `verbose: true` for full items).
+  Without either, tools read the newest page.
 - `page_queries`, `page_callbacks` (`sort: "slowest"`, `limit`),
   `page_n_plus_one`, `page_errors` for the details.
 - A "No page captured" error means the page was not loaded in the last 10

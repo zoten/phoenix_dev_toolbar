@@ -43,8 +43,16 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "page_summary",
         "Summarize a page",
-        "A page at a glance: request, query count and time, N+1 findings, slowest callbacks, errors.",
-        %{"sid" => @sid_prop, "path" => @path_prop}
+        "A compact page at a glance: request, query count and time, N+1 findings, slowest queries and callbacks, errors. Items carry no SQL, params or assigns: pass verbose: true, or use page_queries and page_callbacks, for detail.",
+        %{
+          "sid" => @sid_prop,
+          "path" => @path_prop,
+          "verbose" => %{
+            "type" => "boolean",
+            "description" => "Full query, callback and error items instead of compact ones.",
+            "default" => false
+          }
+        }
       ),
       tool(
         "page_queries",
@@ -148,8 +156,9 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   end
 
   defp execute("page_summary", args, opts) do
-    with {:ok, sid} <- resolve(args) do
-      case Report.summary(sid) do
+    with {:ok, verbose} <- bool_arg(args, "verbose"),
+         {:ok, sid} <- resolve(args) do
+      case Report.summary(sid, verbose: verbose) do
         nil -> {:error, no_page()}
         summary -> {:ok, Map.put(summary, :panel_url, panel_url(opts, sid))}
       end
@@ -270,6 +279,13 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   end
 
   defp check_size(result, _key), do: result
+
+  defp bool_arg(args, key) do
+    case Map.get(args, key, false) do
+      value when is_boolean(value) -> {:ok, value}
+      _other -> {:error, "#{key} must be a boolean"}
+    end
+  end
 
   defp int_arg(args, key, default, min, max) do
     case Map.get(args, key, default) do

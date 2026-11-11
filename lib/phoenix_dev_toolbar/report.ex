@@ -49,6 +49,19 @@ defmodule PhoenixDevToolbar.Report do
   alias PhoenixDevToolbar.Store
 
   @slowest 5
+  @query_brief [:seq, :sid, :origin, :duration_us, :rows, :source, :n_plus_one?, :error]
+  @callback_brief [
+    :seq,
+    :sid,
+    :view,
+    :component,
+    :callback,
+    :event,
+    :duration_us,
+    :queries,
+    :query_us,
+    :error
+  ]
 
   @typedoc "A session id."
   @type sid :: String.t()
@@ -146,6 +159,41 @@ defmodule PhoenixDevToolbar.Report do
           stacktrace: [String.t()]
         }
 
+  @typedoc "A `t:query/0` without SQL, params, times and stacktrace: what `summary/2` lists by default."
+  @type query_brief :: %{
+          seq: pos_integer(),
+          sid: sid(),
+          origin: String.t() | nil,
+          duration_us: non_neg_integer() | nil,
+          rows: non_neg_integer() | nil,
+          source: String.t() | nil,
+          n_plus_one?: boolean(),
+          error: String.t() | nil
+        }
+
+  @typedoc "A `t:callback/0` without params, assigns changes and times: what `summary/2` lists by default."
+  @type callback_brief :: %{
+          seq: pos_integer(),
+          sid: sid(),
+          view: module() | nil,
+          component: module() | nil,
+          callback: atom(),
+          event: String.t() | nil,
+          duration_us: non_neg_integer() | nil,
+          queries: non_neg_integer(),
+          query_us: non_neg_integer(),
+          error: String.t() | nil
+        }
+
+  @typedoc "An `t:error/0` with its first stacktrace frame as `origin` (nil when there is none)."
+  @type error_brief :: %{
+          seq: pos_integer(),
+          sid: sid(),
+          source: :request | :live_view | :ecto,
+          message: String.t(),
+          origin: String.t() | nil
+        }
+
   @typedoc "The dead render request: its route and response."
   @type request :: %{
           method: String.t() | nil,
@@ -158,7 +206,8 @@ defmodule PhoenixDevToolbar.Report do
 
   @typedoc """
   A page at a glance. `sids` are the sessions read; `session` is the first.
-  Each `slowest` list holds at most #{@slowest} items, slowest first.
+  Each `slowest` list holds at most #{@slowest} items, slowest first. Items are
+  briefs unless `summary/2` got `verbose: true`.
   `dropped` and `trimmed` add up the events lost to the caps.
   """
   @type summary :: %{
@@ -169,16 +218,16 @@ defmodule PhoenixDevToolbar.Report do
             count: non_neg_integer(),
             failed: non_neg_integer(),
             total_us: non_neg_integer(),
-            slowest: [query()]
+            slowest: [query_brief() | query()]
           },
           n_plus_one: [n_plus_one()],
           callbacks: %{
             count: non_neg_integer(),
             total_us: non_neg_integer(),
-            slowest: [callback()]
+            slowest: [callback_brief() | callback()]
           },
           renders: %{count: non_neg_integer(), total_us: non_neg_integer()},
-          errors: [error()],
+          errors: [error_brief() | error()],
           dropped: non_neg_integer(),
           trimmed: non_neg_integer()
         }
@@ -208,7 +257,11 @@ defmodule PhoenixDevToolbar.Report do
 
   @doc """
   A page at a glance, or nil when no session of `target` is left.
-  Options: `children:` (see the module docs), `threshold:` (see `n_plus_one/2`).
+  The slowest queries and callbacks and the errors are compact by default
+  (`t:query_brief/0`, `t:callback_brief/0`, `t:error_brief/0`): read the detail
+  with `queries/2`, `callbacks/2` and `errors/2`.
+  Options: `verbose:` (true returns the full `t:query/0`, `t:callback/0` and
+  `t:error/0` items), `children:` (see the module docs), `threshold:` (see `n_plus_one/2`).
   """
   @spec summary(target(), keyword()) :: summary() | nil
   def summary(target, opts \\ []) do
@@ -220,6 +273,7 @@ defmodule PhoenixDevToolbar.Report do
         queries = queries_of(events, threshold(opts))
         callbacks = callbacks_of(events)
         renders = for %Event{plugin: :live_view, kind: :render} = event <- events, do: event
+        brief = brief_fun(Keyword.get(opts, :verbose, false))
 
         %{
           sids: Enum.map(sessions, & &1.sid),
@@ -229,16 +283,16 @@ defmodule PhoenixDevToolbar.Report do
             count: length(queries),
             failed: Enum.count(queries, &(&1.error != nil)),
             total_us: total(queries),
-            slowest: slowest(queries)
+            slowest: queries |> slowest() |> Enum.map(&brief.(&1, @query_brief))
           },
           n_plus_one: n_plus_one_of(events, threshold(opts)),
           callbacks: %{
             count: length(callbacks),
             total_us: total(callbacks),
-            slowest: slowest(callbacks)
+            slowest: callbacks |> slowest() |> Enum.map(&brief.(&1, @callback_brief))
           },
           renders: %{count: length(renders), total_us: total(renders)},
-          errors: errors_of(events),
+          errors: events |> errors_of() |> Enum.map(&error_item(&1, brief)),
           dropped: sessions |> Enum.map(& &1.dropped) |> Enum.sum(),
           trimmed: sessions |> Enum.map(& &1.trimmed) |> Enum.sum()
         }
@@ -518,6 +572,18 @@ defmodule PhoenixDevToolbar.Report do
   end
 
   ## Helpers
+
+  defp brief_fun(true), do: fn item, _keys -> item end
+  defp brief_fun(_other), do: &Map.take/2
+
+  defp error_item(error, brief) do
+    brief.(error, [:seq, :sid, :source, :message])
+    |> maybe_origin(error)
+  end
+
+  defp maybe_origin(%{stacktrace: _} = full, _error), do: full
+
+  defp maybe_origin(item, error), do: Map.put(item, :origin, List.first(error.stacktrace))
 
   defp slowest(items) do
     items |> Enum.sort_by(&(&1.duration_us || 0), :desc) |> Enum.take(@slowest)

@@ -158,6 +158,35 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
 
       assert url == "http://localhost:4000/__pdt/panel?sid=" <> s.sid
     end
+
+    test "is compact by default and verbose on request" do
+      s = session(:request, path: "/users")
+      query(s)
+
+      assert %{"queries" => %{"slowest" => [item]}} = call!("page_summary", %{"sid" => s.sid})
+      refute Map.has_key?(item, "sql")
+
+      assert %{"queries" => %{"slowest" => [%{"sql" => _}]}} =
+               call!("page_summary", %{"sid" => s.sid, "verbose" => true})
+
+      assert call_error("page_summary", %{"verbose" => "yes"}) =~ "verbose must be a boolean"
+    end
+  end
+
+  describe "page_callbacks sids" do
+    test "a LiveView sid reads its own callbacks, the request sid its children too" do
+      root = session(:request, path: "/users")
+      mount = session(:live_view, path: "/users", parent: root.sid, started_at: @t0 + 1)
+      callback(mount, :mount, span: 1, us: 10)
+      callback(mount, :handle_event, span: 2, us: 20, event: "go")
+
+      assert %{"callbacks" => own} = call!("page_callbacks", %{"sid" => mount.sid})
+      assert Enum.map(own, & &1["callback"]) == ["mount", "handle_event"]
+      assert Enum.all?(own, &(&1["sid"] == mount.sid))
+
+      assert %{"callbacks" => all} = call!("page_callbacks", %{"sid" => root.sid})
+      assert Enum.map(all, & &1["sid"]) == [mount.sid, mount.sid]
+    end
   end
 
   describe "raw query data" do

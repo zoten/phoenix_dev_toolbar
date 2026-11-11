@@ -223,6 +223,37 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert %{dropped: 0, trimmed: 0} = summary
     end
 
+    test "items are compact by default, full with verbose: true" do
+      root = session(:request, path: "/users")
+      mount = session(:live_view, path: "/users", parent: root.sid, started_at: @t0 + 1)
+      query(mount, us: 70, span: 1)
+      query(mount, result: {:error, "boom"}, us: 1, span: 2)
+      callback(mount, :mount, span: 1, us: 900)
+
+      assert %{
+               queries: %{slowest: [brief | _]},
+               callbacks: %{slowest: [cb_brief]},
+               errors: [err_brief]
+             } = Report.summary(root.sid)
+
+      assert Map.keys(brief) |> Enum.sort() ==
+               ~w(duration_us error n_plus_one? origin rows seq sid source)a
+
+      assert brief.origin == "lib/app.ex:10: App.list/0"
+
+      assert Map.keys(cb_brief) |> Enum.sort() ==
+               ~w(callback component duration_us error event queries query_us seq sid view)a
+
+      assert Map.keys(err_brief) |> Enum.sort() == ~w(message origin seq sid source)a
+      assert err_brief.message == "boom"
+
+      assert %{
+               queries: %{slowest: [%{sql: _, params: _, stacktrace: _, times: _} | _]},
+               callbacks: %{slowest: [%{changes: _, params: _}]},
+               errors: [%{stacktrace: _, at: _}]
+             } = Report.summary(root.sid, verbose: true)
+    end
+
     test "accepts a session map" do
       s = session(:request, path: "/users")
       assert %{sids: [sid], request: nil} = s.sid |> Report.summary()
