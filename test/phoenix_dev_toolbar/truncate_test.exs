@@ -219,7 +219,7 @@ defmodule PhoenixDevToolbar.TruncateTest do
             {deep, &(&1 =~ ~s(password: "[REDACTED]"))},
             {tuple, &(&1 =~ ~s(password: "[REDACTED]"))},
             {improper, &(&1 =~ ~s(password: "[REDACTED]"))},
-            {wide, fn _shown -> Truncate.redact(wide)["…"] == "…" end},
+            {wide, fn _printed_cut_at_50 -> Truncate.redact(wide)["…"] == "…" end},
             {far_deep, &(&1 =~ "[[[[")}
           ] do
         redacted = Truncate.redact(value)

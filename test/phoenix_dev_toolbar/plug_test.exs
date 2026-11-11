@@ -62,7 +62,7 @@ defmodule PhoenixDevToolbar.PlugTest do
       assert [%Event{plugin: :request, kind: :response, duration: duration, data: data}] =
                Store.events(sid(conn))
 
-      assert duration >= 0
+      assert is_integer(duration) and duration >= 0
       assert %{method: "GET", path: "/users", status: 200, injected?: true} = data
     end
 

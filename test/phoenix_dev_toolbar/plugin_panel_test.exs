@@ -96,6 +96,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
            ]
 
     assert has_element?(panel, "#pdt-badge-badge_only[data-pdt-level=warn]", "1 seen")
+    assert has_element?(panel, "#pdt-badge-live[data-pdt-level=info]")
     refute has_element?(panel, "#pdt-tab-badge_only")
   end
 

@@ -99,3 +99,13 @@ drag and window resize, the panel's focus restore and tab arrow keys, and the
 - **Tests passing for the wrong reason**: each strengthened test is checked to fail
   when the behaviour it guards is broken (a temporary local break, not committed).
 - **Flakiness**: touched files run with `mix test --repeat-until-failure 50`.
+
+## Deferred
+
+- MCP tool and protocol texts say sessions "expire after 10 minutes" while
+  `ttl_ms` is configurable (`mcp/tools.ex`, `mcp/protocol.ex`): derive the text
+  from the limit, an ADR 15 fix of its own.
+- Once-only log keys still erased from `:persistent_term` in `collector_test`,
+  `plug_test`, `mcp/endpoint_test` and `host_module_test` (each restores its
+  state): `@doc false` resets like `PanelSocket.reset_logged_refusals/0` when
+  those modules are next touched.

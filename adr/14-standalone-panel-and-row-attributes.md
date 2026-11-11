@@ -62,7 +62,7 @@ true, missing values are omitted.
 | `#pdt-empty` | `data-pdt-lookup`: `sid`, `path`, `newest` or `gated` (why there is no page) |
 | phase tag in a row | `data-pdt-phase`: `http`, `live` or `client` (where the event ran) |
 | `callback` row parts | `data-pdt-changed` (an assign key), `data-pdt-changed-more` (omitted count), `data-pdt-pushed` (a push_event name), `data-pdt-pushed-unavailable`; client rows tag each field `data-pdt-field`; `n-plus-one` rows tag the origin `data-pdt-origin` |
-| query details, snapshot entry | `data-pdt-stack-args` (call arguments block), `data-pdt-snapshot-changed` (assign changed by the last callback) |
+| crash rows (`callback`, `render`), snapshot entry | `data-pdt-stack-args` (call arguments block), `data-pdt-snapshot-changed` (assign changed by the last callback) |
 | tab button, summary badge | `data-pdt-error` (the tab is quarantined or broken), `data-pdt-level` (`ok`, `warn`, `error`, `info`) |
 | Eval run output | `data-pdt-eval`: `output`, `result` or `error` |
 

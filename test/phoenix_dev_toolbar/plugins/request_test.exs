@@ -36,7 +36,7 @@ defmodule PhoenixDevToolbar.Plugins.RequestTest do
     assert [%Event{plugin: :request, kind: :dispatch, duration: duration, data: data}] =
              Store.events(sid)
 
-    assert duration >= 0
+    assert is_integer(duration) and duration >= 0
 
     assert data == %{
              method: "GET",

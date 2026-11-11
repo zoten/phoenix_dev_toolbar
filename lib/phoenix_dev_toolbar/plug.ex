@@ -68,7 +68,7 @@ defmodule PhoenixDevToolbar.Plug do
   | `#pdt-empty` | `data-pdt-lookup`: `sid`, `path`, `newest` or `gated` |
   | phase tag in a row | `data-pdt-phase`: `http`, `live` or `client` |
   | `callback` row parts | `data-pdt-changed`, `data-pdt-changed-more`, `data-pdt-pushed`, `data-pdt-pushed-unavailable`; `data-pdt-field` on client fields, `data-pdt-origin` on `n-plus-one` rows |
-  | query details, snapshot entry | `data-pdt-stack-args`, `data-pdt-snapshot-changed` |
+  | crash rows (`callback`, `render`), snapshot entry | `data-pdt-stack-args`, `data-pdt-snapshot-changed` |
   | tab button, summary badge | `data-pdt-error`, `data-pdt-level` |
   | Eval run output | `data-pdt-eval`: `output`, `result` or `error` |
 

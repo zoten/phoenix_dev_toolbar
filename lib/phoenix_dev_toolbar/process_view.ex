@@ -119,14 +119,14 @@ defmodule PhoenixDevToolbar.ProcessView do
   attr :title, :string, default: nil
 
   defp vital(assigns) do
+    assigns = assign(assigns, :samples, samples(length(assigns.values)))
+
     ~H"""
     <div id={@id} class={["pdt-vital", @warn? && "pdt-vital--warn"]}>
       <span class="pdt-vital__label" title={@title}>{@label}</span>
       <span class="pdt-vital__value">{@value}</span>
       <.sparkline values={@values} label={sparkline_label(@label, @peak, length(@values))} />
-      <span :if={@peak} id={@id <> "-peak"} class="pdt-vital__peak">peak {@peak} over {samples(
-        length(@values)
-      )}</span>
+      <span :if={@peak} id={@id <> "-peak"} class="pdt-vital__peak">peak {@peak} over {@samples}</span>
     </div>
     """
   end

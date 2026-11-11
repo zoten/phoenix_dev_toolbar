@@ -616,9 +616,6 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       assert call_error("compare_pages", %{"before" => "gone"}) ==
                "before: no captured page with that sid (sessions are capped and expire after 10 minutes). Reload the page, then call page_summary for a new sid."
 
-      assert call_error("compare_pages", %{"before" => "gone"}) =~
-               "Reload the page, then call page_summary for a new sid"
-
       assert call_error("compare_pages", %{"before" => "bad sid!"}) =~ "before: no captured page"
       assert call_error("compare_pages", %{"before" => 5}) =~ "before: a page sid string"
 

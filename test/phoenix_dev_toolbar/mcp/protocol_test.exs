@@ -226,7 +226,7 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
       [%{"content" => %{"text" => text}}] = result["messages"]
       assert text =~ inspect(path)
       refute text =~ "b\nc"
-      assert text =~ "page_n_plus_one"
+      assert text =~ "page_n_plus_one with sid set to that sid"
       assert text =~ "sort: \"slowest\""
       assert text =~ "page_assigns_shape with path #{inspect(path)}"
       assert text =~ "live_view_sid"
