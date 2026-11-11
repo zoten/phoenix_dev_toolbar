@@ -11,7 +11,7 @@ defmodule PhoenixDevToolbar.ProcessActionsTest do
   @local %{panel: nil, client: {127, 0, 0, 1}}
 
   setup do
-    put_app_env(:actions, :loopback)
+    put_app_env(:actions, :local)
 
     {:ok, context: %{@local | panel: self()}}
   end
@@ -36,7 +36,7 @@ defmodule PhoenixDevToolbar.ProcessActionsTest do
     ref = Process.monitor(pid)
 
     assert {:error, message} = ProcessActions.kill(pid, "kill", context)
-    assert message =~ "actions: :loopback"
+    assert message =~ "actions: :local"
     assert {:error, _message} = ProcessActions.peek(pid, context)
     refute_received {:DOWN, ^ref, :process, ^pid, _reason}
   end

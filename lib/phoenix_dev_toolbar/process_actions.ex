@@ -22,6 +22,7 @@ defmodule PhoenixDevToolbar.ProcessActions do
   @type context :: %{
           required(:panel) => pid(),
           optional(:client) => :inet.ip_address() | nil,
+          optional(:local?) => boolean(),
           optional(:transport) => pid() | nil,
           optional(:endpoint) => module() | nil
         }
@@ -33,20 +34,28 @@ defmodule PhoenixDevToolbar.ProcessActions do
   @doc "Whether this panel's client may act at all: why not, as text, when it may not."
   @spec client(context()) :: :ok | {:error, String.t()}
   def client(context) do
-    case ClientPolicy.check_actions(context[:client]) do
+    case check_client(context) do
       :ok ->
         :ok
 
       {:error, :disabled} ->
-        {:error, "Actions are off: set actions: :loopback in the toolbar config to turn them on."}
+        {:error, "Actions are off: set actions: :local in the toolbar config to turn them on."}
 
-      {:error, :not_loopback} ->
+      {:error, :not_local} ->
         {:error,
-         "Actions only run for a browser on this machine reaching the server directly. From " <>
-           "Docker, the LAN, or through a proxy or tunnel (x-forwarded-* headers), set " <>
-           "actions: :any in config/dev.exs (anyone who reaches the dev server can then use them)."}
+         "Actions only run for a browser on this machine (loopback or its own addresses) " <>
+           "reaching the server directly. From Docker, another machine, or through a proxy " <>
+           "or tunnel (x-forwarded-* headers), set actions: :any in config/dev.exs " <>
+           "(anyone who reaches the dev server can then use them)."}
     end
   end
+
+  # The panel computes the "this machine" verdict once per mount (`:local?`);
+  # without it (other callers) the address is checked here.
+  defp check_client(%{local?: local?}) when is_boolean(local?),
+    do: ClientPolicy.check_actions_for(local?)
+
+  defp check_client(context), do: ClientPolicy.check_actions(context[:client])
 
   @doc "Whether this panel may kill or suspend `pid`: why not, as text, when it may not."
   @spec allowed(pid(), context()) :: :ok | {:error, String.t()}

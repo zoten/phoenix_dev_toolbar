@@ -15,8 +15,9 @@ defmodule PhoenixDevToolbar.Plugins.Eval do
 
     * `allow:` `:read_only` (default: a fixed list of read queries, no code) or
       `:eval` (code typed in the panel runs on the node)
-    * `clients:` who may run code: `:loopback` (default: only a browser on this
-      machine, reaching the server directly) or `:any` (any browser that reaches
+    * `clients:` who may run code: `:local` (default: only a browser on this
+      machine, loopback or its own addresses, reaching the server directly;
+      `:loopback` is accepted and means the same) or `:any` (any browser that reaches
       the dev server, Docker or LAN setups). Read queries answer any browser, like
       the System tab.
     * `timeout_ms:` how long code may run before it is stopped, 5000 by default
@@ -35,7 +36,7 @@ defmodule PhoenixDevToolbar.Plugins.Eval do
 
   require Logger
 
-  @defaults %{allow: :read_only, clients: :loopback, timeout_ms: 5000}
+  @defaults %{allow: :read_only, clients: :local, timeout_ms: 5000}
 
   @impl PhoenixDevToolbar.Plugin
   def init(opts) do
@@ -51,8 +52,10 @@ defmodule PhoenixDevToolbar.Plugins.Eval do
   defp validate(%{allow: allow}) when allow not in [:read_only, :eval],
     do: {:error, "allow must be :read_only or :eval, got: #{inspect(allow, limit: 5)}"}
 
-  defp validate(%{clients: clients}) when clients not in [:loopback, :any],
-    do: {:error, "clients must be :loopback or :any, got: #{inspect(clients, limit: 5)}"}
+  defp validate(%{clients: :loopback} = config), do: validate(%{config | clients: :local})
+
+  defp validate(%{clients: clients}) when clients not in [:local, :any],
+    do: {:error, "clients must be :local or :any, got: #{inspect(clients, limit: 5)}"}
 
   defp validate(%{timeout_ms: ms}) when not (is_integer(ms) and ms >= 100 and ms <= 60_000),
     do: {:error, "timeout_ms must be an integer from 100 to 60000, got: #{inspect(ms, limit: 5)}"}
@@ -78,12 +81,12 @@ defmodule PhoenixDevToolbar.Plugins.Eval do
   defp clients_note(:any),
     do: " for any browser (clients: :any): anyone who reaches this dev server can run code here."
 
-  defp clients_note(:loopback), do: ", for a browser on this machine only."
+  defp clients_note(:local), do: ", for a browser on this machine only."
 
   @doc false
   @spec config(term()) :: %{
           allow: :read_only | :eval,
-          clients: :loopback | :any,
+          clients: :local | :loopback | :any,
           timeout_ms: pos_integer()
         }
   def config(%{allow: _, clients: _, timeout_ms: _} = config), do: config

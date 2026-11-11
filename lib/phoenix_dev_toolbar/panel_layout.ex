@@ -15,6 +15,30 @@ defmodule PhoenixDevToolbar.PanelLayout do
   @spec panel_id(String.t()) :: String.t()
   def panel_id(tab_id), do: "pdt-panel-" <> tab_id
 
+  @doc false
+  @spec empty_text({:sid | :path | :newest | :gated, String.t() | :mcp_off | nil}) ::
+          String.t()
+  def empty_text({:path, path}) do
+    "No captured page at #{path}. Load it, then reload this panel. " <>
+      "A live patch keeps its LiveView's mount path."
+  end
+
+  def empty_text({:newest, _path}),
+    do: "Nothing captured yet: load a page, then reload this panel."
+
+  def empty_text({:gated, :mcp_off}) do
+    "Opening the newest page is limited to this machine. Open the panel from the page's toolbar. " <>
+      "(MCP is off, so `mcp: [clients: [...]]` would also turn it on)"
+  end
+
+  def empty_text({:gated, _path}) do
+    "Opening the newest page is limited to this machine. Open the panel from the page's toolbar, " <>
+      "or allow this client with `mcp: [clients: [...]]` in the toolbar config."
+  end
+
+  def empty_text({:sid, _path}),
+    do: "No data for this page: it expired or the toolbar restarted. Reload the page."
+
   attr :shell, Shell, required: true
   attr :tabs, :list, required: true, doc: "Shell.tabs/1"
   attr :tab, :string, default: nil, doc: "the selected tab id"
@@ -23,6 +47,7 @@ defmodule PhoenixDevToolbar.PanelLayout do
   attr :quarantined, :map, required: true, doc: "tab id => banner, from the collector"
   attr :panel_errors, :map, required: true, doc: "tab id => banner, from the tab's component"
   attr :missing?, :boolean, required: true
+  attr :lookup, :any, default: {:sid, nil}, doc: "how the page was asked for, see empty_text/1"
   attr :visible?, :boolean, required: true
   attr :pdt_actions, :map, default: %{}, doc: "internal: ProcessActions context"
 
@@ -164,8 +189,8 @@ defmodule PhoenixDevToolbar.PanelLayout do
         </button>
       </header>
 
-      <p :if={@missing?} id="pdt-empty" class="pdt-empty">
-        No data for this page: it expired or the toolbar restarted. Reload the page.
+      <p :if={@missing?} id="pdt-empty" class="pdt-empty" data-pdt-lookup={elem(@lookup, 0)}>
+        {empty_text(@lookup)}
       </p>
 
       <section

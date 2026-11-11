@@ -33,9 +33,10 @@ the panel's `start_async/3` tasks, never in the panel process.
     process, port, ETS and atom counts, registered names), picked by id from a
     select, never by code. `allow: :eval` adds an editor: code typed in the panel
     is evaluated on the node.
-  - `clients: :loopback` (default): code runs only when the panel's websocket
-    peer is a loopback address, not reached through a proxy (the same client
-    `actions:` uses, ADR 10), checked on every event as well as in the page.
+  - `clients: :local` (default; `:loopback` is accepted and means the same): code
+    runs only when the panel's websocket peer is this machine, a loopback address
+    or one of its own interface addresses, not reached through a proxy (the rule
+    `actions:` and MCP use, ADR 10 and ADR 15), checked on every event as well as in the page.
     `clients: :any` lifts it. The read queries answer any browser: they show what
     the System tab's reads show (ADR 10: process info reads are open). The panel's host guard (ADR 04) keeps a
     rebound attacker domain out. The off message suggests an SSH tunnel to

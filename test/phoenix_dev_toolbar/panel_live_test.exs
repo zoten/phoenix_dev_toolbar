@@ -10,6 +10,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
 
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
+  alias PhoenixDevToolbar.Plug, as: ToolbarPlug
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
 
@@ -399,11 +400,134 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
       assert has_element?(view, ~s(#pdt-panel[data-pdt-root="#{navigated.sid}"]))
     end
 
-    test "an unknown path shows the empty state", %{conn: conn} do
+    test "an unknown path says what was asked", %{conn: conn} do
       view = panel_root(conn, "?path=/nowhere")
 
-      assert has_element?(view, "#pdt-empty")
+      assert has_element?(view, ~s(#pdt-empty[data-pdt-lookup="path"]))
+      assert element(view, "#pdt-empty") |> render() =~ "No captured page at /nowhere."
       refute has_element?(view, "#pdt-panel[data-pdt-root]")
+    end
+
+    test "a path is shown as text, never as markup", %{conn: conn} do
+      view = panel_root(conn, "?path=<script>alert(1)</script>")
+
+      assert element(view, "#pdt-empty") |> render() =~ "&lt;script&gt;alert(1)&lt;/script&gt;"
+      refute has_element?(view, "#pdt-empty script")
+    end
+
+    test "a non string path is the empty state, never the newest page", %{conn: conn} do
+      _newest = page(:request, [path: "/latest"], 1_000)
+
+      view = panel_root(conn, "?path[]=/latest")
+
+      assert has_element?(view, ~s(#pdt-empty[data-pdt-lookup="path"]))
+      refute has_element?(view, "#pdt-panel[data-pdt-root]")
+    end
+
+    test "newest with nothing captured says so", %{conn: conn} do
+      Store.reset()
+
+      view = panel_root(conn, "")
+
+      assert has_element?(view, ~s(#pdt-empty[data-pdt-lookup="newest"]))
+      assert element(view, "#pdt-empty") |> render() =~ "Nothing captured yet"
+    end
+
+    test "a sid that is gone keeps the expired text", %{conn: conn} do
+      view = panel_root(conn, "?sid=gone")
+
+      assert has_element?(view, ~s(#pdt-empty[data-pdt-lookup="sid"]))
+      assert element(view, "#pdt-empty") |> render() =~ "expired or the toolbar restarted"
+    end
+  end
+
+  describe "standalone panel gate (ADR 14)" do
+    @lan {203, 0, 113, 9}
+
+    defp from(conn, ip, headers \\ []) do
+      Enum.reduce(headers, %{conn | remote_ip: ip}, fn {name, value}, acc ->
+        Plug.Conn.put_req_header(acc, name, value)
+      end)
+    end
+
+    defp session_for(query, ip, headers \\ []) do
+      conn =
+        :get
+        |> Plug.Test.conn("/__pdt/panel" <> query)
+        |> from(ip, headers)
+        |> Plug.Conn.fetch_query_params()
+
+      ToolbarPlug.panel_session(conn, fn -> [{192, 168, 7, 7}] end)
+    end
+
+    test "a loopback peer resolves both ?path= and the newest page", %{request: request} do
+      assert %{"pdt_sid" => ^request, "pdt_lookup" => "path"} =
+               session_for("?path=/users", {127, 0, 0, 1})
+
+      assert %{"pdt_sid" => ^request, "pdt_lookup" => "newest"} =
+               session_for("", {127, 0, 0, 1})
+    end
+
+    test "a LAN peer is gated by default, ?sid= still works", %{request: request} do
+      assert %{"pdt_sid" => "", "pdt_lookup" => "gated"} = session_for("?path=/users", @lan)
+      assert %{"pdt_sid" => "", "pdt_lookup" => "gated"} = session_for("", @lan)
+      assert %{"pdt_sid" => ^request} = session_for("?sid=" <> request, @lan)
+    end
+
+    test "one of this machine's own addresses counts as local", %{request: request} do
+      assert %{"pdt_sid" => ^request} = session_for("", {192, 168, 7, 7})
+      assert %{"pdt_lookup" => "gated"} = session_for("", {192, 168, 7, 8})
+    end
+
+    test "a listed network and :any open it up", %{request: request} do
+      put_app_env(:mcp, clients: ["203.0.113.0/24"])
+      assert %{"pdt_sid" => ^request} = session_for("?path=/users", @lan)
+      assert %{"pdt_lookup" => "gated"} = session_for("", {198, 51, 100, 1})
+
+      put_app_env(:mcp, clients: :any)
+      assert %{"pdt_sid" => ^request} = session_for("?path=/users", @lan)
+    end
+
+    test "mcp: false gates like :local", %{request: request} do
+      put_app_env(:mcp, false)
+      assert %{"pdt_sid" => ^request} = session_for("", {127, 0, 0, 1})
+      assert %{"pdt_lookup" => "gated_off"} = session_for("", @lan)
+    end
+
+    test "the gate hint says MCP is off when mcp: false", %{conn: conn} do
+      put_app_env(:mcp, false)
+      {:ok, view, _html} = live(from(conn, @lan), "/__pdt/panel?path=/users")
+
+      assert has_element?(view, ~s(#pdt-empty[data-pdt-lookup="gated"]))
+      assert element(view, "#pdt-empty") |> render() =~ "MCP is off"
+    end
+
+    test "a proxied request is gated, even from loopback, unless :any", %{request: request} do
+      proxied = [{"x-forwarded-for", "1.2.3.4"}]
+      assert %{"pdt_lookup" => "gated"} = session_for("", {127, 0, 0, 1}, proxied)
+      assert %{"pdt_sid" => ^request} = session_for("?sid=" <> request, {127, 0, 0, 1}, proxied)
+
+      put_app_env(:mcp, clients: :any)
+      assert %{"pdt_sid" => ^request} = session_for("", {127, 0, 0, 1}, proxied)
+    end
+
+    test "a gated client gets the panel with the reason", %{conn: conn, request: request} do
+      {:ok, view, _html} = live(from(conn, @lan), "/__pdt/panel?path=/users")
+
+      assert has_element?(view, ~s(#pdt-empty[data-pdt-lookup="gated"]))
+      assert element(view, "#pdt-empty") |> render() =~ "limited to this machine"
+      refute has_element?(view, "#pdt-panel[data-pdt-root]")
+
+      {:ok, view, _html} = live(from(conn, @lan), "/__pdt/panel?sid=" <> request)
+      assert has_element?(view, ~s(#pdt-panel[data-pdt-root="#{request}"]))
+    end
+
+    test "an allowed LAN client opens the page", %{conn: conn, request: request} do
+      put_app_env(:mcp, clients: ["203.0.113.0/24"])
+
+      {:ok, view, _html} = live(from(conn, @lan), "/__pdt/panel?path=/users")
+
+      assert has_element?(view, ~s(#pdt-panel[data-pdt-root="#{request}"]))
     end
   end
 

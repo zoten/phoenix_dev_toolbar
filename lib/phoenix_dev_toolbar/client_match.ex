@@ -1,13 +1,46 @@
 defmodule PhoenixDevToolbar.ClientMatch do
   @moduledoc false
-  # Pure IP matching for the MCP `clients:` option (ADR 15): parses "a.b.c.d",
-  # "a.b.c.d/n", IPv6 "x::y" and "x::y/n" into `{ip, prefix}` and tests peers
-  # with integer bit masks. No atoms are created from input.
+  # Who counts as which client (ADR 15): `allowed?/4` is the one rule for
+  # "this machine" (loopback or one of our own interface addresses), plus an
+  # allowlist or anyone. Parses "a.b.c.d", "a.b.c.d/n", IPv6 "x::y" and
+  # "x::y/n" into `{ip, prefix}` and tests peers with integer bit masks. No
+  # atoms are created from input.
 
   import Bitwise
 
   @type ip :: :inet.ip_address()
   @type entry :: {ip(), non_neg_integer()}
+  @type mode :: :local | {:list, [entry()]} | :any
+
+  @doc """
+  Whether a client may in: `:any` always; otherwise never through a proxy (the
+  peer would be the proxy), and only a loopback peer, a listed one, or one of
+  this machine's own addresses. `own_addresses` is called last, only if needed.
+  """
+  @spec allowed?(ip() | nil, mode(), boolean(), (-> [ip()])) :: boolean()
+  def allowed?(_peer, :any, _proxied?, _own_addresses), do: true
+  def allowed?(_peer, _mode, true, _own_addresses), do: false
+
+  def allowed?(peer, mode, false, own_addresses) when is_tuple(peer) do
+    loopback?(peer) or listed?(peer, mode) or local?(peer, own_addresses.())
+  end
+
+  def allowed?(_peer, _mode, _proxied?, _own_addresses), do: false
+
+  @doc "Whether `peer` is a loopback address (IPv4, IPv6 or IPv4 mapped)."
+  @spec loopback?(term()) :: boolean()
+  def loopback?(peer) when is_tuple(peer) do
+    case normalize(peer) do
+      {127, _b, _c, _d} -> true
+      {0, 0, 0, 0, 0, 0, 0, 1} -> true
+      _other -> false
+    end
+  end
+
+  def loopback?(_peer), do: false
+
+  defp listed?(peer, {:list, entries}), do: matches?(peer, entries)
+  defp listed?(_peer, _mode), do: false
 
   @doc "Parses one `clients:` entry. Anything that is not a valid IP or CIDR is `:error`."
   @spec parse(term()) :: {:ok, entry()} | :error
@@ -86,8 +119,11 @@ defmodule PhoenixDevToolbar.ClientMatch do
   defp width(ip) when tuple_size(ip) == 4, do: 32
   defp width(ip) when tuple_size(ip) == 8, do: 128
 
+  defp group_bits(ip) when tuple_size(ip) == 4, do: 8
+  defp group_bits(ip) when tuple_size(ip) == 8, do: 16
+
   defp to_int(ip) do
-    group = if tuple_size(ip) == 4, do: 8, else: 16
+    group = group_bits(ip)
 
     ip
     |> Tuple.to_list()

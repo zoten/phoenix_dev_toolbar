@@ -1,6 +1,9 @@
 defmodule PhoenixDevToolbar.Mcp.EndpointTest do
   use ExUnit.Case, async: false
 
+  # Client refusals log a warning once per peer: keep it out of the test output.
+  @moduletag :capture_log
+
   import PhoenixDevToolbar.EnvHelpers
   import PhoenixDevToolbar.ReportFixtures
   import Plug.Conn
@@ -11,11 +14,17 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
   alias PhoenixDevToolbar.Store
 
   @opts ToolbarPlug.init([])
+  @refused_key :phoenix_dev_toolbar_mcp_refused_clients
   @meta "io.modelcontextprotocol/protocolVersion"
 
   setup do
     Store.reset()
-    on_exit(&Store.reset/0)
+    :persistent_term.erase(@refused_key)
+
+    on_exit(fn ->
+      Store.reset()
+      :persistent_term.erase(@refused_key)
+    end)
   end
 
   defp rpc(method, params \\ nil, id \\ 1) do
@@ -66,6 +75,45 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
       conn = from({203, 0, 113, 9})
       assert conn.status == 403
       assert conn.resp_body =~ "mcp: [clients: [...]]"
+      assert conn.resp_body =~ "203.0.113.9"
+    end
+
+    test "a proxied request gets the proxy refusal, without a peer" do
+      conn = from({127, 0, 0, 1}, [{"x-forwarded-for", "1.2.3.4"}])
+      assert conn.status == 403
+      assert conn.resp_body =~ "refused a proxied request"
+      assert conn.resp_body =~ "clients: :any"
+    end
+
+    test "a missing peer is named unknown" do
+      conn = %{conn(:post, "/__pdt/mcp", "{}") | host: "localhost", remote_ip: nil}
+      conn = conn |> put_req_header("content-type", "application/json") |> ToolbarPlug.call(@opts)
+      assert conn.status == 403
+      assert conn.resp_body =~ "refused unknown"
+    end
+
+    test "refusals are logged once per peer, at most 10 peers" do
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          from({203, 0, 113, 9})
+          from({203, 0, 113, 9})
+          for n <- 1..15, do: from({198, 51, 100, n})
+        end)
+
+      assert length(Regex.scan(~r/refused an MCP request from 203\.0\.113\.9/, log)) == 1
+      assert length(Regex.scan(~r/refused an MCP request from/, log)) == 10
+    end
+
+    test "a proxied refusal logs its own line, sharing the once per peer list" do
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          from({127, 0, 0, 1}, [{"x-forwarded-for", "1.2.3.4"}])
+          from({127, 0, 0, 1}, [{"x-forwarded-for", "1.2.3.4"}])
+        end)
+
+      assert length(Regex.scan(~r/refused a proxied MCP request from 127\.0\.0\.1/, log)) == 1
+      assert log =~ "only `mcp: [clients: :any]` accepts requests through a proxy"
+      refute log =~ "allow it with"
     end
 
     defp from_own(ip, headers \\ []) do
@@ -355,7 +403,50 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
 
       assert %{"result" => %{"content" => [%{"text" => text}]}} = json(conn)
       assert {:ok, %{"panel_url" => url}} = Json.decode(text)
-      assert url == "http://localhost:80/__pdt/panel?sid=" <> session.sid
+      assert url == "http://localhost/__pdt/panel?sid=" <> session.sid
+    end
+
+    test "panel_url keeps a non default port and drops 443 for https" do
+      session = session(:request, path: "/users")
+
+      body =
+        rpc("tools/call", %{"name" => "page_summary", "arguments" => %{"sid" => session.sid}})
+
+      url = fn scheme, port ->
+        conn = %{conn(:post, "/__pdt/mcp", Json.encode!(body)) | host: "localhost"}
+        conn = %{conn | scheme: scheme, port: port}
+
+        conn =
+          conn |> put_req_header("content-type", "application/json") |> ToolbarPlug.call(@opts)
+
+        assert %{"result" => %{"content" => [%{"text" => text}]}} = json(conn)
+        assert {:ok, %{"panel_url" => url}} = Json.decode(text)
+        url
+      end
+
+      assert url.(:http, 4000) =~ "http://localhost:4000/__pdt/"
+      assert url.(:https, 443) =~ "https://localhost/__pdt/"
+      assert url.(:https, 80) =~ "https://localhost:80/__pdt/"
+    end
+
+    test "a path resolves to the session the plug created for a real page GET" do
+      page =
+        :get
+        |> conn("/tracked/page")
+        |> put_req_header("accept", "text/html")
+        |> put_req_header("sec-fetch-dest", "document")
+        |> ToolbarPlug.call(@opts)
+        |> put_resp_content_type("text/html")
+        |> send_resp(200, "<html><body>hi</body></html>")
+
+      sid = page.private.phoenix_dev_toolbar.sid
+
+      body =
+        rpc("tools/call", %{"name" => "page_summary", "arguments" => %{"path" => "/tracked/page"}})
+
+      assert %{"result" => %{"content" => [%{"text" => text}]}} = json(post(body))
+      assert {:ok, %{"panel_url" => url, "session" => %{"sid" => ^sid}}} = Json.decode(text)
+      assert url == "http://localhost/__pdt/panel?sid=" <> sid
     end
 
     test "a custom :path moves the endpoint and the panel_url" do
@@ -373,7 +464,7 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
       assert conn.status == 200
       assert %{"result" => %{"content" => [%{"text" => text}]}} = json(conn)
       assert {:ok, %{"panel_url" => url}} = Json.decode(text)
-      assert String.starts_with?(url, "http://localhost:80/dev/tb/panel")
+      assert String.starts_with?(url, "http://localhost/dev/tb/panel")
 
       old = %{conn(:post, "/__pdt/mcp", "{}") | host: "localhost"} |> ToolbarPlug.call(opts)
       refute old.halted

@@ -72,14 +72,14 @@ config :phoenix_dev_toolbar,
   # Process tab), with the same options:
   # plugins: [:defaults, {PhoenixDevToolbar.Plugins.System, sample_ms: 1000}],
   # Opt-in: connected nodes (Cluster) and read queries or code on the node (Eval,
-  # read only and for this machine's browser unless allow: :eval / clients: :any,
+  # read only, and code only for this machine's browser with allow: :eval unless clients: :any,
   # see SECURITY.md):
   # plugins: [:defaults, PhoenixDevToolbar.Plugins.Cluster, {PhoenixDevToolbar.Plugins.Eval, allow: :eval}],
   # Kill, suspend, message peek, state read and trace are off (false, the default).
-  # :loopback allows them for a browser on this machine reaching the server directly;
-  # :any for Docker, the LAN or a local proxy or tunnel (anyone reaching the server
-  # can use them)
-  # actions: :loopback,
+  # :local allows them for a browser on this machine (loopback or the machine's own
+  # LAN address, no proxy); :any for Docker, the LAN or a proxy or tunnel (anyone
+  # reaching the server can use them)
+  # actions: :local,
   # The panel answers IP addresses, localhost, and your endpoint's url host; list
   # other names you use for the dev server (a DNS rebinding guard)
   # allowed_hosts: ["myapp.test"],
@@ -243,7 +243,14 @@ A `frame-src` or `child-src` that excludes your own origin still blocks the pane
 
 **The panel does not connect behind a proxy or tunnel.** If the proxy rewrites the `Host` header, the browser's origin no longer matches what the server sees and the socket is refused (the log names both). List the page's origin, exactly as the browser shows it: `allowed_origins: ["https://abc.tunnel.example"]` (no paths or wildcards; an entry that cannot match is logged at boot and ignored). Remove it when the tunnel is gone: a free tunnel name may later belong to someone else. A proxy that keeps the `Host` header needs the name in `allowed_hosts` instead.
 
-**Docker or LAN access.** Add the host name to `allowed_hosts`. Process actions are off by default; `actions: :loopback` allows them for a browser on this machine and `actions: :any` for Docker or the LAN (anyone who can reach the server can then use them). Eval is limited to this machine unless `clients: :any`.
+**Docker or LAN access.** Who gets what, from the most open to the most guarded:
+
+- The page's toolbar and its panel (`?sid=`, the iframe): any client whose `Host` is an IP address, `localhost`, your endpoint's `url` host or a name in `allowed_hosts:` (a DNS rebinding guard). Phones on the LAN work once the server listens there.
+- Finding a page without its sid (the standalone panel's `?path=` and newest page) and the MCP endpoint: this machine only, meaning a loopback address or one of the machine's own addresses, and never through a proxy. `mcp: [clients: ["192.168.1.0/24"]]` adds addresses and ranges, `mcp: [clients: :any]` opens both to anyone, proxies included.
+- Process actions: off by default; `actions: :local` for this machine, `actions: :any` for anyone who reaches the server.
+- Eval code (`allow: :eval`): this machine (`clients: :local`, the default) unless `clients: :any`.
+
+"This machine" is one rule everywhere. Anything on the machine that relays to the server (an SSH forward, socat, a proxy without `X-Forwarded-*` headers, a VM or container with user-mode NAT) counts as this machine. A container calling `host.docker.internal` also needs that name in `allowed_hosts:`. `:loopback` is still accepted wherever `:local` is, and means the same.
 
 **The Ecto tab is empty.** The toolbar watches the repos in your apps' `:ecto_repos`; if there are none it logs one warning. Set `repos: [MyApp.Repo]` in `config/dev.exs`.
 

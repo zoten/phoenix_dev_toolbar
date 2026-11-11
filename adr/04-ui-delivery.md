@@ -107,8 +107,8 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   session (LiveView treats an unfetched session as empty). Without `?sid=` the plug
   picks the page itself (`?path=`, or the newest), and `panel.js` opened outside the
   iframe runs standalone: ADR 14.
-- **MCP**: `<path>/mcp` is the toolbar's MCP server for coding agents, loopback
-  only, with its own guards and protocol rules: ADR 15.
+- **MCP**: `<path>/mcp` is the toolbar's MCP server for coding agents, for
+  this machine by default, with its own guards and protocol rules: ADR 15.
 - **Panel downloads**: `GET <path>/export/ecto.json` answers the Ecto tab's Download as
   an attachment (ADR 08). Downloads use same-origin URLs, never `blob:` links: Firefox
   checks a link clicked in the iframe against the host's `frame-src`.
@@ -200,9 +200,11 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   expired sid, or the Store restarting, shows an explanation, not an error.
 
 - **Access**: the sid is the only key to a page's data. It is 96 random bits, never
-  listed or enumerable, and reaches the panel only through the injected tag and the
-  signed LiveView session: a bearer capability, adequate for a dev only tool on the
-  developer's machine. There is no other access control. The panel page answers with
+  listed or enumerable to another device, and reaches the panel only through the
+  injected tag and the signed LiveView session: a bearer capability, adequate for a
+  dev only tool on the developer's machine. Finding a page without its sid (the
+  standalone panel's `?path=` and newest page, ADR 14, and the MCP tools, ADR 15)
+  is limited to this machine unless `mcp: [clients: ...]` says otherwise. The panel page answers with
   `content-security-policy: frame-ancestors 'self'` (only the host page's own origin
   may frame it) and, like every served asset, `x-content-type-options: nosniff`.
 - **Host guard** (`HostCheck`, against DNS rebinding): a hostile page whose name

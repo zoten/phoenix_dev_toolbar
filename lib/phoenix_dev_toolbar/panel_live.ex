@@ -14,11 +14,13 @@ defmodule PhoenixDevToolbar.PanelLive do
 
   use Phoenix.LiveView
 
+  alias PhoenixDevToolbar.ClientPolicy
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.Page
   alias PhoenixDevToolbar.PageData
+  alias PhoenixDevToolbar.PageLookup
   alias PhoenixDevToolbar.Panel
   alias PhoenixDevToolbar.PanelLayout
   alias PhoenixDevToolbar.Shell
@@ -29,7 +31,6 @@ defmodule PhoenixDevToolbar.PanelLive do
   # session can land out of order: each flush re-reads this many seqs below the
   # last one seen and skips the ones already shown.
   @reread_window 64
-  @sid_format ~r/\A[A-Za-z0-9_-]{1,64}\z/
   # The tab the PdtPanel hook's client events go to (ADR 07).
   @client_tab "live_view"
 
@@ -39,19 +40,25 @@ defmodule PhoenixDevToolbar.PanelLive do
   def mount(_params, session, socket) do
     :ok = allow_join(socket)
     root = valid_sid(session["pdt_sid"])
+    lookup = lookup(session)
     shell = Shell.new(Collector.plugins())
     tabs = Shell.tabs(shell)
+    client = client_ip(socket)
 
     socket =
       socket
       |> assign(shell: shell, tabs: tabs, tab: default_tab(tabs), visible?: false)
       |> assign(panel_errors: %{}, quarantined: PageData.quarantined(shell.plugins))
-      |> assign(root: root, flush: nil, subscribed: [])
+      |> assign(root: root, lookup: lookup, flush: nil, subscribed: [])
       # What tabs need to act on host processes (ProcessActions, ADR 10): the
       # client's address (ClientPolicy) and this panel's own processes (Protected).
       |> assign(:monitors, %{})
+      # `local?` is the "this machine" verdict, computed once here (the interface
+      # lookup is a syscall) instead of on every render and action. It could only
+      # change if the machine's addresses change during the socket's life: accepted.
       |> assign(:pdt_actions, %{
-        client: client_ip(socket),
+        client: client,
+        local?: ClientPolicy.local?(client),
         panel: self(),
         transport: socket.transport_pid,
         endpoint: socket.endpoint
@@ -344,14 +351,22 @@ defmodule PhoenixDevToolbar.PanelLive do
     assign(socket, :flush, nil)
   end
 
-  defp valid_sid(sid) when is_binary(sid) do
-    case Regex.match?(@sid_format, sid) do
+  defp valid_sid(sid) do
+    case PageLookup.valid_sid?(sid) do
       true -> sid
       false -> nil
     end
   end
 
-  defp valid_sid(_sid), do: nil
+  # How the plug resolved the page (see `PhoenixDevToolbar.Plug.panel_session/2`),
+  # so the empty state can say why there is none. Never an atom from the session.
+  defp lookup(%{"pdt_lookup" => "path", "pdt_path" => path}) when is_binary(path),
+    do: {:path, path}
+
+  defp lookup(%{"pdt_lookup" => "newest"}), do: {:newest, nil}
+  defp lookup(%{"pdt_lookup" => "gated_off"}), do: {:gated, :mcp_off}
+  defp lookup(%{"pdt_lookup" => "gated"}), do: {:gated, nil}
+  defp lookup(_session), do: {:sid, nil}
 
   ## Rendering
 
@@ -367,6 +382,7 @@ defmodule PhoenixDevToolbar.PanelLive do
       quarantined={@quarantined}
       panel_errors={@panel_errors}
       missing?={@missing?}
+      lookup={@lookup}
       visible?={@visible?}
       pdt_actions={@pdt_actions}
     />

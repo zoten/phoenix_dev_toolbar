@@ -1,5 +1,5 @@
 defmodule PhoenixDevToolbar.EvalTest do
-  # The Eval tab (ADR 12): read only and loopback only unless the host says so.
+  # The Eval tab (ADR 12): read only and this machine only unless the host says so.
   use ExUnit.Case, async: false
 
   import PhoenixDevToolbar.EnvHelpers
@@ -9,6 +9,7 @@ defmodule PhoenixDevToolbar.EvalTest do
   import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.EvalRunner
+  alias PhoenixDevToolbar.Panels.Eval, as: Panel
   alias PhoenixDevToolbar.Plugins.Eval
   alias PhoenixDevToolbar.Store
 
@@ -34,9 +35,10 @@ defmodule PhoenixDevToolbar.EvalTest do
 
   describe "options" do
     test "safe defaults; each override is validated and warned about" do
-      assert Eval.init([]) == {:ok, %{allow: :read_only, clients: :loopback, timeout_ms: 5000}}
+      assert Eval.init([]) == {:ok, %{allow: :read_only, clients: :local, timeout_ms: 5000}}
       assert {:error, "allow must be" <> _rest} = Eval.init(allow: :yes)
       assert {:error, "clients must be" <> _rest} = Eval.init(clients: :lan)
+      assert Eval.init(clients: :loopback) == Eval.init(clients: :local)
       assert {:error, "timeout_ms must be" <> _rest} = Eval.init(timeout_ms: 10)
       assert {:error, "unknown options" <> _rest} = Eval.init(code: "1")
 
@@ -157,6 +159,59 @@ defmodule PhoenixDevToolbar.EvalTest do
 
     assert has_element?(panel, "#pdt-eval-off")
     refute has_element?(panel, "#pdt-eval-form")
+  end
+
+  describe "gate/3" do
+    @own [{192, 168, 1, 20}]
+    @own_fun &__MODULE__.own/0
+
+    def own, do: @own
+
+    setup do
+      delete_app_env(:actions)
+      :ok
+    end
+
+    test "this machine's own address runs code under :local and :loopback" do
+      for clients <- [:local, :loopback] do
+        assert Panel.gate({127, 0, 0, 1}, clients, @own_fun) == :ok
+        assert Panel.gate({192, 168, 1, 20}, clients, @own_fun) == :ok
+      end
+    end
+
+    test "a LAN peer and a proxied client (nil) are refused; :any allows" do
+      for clients <- [:local, :loopback] do
+        assert Panel.gate({192, 168, 1, 99}, clients, @own_fun) == {:error, :not_local}
+        assert Panel.gate(nil, clients, @own_fun) == {:error, :not_local}
+      end
+
+      assert Panel.gate({192, 168, 1, 99}, :any, @own_fun) == :ok
+      assert Panel.gate(nil, :any, @own_fun) == :ok
+    end
+
+    test "own addresses are looked up only for a non local peer under :local" do
+      test_pid = self()
+
+      spy = fn ->
+        send(test_pid, :own_addresses_called)
+        @own
+      end
+
+      assert Panel.gate({127, 0, 0, 1}, :local, spy) == :ok
+      assert Panel.gate({192, 168, 1, 99}, :any, spy) == :ok
+      put_app_env(:actions, false)
+      assert Panel.gate({192, 168, 1, 99}, :local, spy) == {:error, :disabled}
+      refute_received :own_addresses_called
+
+      delete_app_env(:actions)
+      assert Panel.gate({192, 168, 1, 99}, :local, spy) == {:error, :not_local}
+      assert_received :own_addresses_called
+    end
+
+    test "an explicit actions: false refuses everyone" do
+      put_app_env(:actions, false)
+      assert Panel.gate({127, 0, 0, 1}, :any, @own_fun) == {:error, :disabled}
+    end
   end
 
   test "what code prints is capped while it runs" do

@@ -49,11 +49,15 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
   minutes, or not as an HTML document: load it again, then retry.
 - Results carry `panel_url`: give it to the user to see the page in the panel.
 - When a call fails: connection refused means the server is not running or the
-  port is wrong; 403 "MCP is limited to this machine" means the agent
-  is in a container, a VM, on another device or behind a proxy (the user can
-  allow it with `mcp: [clients: [...]]`); 403 "Host not allowed" means the host must be
-  added to `allowed_hosts:`; a 404 HTML page means the plug's `:path` is not
-  `/__pdt` or the toolbar is disabled; 404 "MCP is off" means `mcp: false`.
+  port is wrong (a server bound to a LAN address does not answer on localhost:
+  use that address); 403 "MCP is limited to this machine" names the refused
+  address, which the user can allow with `mcp: [clients: [...]]`; 403 "MCP
+  refused a proxied request" needs `mcp: [clients: :any]`; 403 "Host not
+  allowed" means the host must be added to `allowed_hosts:`; a 404 HTML page
+  means the plug's `:path` is not `/__pdt` or the toolbar is disabled; 404 "MCP
+  is off" means `mcp: false`.
+- "No captured page at <path>": `path` is an exact match on the path the page
+  started at (a live patch keeps its LiveView's mount path); call `list_pages`.
 
 ## Reading it in a browser
 
@@ -67,5 +71,8 @@ When you drive a browser instead of evaluating code in the app:
   and `data-pdt-n-plus-one`; `#pdt-panel[data-pdt-root]` is the page's sid.
   Every tab is in the DOM, hidden ones too. The full list is in the plug docs
   (`PhoenixDevToolbar.Plug`, "Standalone panel").
+- `?path=` and the newest page answer this machine only (`#pdt-empty` with
+  `data-pdt-lookup="gated"` otherwise); `?sid=` works from anywhere the panel
+  does. The `#pdt-empty` text says why there is no page.
 - Reload the panel after triggering the page again: it shows the page it found
   when it loaded.

@@ -315,7 +315,7 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
         search(panel, inspect(agent))
 
         refute has_element?(panel, "#pdt-system-kill")
-        assert has_element?(panel, "#pdt-system-actions-off", "actions: :loopback")
+        assert has_element?(panel, "#pdt-system-actions-off", "actions: :local")
         refute has_element?(panel, "#pdt-system-peek")
         refute has_element?(panel, "#pdt-system-status")
       end

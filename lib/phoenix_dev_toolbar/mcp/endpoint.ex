@@ -5,8 +5,9 @@ defmodule PhoenixDevToolbar.Mcp.Endpoint do
   # body naming the fix. Runs in the host's request process: nothing here may
   # raise out of `call/3`.
 
+  require Logger
+
   alias PhoenixDevToolbar.ClientMatch
-  alias PhoenixDevToolbar.ClientPolicy
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Config
   alias PhoenixDevToolbar.HostCheck
@@ -18,7 +19,9 @@ defmodule PhoenixDevToolbar.Mcp.Endpoint do
 
   @max_body 1_000_000
   @internal_error ~s({"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Internal error"}})
-  @client_refusal "MCP is limited to this machine: allow other clients with `mcp: [clients: [...]]` in the toolbar config."
+  @proxy_refusal "MCP refused a proxied request: only `mcp: [clients: :any]` accepts requests through a proxy."
+  @max_logged 10
+  @logged :phoenix_dev_toolbar_mcp_refused_clients
   @headers ["mcp-protocol-version", "mcp-method", "mcp-name"]
 
   @doc "Answers the request: the conn comes back halted with the response sent."
@@ -40,7 +43,7 @@ defmodule PhoenixDevToolbar.Mcp.Endpoint do
         {:refuse, 403, "Host not allowed. Add it to `allowed_hosts:` in the toolbar config."}
 
       not client_allowed?(conn, Config.mcp(), own_addresses) ->
-        {:refuse, 403, @client_refusal}
+        refuse_client(conn)
 
       not origin_ok?(conn) ->
         {:refuse, 403,
@@ -57,19 +60,57 @@ defmodule PhoenixDevToolbar.Mcp.Endpoint do
     end
   end
 
-  defp client_allowed?(_conn, :any, _own_addresses), do: true
+  defp refuse_client(conn) do
+    peer = peer_text(conn.remote_ip)
+    proxied? = OriginCheck.proxied?(conn)
+    log_refused(peer, proxied?)
 
-  defp client_allowed?(conn, mode, own_addresses) do
-    not OriginCheck.proxied?(conn) and peer_allowed?(conn.remote_ip, mode, own_addresses)
+    case proxied? do
+      true ->
+        {:refuse, 403, @proxy_refusal}
+
+      false ->
+        {:refuse, 403,
+         "MCP is limited to this machine and refused #{peer}: allow other clients with " <>
+           "`mcp: [clients: [...]]` in the toolbar config."}
+    end
   end
 
-  defp peer_allowed?(peer, mode, own_addresses) do
-    ClientPolicy.loopback?(peer) or listed?(peer, mode) or
-      ClientMatch.local?(peer, own_addresses.())
+  # `:inet.ntoa/1` answers `{:error, :einval}` for anything but an address.
+  defp peer_text(ip) do
+    case :inet.ntoa(ip) do
+      {:error, _reason} -> "unknown"
+      text -> List.to_string(text)
+    end
   end
 
-  defp listed?(peer, {:list, entries}), do: ClientMatch.matches?(peer, entries)
-  defp listed?(_peer, _mode), do: false
+  # Once per distinct peer, at most @max_logged per boot (like `HostCheck.log_refused/1`).
+  defp log_refused(peer, proxied?) do
+    logged = :persistent_term.get(@logged, [])
+
+    case peer in logged or length(logged) >= @max_logged do
+      true ->
+        :ok
+
+      false ->
+        :persistent_term.put(@logged, [peer | logged])
+
+        Logger.warning(refusal_log(peer, proxied?))
+    end
+  end
+
+  defp refusal_log(peer, true) do
+    "[phoenix_dev_toolbar] refused a proxied MCP request from #{peer}: " <>
+      "only `mcp: [clients: :any]` accepts requests through a proxy"
+  end
+
+  defp refusal_log(peer, false) do
+    "[phoenix_dev_toolbar] refused an MCP request from #{peer}: " <>
+      "allow it with `mcp: [clients: [...]]` in the toolbar config if it is yours"
+  end
+
+  defp client_allowed?(conn, mode, own_addresses),
+    do: ClientMatch.allowed?(conn.remote_ip, mode, OriginCheck.proxied?(conn), own_addresses)
 
   defp origin_ok?(conn) do
     case Conn.get_req_header(conn, "origin") do
@@ -129,8 +170,12 @@ defmodule PhoenixDevToolbar.Mcp.Endpoint do
   end
 
   defp base_url(conn, base_path) do
-    "#{conn.scheme}://#{host_literal(conn.host)}:#{conn.port}#{base_path}"
+    "#{conn.scheme}://#{host_literal(conn.host)}#{port_suffix(conn.scheme, conn.port)}#{base_path}"
   end
+
+  defp port_suffix(:http, 80), do: ""
+  defp port_suffix(:https, 443), do: ""
+  defp port_suffix(_scheme, port), do: ":#{port}"
 
   defp host_literal("[" <> _ = host), do: host
 

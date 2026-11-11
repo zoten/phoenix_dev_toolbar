@@ -98,13 +98,35 @@ defmodule PhoenixDevToolbar.Panels.Eval do
   # `actions: false` in the host config refuses code altogether; an unset
   # `actions` (also off for kill and suspend) does not: Eval has its own opt-in.
   defp allowed(socket) do
-    client = (socket.assigns[:pdt_actions] || %{})[:client]
+    actions = socket.assigns[:pdt_actions] || %{}
 
-    case {ClientPolicy.explicitly_off?(), config(socket).clients, ClientPolicy.loopback?(client)} do
-      {true, _clients, _loopback?} -> {:error, :disabled}
-      {false, :any, _loopback?} -> :ok
-      {false, :loopback, true} -> :ok
-      {false, :loopback, false} -> {:error, :not_loopback}
+    case actions do
+      # Computed once per panel mount (PanelLive): no interface lookup per render.
+      %{local?: local?} -> decide(config(socket).clients, local?)
+      _no_verdict -> gate(actions[:client], config(socket).clients)
+    end
+  end
+
+  @doc false
+  @spec gate(
+          :inet.ip_address() | nil,
+          :local | :loopback | :any,
+          (-> [:inet.ip_address()])
+        ) :: :ok | {:error, :disabled | :not_local}
+  def gate(client, clients, own_addresses \\ &PhoenixDevToolbar.ClientMatch.own_addresses/0) do
+    case {ClientPolicy.explicitly_off?(), clients} do
+      {true, _clients} -> {:error, :disabled}
+      {false, :any} -> :ok
+      {false, clients} -> decide(clients, ClientPolicy.local?(client, own_addresses))
+    end
+  end
+
+  defp decide(clients, local?) do
+    case {ClientPolicy.explicitly_off?(), clients, local?} do
+      {true, _clients, _local?} -> {:error, :disabled}
+      {false, :any, _local?} -> :ok
+      {false, _local, true} -> :ok
+      {false, _local, false} -> {:error, :not_local}
     end
   end
 
@@ -130,16 +152,16 @@ defmodule PhoenixDevToolbar.Panels.Eval do
         id="pdt-eval-disabled"
         class="pdt-hint pdt-process__paused"
       >
-        Code is off: the host config sets actions: false. Remove it, or set actions: :loopback.
+        Code is off: the host config sets actions: false. Remove it, or set actions: :local.
       </p>
       <p
-        :if={@allow == :eval and @gate == {:error, :not_loopback}}
+        :if={@allow == :eval and @gate == {:error, :not_local}}
         id="pdt-eval-off"
         class="pdt-hint pdt-process__paused"
       >
-        Code only runs for a browser on this machine, reaching the server directly (not
-        through a proxy or a tunnel). From Docker or another machine, an SSH tunnel to
-        localhost keeps it that way; clients: :any in the Eval options lets anyone who
+        Code only runs for a browser on this machine (loopback or its own addresses), reaching the server directly (not
+        through a proxy that adds X-Forwarded-* headers). From Docker or another machine, an
+        SSH tunnel to localhost keeps it that way; clients: :any in the Eval options lets anyone who
         reaches the dev server run code here.
       </p>
       <div class="pdt-snapshot-bar">

@@ -21,7 +21,8 @@ dependency: JSON goes through `Phoenix.json_library/0`.
 
 **Clients.** `mcp:` says which peers may call it:
 
-- `true` (default), or `[clients: :local]`: this machine only. A loopback peer,
+- `true` (default), or `[clients: :local]`: this machine only, the same rule as
+  `actions: :local` (ADR 10) and the Eval plugin's `clients: :local` (ADR 12). A loopback peer,
   or a peer whose address is one of this machine's own interface addresses
   (`:inet.getifaddrs/0`, read only for a peer that is neither loopback nor
   listed): a dev
@@ -45,7 +46,9 @@ a malformed `mcp:` value or entry is warned at boot and never raises.
 - the peer is allowed by `mcp:` (see Clients) and, unless `clients: :any`, the
   request carries no proxy header (`x-forwarded-for`, `x-forwarded-host`,
   `x-forwarded-proto`, `x-real-ip`, `forwarded`: the peer would be the proxy),
-  else 403 naming the `clients:` option;
+  else 403 with the peer address and the option that admits it (`clients: [...]`,
+  or `clients: :any` for a proxied request), logged once per address (at most
+  10 per boot);
 - an `Origin`, when present, is the request's own origin or listed in
   `allowed_origins:`, else 403. CLI clients send none; a web page in the
   developer's browser sends its own, and a JSON `POST` from it needs a CORS
@@ -88,8 +91,8 @@ the default resolve to the request. `list_pages` with both `path` and
 | `page_n_plus_one` | `sid`, `path` | `sid`, `panel_url`, `n_plus_one` |
 | `page_errors` | `sid`, `path`, `limit` (1..100, 20) | `sid`, `panel_url`, `total`, `returned`, `errors` |
 
-`panel_url` is absolute, built from the request's scheme, host and port
-(`http://localhost:4000/__pdt/panel?sid=...`), so the agent can hand it to the
+`panel_url` is absolute, built from the request's scheme, host and port (the
+port left out for 80 and 443): `http://localhost:4000/__pdt/panel?sid=...`, so the agent can hand it to the
 developer. `path` and `path_prefix` are at most 2048 bytes.
 
 Results come as `structuredContent` and as the same JSON in a text block. Keys
@@ -122,6 +125,10 @@ not a breaking change, renaming or removing is (a CHANGELOG line).
   QEMU slirp, podman pasta, host networking).
 - A mapped IPv6 range (`::ffff:10.0.0.0/104`) is not accepted as an entry; use
   the IPv4 range. A zone suffix (`fe80::1%eth0`) is dropped.
+- `panel_url` uses the host the agent called: from a container that is
+  `host.docker.internal`, which the developer's browser may not resolve.
+- A `path` with no capture is told apart from no capture at all, but `path` is an
+  exact match: `/posts/` is not `/posts`, and a live patch keeps the mount path.
 - Behind a proxy, only `clients: :any` works: the toolbar does not trust
   forwarded addresses.
 - A client that disconnects while its body is read makes `Plug.Conn.read_body/2`

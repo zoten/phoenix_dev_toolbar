@@ -50,11 +50,13 @@ reachable dev port must not freeze or kill the node.
 - **Who may act**: process info reads, GC and Watch are open to any panel. What acts
   on a host process or copies its data (kill, suspend, message peek, the state read
   of ADR 11) follows the top level `actions:` config, opt-in: `false` (default, no actions),
-  `:loopback` (the panel socket's peer must be a loopback address), `:any` (warned at
-  boot). Docker and LAN setups need `actions: :any`; the panel says so in place of Kill
+  `:local` (the panel socket's peer is this machine: a loopback address or one of its
+  own interface addresses, never through a proxy: the rule of ADR 15; `:loopback` is
+  accepted and means the same), `:any` (warned at boot). Docker and LAN setups need
+  `actions: :any`; the panel says so in place of Kill
   and Suspend when it refuses (and hides Peek and Read state), as it says why a
   protected process offers none. With actions off (unset or `false`) none of them shows
-  and the tab says which option turns them on (`actions: :loopback`). An invalid value
+  and the tab says which option turns them on (`actions: :local`). An invalid value
   counts as `false`.
   The context these checks need (the client's address, the panel's pid, transport
   and endpoint) is an internal `pdt_actions` assign given to the built-in tabs only.
@@ -70,7 +72,12 @@ reachable dev port must not freeze or kill the node.
 ## Open limits
 
 - A proxy that adds no forwarding header (Docker's userland port proxy, a plain TCP
-  tunnel) reads as loopback: loopback then means "whoever reaches the proxy".
+  tunnel, an SSH forward) reads as this machine: it then means "whoever reaches
+  the proxy". So does NAT that rewrites a remote source to one of the machine's
+  own addresses (hairpin NAT, some Kubernetes hostPort setups).
+- The panel decides "this machine" once per socket (at mount): a machine whose
+  addresses change mid session keeps the first verdict until the panel reloads.
+- The state read and the other System tab controls follow the same `:local` rule.
 - The endpoint's children (listener, acceptors, connection supervisors) and the
   host Repo pool are not protected: their supervisors restart them, but killing a
   connection supervisor drops the panel's own websocket until it reconnects.

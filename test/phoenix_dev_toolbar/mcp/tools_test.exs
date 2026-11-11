@@ -137,7 +137,7 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
 
     test "no page, unknown sid and a malformed sid are errors with a hint" do
       assert call_error("page_summary", %{}) =~ "10 minutes"
-      assert call_error("page_summary", %{"path" => "/x"}) =~ "No page captured"
+      assert call_error("page_summary", %{"path" => "/x"}) =~ "No captured page at /x. list_pages"
       assert call_error("page_queries", %{"sid" => "unknown"}) =~ "No page captured"
       assert call_error("page_queries", %{"sid" => "../etc"}) =~ "sid must match"
       assert call_error("page_queries", %{"sid" => 5}) =~ "sid must be a string"

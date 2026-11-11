@@ -42,8 +42,32 @@ defmodule PhoenixDevToolbar.Plug do
 
   A page is the request and the LiveView it mounted, as the toolbar shows it.
   The page is picked when the panel loads: reload the panel for a newer one.
-  Rows carry stable `data-pdt-*` attributes with raw values (microseconds,
-  counts, sids), listed in [ADR 14](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/14-standalone-panel-and-row-attributes.md).
+  `?path=` matches the path the page started at (a live patch keeps its
+  LiveView's mount path).
+
+  `?path=` and the newest page find a page without its sid, so they follow the
+  MCP client rule below: this machine unless `mcp: [clients: ...]` says
+  otherwise. Other clients get an empty panel that says why; `?sid=` works for
+  any client the access rules let in.
+
+  Rows carry stable `data-pdt-*` attributes with raw values. Booleans are
+  present only when true; missing values are left out.
+
+  | Element | Attributes |
+  |---|---|
+  | `#pdt-panel` | `data-pdt-root` (root sid), `data-pdt-sids` (comma separated) |
+  | tab section | `data-pdt-tab` (plugin id); hidden tabs are in the DOM too |
+  | every event row | `data-pdt-row`, `data-pdt-sid`, `data-pdt-seq`, `data-pdt-duration-us` |
+  | `query` row | `data-pdt-source`, `data-pdt-error`, `data-pdt-n-plus-one` |
+  | `n-plus-one` row | `data-pdt-count`, `data-pdt-callbacks` |
+  | `callback` row | `data-pdt-callback`, `data-pdt-event`, `data-pdt-error` |
+  | `render` row | `data-pdt-error` |
+  | `client` row | `data-pdt-event` (the `phx:*` type) |
+  | `request` row | `data-pdt-kind`, `data-pdt-method`, `data-pdt-status`, `data-pdt-error` |
+  | `profile` row | `data-pdt-callback`, `data-pdt-count`, `data-pdt-total-us`, `data-pdt-max-us` |
+  | `#pdt-empty` | `data-pdt-lookup`: `sid`, `path`, `newest` or `gated` |
+
+  The decision is [ADR 14](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/14-standalone-panel-and-row-attributes.md).
 
   ## MCP server
 
@@ -71,8 +95,11 @@ defmodule PhoenixDevToolbar.Plug do
   name listed in `config :phoenix_dev_toolbar, allowed_hosts: [...]`. The socket
   also refuses a missing `Origin`, or one that differs from the host the request
   was sent to, unless it is listed in `allowed_origins: [...]` (for a proxy or
-  tunnel that rewrites the `Host` header). The MCP endpoint adds its own client
-  and `Origin` rules, see the "MCP server" section.
+  tunnel that rewrites the `Host` header). The MCP endpoint and the standalone
+  panel's sid-less lookups add the client rule of the "MCP server" section;
+  process actions (`actions:`) and the Eval plugin's code use the same
+  "this machine" rule (`:local`). The README's "Docker or LAN access" section
+  sums it all up.
 
   The plug does nothing when the toolbar is disabled
   (`config :phoenix_dev_toolbar, enabled: false`).
@@ -83,6 +110,7 @@ defmodule PhoenixDevToolbar.Plug do
   require Logger
 
   alias PhoenixDevToolbar.Attribution
+  alias PhoenixDevToolbar.ClientMatch
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Config
   alias PhoenixDevToolbar.EctoExport
@@ -90,6 +118,7 @@ defmodule PhoenixDevToolbar.Plug do
   alias PhoenixDevToolbar.HostCheck
   alias PhoenixDevToolbar.Mcp
   alias PhoenixDevToolbar.Notify
+  alias PhoenixDevToolbar.OriginCheck
   alias PhoenixDevToolbar.PageLookup
   alias PhoenixDevToolbar.PanelSocket
   alias PhoenixDevToolbar.Session
@@ -255,7 +284,7 @@ defmodule PhoenixDevToolbar.Plug do
     |> Conn.put_private(:phoenix_dev_toolbar_panel, Map.take(opts, [:path]))
     |> Phoenix.Controller.put_root_layout(html: {PhoenixDevToolbar.Layouts, :root})
     |> Phoenix.LiveView.Controller.live_render(PhoenixDevToolbar.PanelLive,
-      session: %{"pdt_sid" => panel_sid(conn.query_params)}
+      session: panel_session(conn)
     )
     |> Conn.halt()
   end
@@ -287,12 +316,55 @@ defmodule PhoenixDevToolbar.Plug do
 
   # `?sid=` is the loader's iframe. Without it the panel is opened on its own
   # (ADR 14): `?path=` picks the newest page at that exact path, nothing at all
-  # the newest page. ETS reads only, resolved once per panel load.
-  defp panel_sid(%{"sid" => sid}) when is_binary(sid), do: sid
-  defp panel_sid(%{"path" => path}) when is_binary(path), do: lookup_sid(path: path)
-  defp panel_sid(_params), do: lookup_sid([])
+  # the newest page, both only for a client the MCP rule accepts (`:off` counts
+  # as `:local`). ETS reads only, resolved once per panel load. The session says
+  # how the page was asked for, so the empty state can say why there is none.
+  # `own_addresses` is injectable for tests; the plug passes the default.
+  @doc false
+  @spec panel_session(Conn.t(), (-> [:inet.ip_address()])) :: %{String.t() => String.t()}
+  def panel_session(
+        %Conn{query_params: params} = conn,
+        own_addresses \\ &ClientMatch.own_addresses/0
+      ) do
+    case params do
+      %{"sid" => sid} when is_binary(sid) ->
+        %{"pdt_sid" => sid}
 
-  defp lookup_sid(opts), do: PageLookup.newest(opts) || ""
+      _no_sid ->
+        case standalone_allowed?(conn, own_addresses) do
+          true -> standalone_session(params)
+          false -> %{"pdt_sid" => "", "pdt_lookup" => gated_lookup(Config.mcp())}
+        end
+    end
+  end
+
+  # `gated_off`: MCP is off, so the hint must not suggest `mcp: [clients: ...]` as is.
+  defp gated_lookup(:off), do: "gated_off"
+  defp gated_lookup(_mode), do: "gated"
+
+  defp standalone_allowed?(conn, own_addresses) do
+    mode =
+      case Config.mcp() do
+        :off -> :local
+        mode -> mode
+      end
+
+    ClientMatch.allowed?(conn.remote_ip, mode, OriginCheck.proxied?(conn), own_addresses)
+  end
+
+  defp standalone_session(%{"path" => path}) when is_binary(path) do
+    %{
+      "pdt_sid" => PageLookup.newest(path: path) || "",
+      "pdt_lookup" => "path",
+      "pdt_path" => String.slice(path, 0, 200)
+    }
+  end
+
+  defp standalone_session(%{"path" => _not_a_string}),
+    do: %{"pdt_sid" => "", "pdt_lookup" => "path", "pdt_path" => "(not a string)"}
+
+  defp standalone_session(_params),
+    do: %{"pdt_sid" => PageLookup.newest() || "", "pdt_lookup" => "newest"}
 
   # Already tracked: the plug is in the pipeline twice (endpoint and router).
   defp maybe_track(%Conn{private: %{phoenix_dev_toolbar: _}} = conn, _opts), do: conn

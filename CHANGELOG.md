@@ -17,7 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP endpoint at `<path>/mcp`, this machine only, read-only Report tools, `mcp: false` (ADR 15)
 - MCP `clients:` option: own LAN addresses count as local, IP/CIDR allowlist, `:any` (ADR 15)
 - MCP client setup for Claude Code, Codex, Cursor and VS Code in README and usage rules (ADR 15)
-- Panel sid check anchored with `\A...\z`: a trailing newline no longer passes (ADR 14)
+- Panel sid check anchored with `\A...\z` (ADR 14)
+- Standalone panel `?path=` and newest page limited to MCP's clients rule (ADR 14)
+- One "this machine" rule: `actions:` and Eval `clients:` take `:local` (ADR 10, ADR 12)
+- Eval default `clients:` widened to `:local`, own LAN address included (ADR 12)
+- MCP refusals name the peer and the option; clearer "No captured page" errors (ADR 15)
 
 ## [0.0.1] - 2026-11-10
 

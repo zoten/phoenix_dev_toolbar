@@ -24,9 +24,17 @@ A page is what the iframe shows: a connected mount resolves to its request
 parent, a live navigated LiveView (its parent is a LiveView) is its own page.
 The plug resolves it once per panel load, in the request process, with ETS
 reads only (`Report.latest/1`, `Store.session/1`), behind the same host check
-as the panel itself. `?path=` is compared as a string: no regex, no atom. An
-unknown path shows the panel's empty state. Reloading the panel picks a newer
-page.
+as the panel itself. `?path=` is compared as a string: no regex, no atom.
+Reloading the panel picks a newer page.
+
+`?path=` and the newest page find a page without its sid, so they answer only
+the clients MCP accepts (ADR 15 `clients:`; `mcp: false` counts as the default):
+this machine unless listed, never through a proxy unless `clients: :any`. Any
+other client gets the panel with no page and a hint to open it from the page's
+toolbar, whose iframe carries the sid. `?sid=` answers any client the host check
+lets in, as the iframe always did (phones on the LAN). The empty state says what
+was asked: an expired sid, no capture at that path, nothing captured yet, or a
+client that may not look pages up.
 
 **Standalone mode.** When `panel.js` runs as a top level page
 (`window.parent === window`) it adds `pdt-standalone` to its root, docks at the
@@ -51,6 +59,7 @@ true, missing values are omitted.
 | `client` | `data-pdt-event` (the `phx:*` type) |
 | `request` | `data-pdt-kind` (`response`, `dispatch`, `exception`), `data-pdt-method`, `data-pdt-status`, `data-pdt-error` |
 | `profile` (no sid, seq, duration) | `data-pdt-callback` (the row label), `data-pdt-count`, `data-pdt-total-us`, `data-pdt-max-us` |
+| `#pdt-empty` | `data-pdt-lookup`: `sid`, `path`, `newest` or `gated` (why there is no page) |
 
 The names are a contract, like `Report`'s keys: adding one is not a breaking
 change, renaming or removing one is (a CHANGELOG line). Tests pin them.
@@ -75,3 +84,5 @@ Summary badges keep their stable ids (`#pdt-badge-<id>`).
 - Rows are bounded by the tabs' DOM caps: the full lists are in `Report`.
 - The standalone panel follows live navigation of its page, but a new page load
   in the host's tab is another page: reload the panel to see it.
+- `?path=` matches the path a page started at: a live patch keeps its LiveView's
+  mount path, and `/posts/` is not `/posts`.

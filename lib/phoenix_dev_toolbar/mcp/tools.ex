@@ -294,7 +294,13 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   end
 
   defp resolve_page(nil, nil), do: found(PageLookup.newest())
-  defp resolve_page(nil, path), do: found(PageLookup.newest(path: path))
+
+  defp resolve_page(nil, path) do
+    case PageLookup.newest(path: path) do
+      nil -> {:error, no_page_at(path)}
+      sid -> {:ok, sid}
+    end
+  end
 
   defp resolve_page(sid, _path) do
     case PageLookup.valid_sid?(sid) do
@@ -316,6 +322,11 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   defp found(sid), do: {:ok, sid}
 
   defp no_page, do: "No page captured. " <> @no_page_hint
+
+  defp no_page_at(path) do
+    "No captured page at #{String.slice(path, 0, 200)}. list_pages shows the captured paths; " <>
+      "a live patch keeps its LiveView's mount path. Captured data expires after 10 minutes."
+  end
 
   defp panel_url(opts, sid), do: Keyword.get(opts, :base_url, "") <> "/panel?sid=" <> sid
 end

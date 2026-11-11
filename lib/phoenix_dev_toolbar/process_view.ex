@@ -200,7 +200,7 @@ defmodule PhoenixDevToolbar.ProcessView do
         <% nil -> %>
         <% :off -> %>
           <p id={"#{@prefix}-actions-off"} class="pdt-hint">
-            Actions are off: set actions: :loopback in the toolbar config to kill or suspend from here.
+            Actions are off: set actions: :local in the toolbar config to kill or suspend from here.
           </p>
         <% {:error, why} -> %>
           <p id={"#{@prefix}-actions-off"} class="pdt-hint">{why}</p>

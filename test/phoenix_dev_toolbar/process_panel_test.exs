@@ -62,7 +62,7 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     visible(panel)
 
     refute has_element?(panel, "#pdt-process-kill")
-    assert has_element?(panel, "#pdt-process-actions-off", "actions: :loopback")
+    assert has_element?(panel, "#pdt-process-actions-off", "actions: :local")
   end
 
   test "the host LiveView's vital signs and relations, once the panel is visible" do
