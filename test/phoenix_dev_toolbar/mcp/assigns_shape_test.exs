@@ -11,6 +11,7 @@ defmodule PhoenixDevToolbar.Mcp.AssignsShapeTest do
 
   @endpoint DemoWeb.Endpoint
   @opts [base_url: "http://localhost:4000/__pdt"]
+  @fast_opts Keyword.put(@opts, :assigns_timeout, 50)
   @page_open "must be open in a browser"
 
   setup do
@@ -55,12 +56,16 @@ defmodule PhoenixDevToolbar.Mcp.AssignsShapeTest do
     json = Json.encode!(result)
     refute json =~ "secret-title-value"
     refute json =~ "secret-post-name"
+    refute json =~ "secret-odd-struct"
+    assert %{"type" => "map"} = entry(result, ":odd")
+    assert result["live_view_sid"] == live.sid
+    assert result["live_view_path"] == "/shape"
 
     assert shape!(%{"sid" => live.sid})["sid"] == live.sid
   end
 
   test "a dead owner and a page without a LiveView are tool errors",
-       %{view: view, request: request} do
+       %{view: view} do
     ref = Process.monitor(view.pid)
     GenServer.stop(view.pid)
     assert_receive {:DOWN, ^ref, :process, _pid, _reason}
@@ -75,14 +80,34 @@ defmodule PhoenixDevToolbar.Mcp.AssignsShapeTest do
              Tools.call("page_assigns_shape", %{"sid" => only_request.sid}, @opts)
 
     assert message =~ @page_open
-    refute request.sid == only_request.sid
+  end
+
+  test "after live navigation the result names the LiveView actually read",
+       %{request: request, live: live} do
+    {:ok, other, _html} = live_isolated(build_conn(), DemoWeb.ShapeLive)
+    transport = self()
+    Store.claim(live.sid, live.owner, transport)
+
+    navigated =
+      session(:live_view,
+        parent: live.sid,
+        owner: other.pid,
+        transport: transport,
+        path: "/shape/next",
+        started_at: 1_800_000_000_000_000 + 10
+      )
+
+    result = shape!(%{"sid" => request.sid})
+    assert result["sid"] == request.sid
+    assert result["live_view_sid"] == navigated.sid
+    assert result["live_view_path"] == "/shape/next"
   end
 
   test "a busy LiveView is a timeout tool error and keeps running", %{view: view} do
     send(view.pid, {:block, self()})
     assert_receive :blocked
 
-    assert {:error, message} = Tools.call("page_assigns_shape", %{}, @opts)
+    assert {:error, message} = Tools.call("page_assigns_shape", %{}, @fast_opts)
     assert message =~ "timed out"
     assert message =~ "busy"
 

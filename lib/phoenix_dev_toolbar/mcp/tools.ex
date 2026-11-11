@@ -10,7 +10,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   alias PhoenixDevToolbar.Store
 
   @type definition :: %{String.t() => term()}
-  @type opts :: [base_url: String.t()]
+  @type opts :: [base_url: String.t(), assigns_timeout: pos_integer()]
 
   @max_path 2048
 
@@ -132,7 +132,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "page_assigns_shape",
         "Weigh a LiveView's assigns",
-        "The size of each assign of the page's LiveView, largest first, with no values: type, length, words (memory) and stream?. Look for big lists that should be streams. Read live: the page must be open in a browser.",
+        "The size of each assign of the page's LiveView, largest first, with no values: type, length, words (memory) and stream?. Look for big lists that should be streams. A stream's words are what the server holds; its items live in the client. Read live: the page must be open in a browser. live_view_sid and live_view_path name the LiveView read, which may be a later one than the page's path after live navigation.",
         page_props()
       )
     ]
@@ -230,7 +230,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   # A live read of the host LiveView, in a task with a timeout (AssignsShape).
   defp execute("page_assigns_shape", args, opts) do
     with {:ok, sid} <- resolve(args) do
-      case AssignsShape.read(sid) do
+      case AssignsShape.read(sid, Keyword.get(opts, :assigns_timeout, 2_000)) do
         {:ok, shape} ->
           {:ok, Map.merge(shape, %{sid: sid, panel_url: panel_url(opts, sid)})}
 

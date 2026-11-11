@@ -29,15 +29,24 @@ defmodule PhoenixDevToolbar.LiveViewAssigns do
   or nil. A request page resolves to its connected mount's LiveView.
   """
   @spec owner(Page.t()) :: pid() | nil
-  def owner(%Page{sids: sids}) do
-    sids
-    |> Enum.reverse()
-    |> Enum.find_value(&owner_of/1)
+  def owner(%Page{} = page) do
+    case session(page) do
+      %Session{owner: owner} -> owner
+      nil -> nil
+    end
   end
 
-  defp owner_of(sid) do
+  @doc "The session of the page's newest LiveView (with an owner pid), or nil."
+  @spec session(Page.t()) :: Session.t() | nil
+  def session(%Page{sids: sids}) do
+    sids
+    |> Enum.reverse()
+    |> Enum.find_value(&live_view_session/1)
+  end
+
+  defp live_view_session(sid) do
     case safe_session(sid) do
-      {:ok, %Session{kind: :live_view, owner: owner}} when is_pid(owner) -> owner
+      {:ok, %Session{kind: :live_view, owner: owner} = session} when is_pid(owner) -> session
       _other -> nil
     end
   end

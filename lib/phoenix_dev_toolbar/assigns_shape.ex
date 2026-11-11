@@ -28,6 +28,8 @@ defmodule PhoenixDevToolbar.AssignsShape do
           view: String.t() | nil,
           total_words: non_neg_integer(),
           omitted: non_neg_integer(),
+          live_view_sid: String.t(),
+          live_view_path: String.t() | nil,
           assigns: [entry()]
         }
   @type error :: :no_live_view | :gone | :timeout
@@ -39,14 +41,21 @@ defmodule PhoenixDevToolbar.AssignsShape do
   """
   @spec read(String.t(), pos_integer()) :: {:ok, shape()} | {:error, error()}
   def read(sid, timeout \\ @timeout_ms) do
-    case owner(sid) do
-      nil -> {:error, :no_live_view}
-      owner -> read_owner(owner, timeout)
+    case live_view(sid) do
+      nil ->
+        {:error, :no_live_view}
+
+      %{owner: owner} = session ->
+        with {:ok, shape} <- read_owner(owner, timeout) do
+          {:ok, Map.merge(shape, %{live_view_sid: session.sid, live_view_path: session.path})}
+        end
     end
   end
 
-  defp owner(sid) do
-    sid |> Page.initial() |> LiveViewAssigns.owner()
+  # Page.initial follows live navigation: this may be a later LiveView than the
+  # page's path says, so the result names it.
+  defp live_view(sid) do
+    sid |> Page.initial() |> LiveViewAssigns.session()
   rescue
     ArgumentError -> nil
   end
@@ -116,7 +125,7 @@ defmodule PhoenixDevToolbar.AssignsShape do
   defp key(key),
     do: key |> inspect(limit: 5, printable_limit: @max_key) |> String.slice(0, @max_key)
 
-  defp type(%{__struct__: module}), do: "struct " <> inspect(module)
+  defp type(%{__struct__: module}) when is_atom(module), do: "struct " <> inspect(module)
   defp type(value) when is_list(value), do: "list"
   defp type(value) when is_map(value), do: "map"
   defp type(value) when is_binary(value), do: "binary"
@@ -127,7 +136,7 @@ defmodule PhoenixDevToolbar.AssignsShape do
   defp type(value) when is_pid(value), do: "pid"
   defp type(_value), do: "other"
 
-  defp length_of(%{__struct__: _}), do: nil
+  defp length_of(%{__struct__: module}) when is_atom(module), do: nil
   defp length_of(value) when is_map(value), do: map_size(value)
   defp length_of(value) when is_list(value), do: proper_length(value, 0)
   defp length_of(_value), do: nil

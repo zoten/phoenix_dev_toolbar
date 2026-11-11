@@ -8,7 +8,12 @@ defmodule DemoWeb.ShapeLive do
   def mount(_params, _session, socket) do
     {:ok,
      socket
-     |> assign(big: Enum.to_list(1..1000), small: [1, 2], title: "secret-title-value")
+     |> assign(
+       big: Enum.to_list(1..1000),
+       small: [1, 2],
+       title: "secret-title-value",
+       odd: Map.put(%{}, :__struct__, "secret-odd-struct")
+     )
      |> stream(:posts, [%{id: 1, name: "secret-post-name"}])}
   end
 
