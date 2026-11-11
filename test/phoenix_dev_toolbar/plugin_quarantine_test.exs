@@ -36,6 +36,7 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
     {:ok, host, _html} = live(conn)
     Process.put({:pdt_test_sid, host.pid}, sid)
     panel = open_panel(sid)
+    open_panel_tab(panel, "fragile")
     %{host: host, panel: panel}
   end
 
@@ -52,7 +53,9 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
   defp still_works(host, panel) do
     render_hook(host, "query", %{"sql" => "SELECT still works"})
     _ = flush(panel)
+    open_panel_tab(panel, "ecto")
     assert has_element?(panel, "#pdt-queries", "SELECT still works")
+    open_panel_tab(panel, "fragile")
   end
 
   test "a collector that raised: the tab says so, Re-enable brings it back", %{

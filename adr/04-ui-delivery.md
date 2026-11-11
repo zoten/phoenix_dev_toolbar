@@ -218,6 +218,17 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   `allowed_hosts:` (`"myapp.test"`, or `".test"` for every name under it). Any other
   gets a 403 that says how to allow it, logged once per boot. Assets stay public.
 
+- **Lazy tabs** (`PanelLive`): the panel sends rows only for the open tab. Badges come from
+  the summaries folded server side, so a closed tab costs no socket bytes: its component
+  gets an empty reset and the tab is marked stale when events for it arrive. Opening a stale
+  tab (a click, or `Panel.navigate/3`) re-reads the page's events and resets its streams.
+  A tab keeps live updates only while open, so state a panel keeps beside its rows (an
+  EXPLAIN plan) is rebuilt when a stale tab opens. Measured on 40 queries with 12 frame
+  stacktraces and 30 LiveView callbacks (`test/phoenix_dev_toolbar/panel_payload_test.exs`,
+  JSON bytes of the panel's join reply and diffs): mount 82 KB to 60 KB (the open Ecto tab's rows
+  are the rest), 5 new events 7.7 KB to 0.3 KB. The open tab still sends each query's
+  `details` (params, stacktrace) inline.
+
 ## Consequences
 
 - Full CSS/JS isolation, no conflicts with host Tailwind, DaisyUI, hooks or `morphdom`.

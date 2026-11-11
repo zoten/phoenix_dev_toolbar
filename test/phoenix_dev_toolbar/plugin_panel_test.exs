@@ -55,6 +55,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
     assert has_element?(panel, "#pdt-tab-tabbed", "Tabbed")
     assert has_element?(panel, "#tabbed[data-prefix=echo][data-shown=false]")
 
+    open_panel_tab(panel, "tabbed")
     render_hook(host, "echo", %{"value" => "one"})
     render_hook(host, "echo", %{"value" => "two"})
     flush(panel)
@@ -64,8 +65,9 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
     assert has_element?(panel, "#pdt-badge-tabbed", "2 echoes")
 
     # handle_props/1 runs on a real change only, not on every parent render.
-    props = props(panel)
     panel |> element("#pdt-tab-request") |> render_click()
+    props = props(panel)
+    _ = render(panel)
     assert props(panel) == props
 
     panel |> element("#pdt-tab-tabbed") |> render_click()
@@ -102,6 +104,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
   test "live navigation resets the tab to the new page" do
     {host, sid} = visit("/demo")
     panel = open_panel(sid)
+    open_panel_tab(panel, "tabbed")
 
     render_hook(host, "echo", %{"value" => "before"})
     flush(panel)
@@ -135,6 +138,7 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
     Store.put_limits(events_per_second: 10_000)
     {host, sid} = visit("/demo")
     panel = open_panel(sid)
+    open_panel_tab(panel, "tabbed")
 
     for batch <- 1..20 do
       for n <- 1..10, do: render_hook(host, "echo", %{"value" => "#{batch}-#{n}"})

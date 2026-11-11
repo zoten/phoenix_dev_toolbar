@@ -49,6 +49,12 @@ defmodule PhoenixDevToolbar.PageHelpers do
     panel
   end
 
+  @doc "Clicks the tab `id` (the panel loads a tab's rows when it opens, ADR 04)."
+  @spec open_panel_tab(struct(), String.t()) :: String.t() | {:error, term()}
+  def open_panel_tab(view, id) do
+    view |> element("#pdt-tab-#{id}") |> render_click()
+  end
+
   @doc """
   Has the panel handle everything the Store sent it (`:pdt_flush`) and renders.
   """

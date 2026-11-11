@@ -90,6 +90,7 @@ defmodule PdtExamples.ObanTest do
       send(panel.pid, :pdt_flush)
       _ = render(panel)
 
+      open_panel_tab(panel, "oban")
       assert has_element?(panel, "#pdt-tab-oban", "Oban")
       assert has_element?(panel, "#pdt-badge-oban-jobs", "1 job enqueued")
       assert has_element?(panel, "#oban-jobs li[id^=oban-job-]", "MyApp.Welcome")

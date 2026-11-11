@@ -549,6 +549,7 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
 
       refute has_element?(view, "#pdt-query-#{query.seq}[data-pdt-error]")
       refute has_element?(view, "#pdt-query-#{query.seq}[data-pdt-n-plus-one]")
+      open_panel_tab(view, "request")
 
       assert has_element?(
                view,

@@ -49,7 +49,7 @@ defmodule PhoenixDevToolbar.PanelLive do
       socket
       |> assign(shell: shell, tabs: tabs, tab: default_tab(tabs), visible?: false)
       |> assign(panel_errors: %{}, quarantined: PageData.quarantined(shell.plugins))
-      |> assign(root: root, lookup: lookup, flush: nil, subscribed: [])
+      |> assign(root: root, lookup: lookup, flush: nil, subscribed: [], stale: MapSet.new())
       # What tabs need to act on host processes (ProcessActions, ADR 10): the
       # client's address (ClientPolicy) and this panel's own processes (Protected).
       |> assign(:monitors, %{})
@@ -74,7 +74,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   # Tab ids are compared as strings: never an atom from the client.
   def handle_event("tab", %{"tab" => tab}, socket) do
     case Enum.any?(socket.assigns.tabs, &(&1.id == tab)) do
-      true -> {:noreply, assign(socket, :tab, tab)}
+      true -> {:noreply, open_tab(socket, tab)}
       false -> {:noreply, socket}
     end
   end
@@ -138,7 +138,7 @@ defmodule PhoenixDevToolbar.PanelLive do
     case Enum.find(socket.assigns.tabs, &(&1.id == tab)) do
       %{panel: panel} ->
         Panel.send_now(self(), panel, panel_id(tab), {:navigate, params})
-        {:noreply, assign(socket, :tab, tab)}
+        {:noreply, open_tab(socket, tab)}
 
       nil ->
         {:noreply, socket}
@@ -244,23 +244,72 @@ defmodule PhoenixDevToolbar.PanelLive do
   # Summaries are folded incrementally, never rebuilt from the Store.
   defp fold(socket, events), do: assign(socket, :shell, Shell.fold(socket.assigns.shell, events))
 
-  # Each tab's component gets its plugin's events (send_update: delivered after
-  # this callback, in order). A reset reaches every tab, even with no events.
-  # Only once connected: the dead render's process would just drop them, so
-  # the dead render shows empty tabs, filled on connect.
+  # Only the open tab's component gets its plugin's events (send_update:
+  # delivered after this callback, in order). The others are marked stale and
+  # load their rows when opened (`open_tab/2`), so hidden tabs cost no socket
+  # bytes (ADR 04). A reset reaches every tab, empty for the hidden ones. Only
+  # once connected: the dead render's process would just drop them, so the dead
+  # render shows empty tabs, filled on connect.
   defp deliver(socket, kind, events) do
-    _ =
-      maybe_connected(socket, fn ->
-        routed = Shell.route(socket.assigns.shell, events)
+    case connected?(socket) do
+      true -> do_deliver(socket, kind, Shell.route(socket.assigns.shell, events))
+      false -> socket
+    end
+  end
 
-        for %{id: id, panel: panel} <- socket.assigns.tabs,
-            tab_events = Map.get(routed, id, []),
-            kind == :reset or tab_events != [] do
-          send_update(panel, id: panel_id(id), pdt: {kind, tab_events})
+  defp do_deliver(socket, kind, routed) do
+    open = socket.assigns.tab
+    stale = if(kind == :reset, do: MapSet.new(), else: socket.assigns.stale)
+
+    stale =
+      Enum.reduce(socket.assigns.tabs, stale, fn %{id: id, panel: panel}, stale ->
+        tab_events = Map.get(routed, id, [])
+
+        case {id == open, kind, tab_events} do
+          {true, _kind, _events} ->
+            send_update(panel, id: panel_id(id), pdt: {kind, tab_events})
+            MapSet.delete(stale, id)
+
+          {false, :reset, []} ->
+            send_update(panel, id: panel_id(id), pdt: {:reset, []})
+            stale
+
+          {false, :reset, _events} ->
+            send_update(panel, id: panel_id(id), pdt: {:reset, []})
+            MapSet.put(stale, id)
+
+          {false, :events, []} ->
+            stale
+
+          {false, :events, _events} ->
+            MapSet.put(stale, id)
         end
       end)
 
-    socket
+    assign(socket, :stale, stale)
+  end
+
+  # Selects a tab; one that missed events while hidden reloads its rows now.
+  defp open_tab(socket, tab) do
+    socket = assign(socket, :tab, tab)
+
+    case MapSet.member?(socket.assigns.stale, tab) do
+      true -> load_tab(socket, tab)
+      false -> socket
+    end
+  end
+
+  defp load_tab(%{assigns: %{page: %Page{sids: sids}}} = socket, tab) do
+    routed = Shell.route(socket.assigns.shell, PageData.read_all(sids))
+
+    case Enum.find(socket.assigns.tabs, &(&1.id == tab)) do
+      %{panel: panel} ->
+        send_update(panel, id: panel_id(tab), pdt: {:reset, Map.get(routed, tab, [])})
+        update(socket, :stale, &MapSet.delete(&1, tab))
+
+      nil ->
+        socket
+    end
   end
 
   defp panel_id(tab_id), do: PanelLayout.panel_id(tab_id)
