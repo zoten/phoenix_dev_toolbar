@@ -306,7 +306,24 @@ test("a join forgets this page's recorded loads", async (t) => {
     assert.equal(result(), "Copied")
   })
 
-  test("an error from the server is shown, a page that no longer matches is dropped", async (t) => {
+  test("the Copied line fades after a few seconds, an error stays", async (t) => {
+    const writes = []
+    const {markdown, page, result, flush} = await loadMarkdown(t, writes)
+
+    page.byId("pdt-markdown-copy").click()
+    markdown.handlers["pdt:markdown"]({text: "# a", page: "root1"})
+    await flush()
+    assert.equal(result(), "Copied")
+
+    t.mock.timers.tick(3000)
+    assert.equal(result(), "")
+
+    markdown.handlers["pdt:markdown"]({error: "gone", page: "root1"})
+    t.mock.timers.tick(10000)
+    assert.equal(result(), "Copy failed: gone")
+  })
+
+  test("an error from the server is shown,a page that no longer matches is dropped", async (t) => {
     const writes = []
     const {markdown, result, flush} = await loadMarkdown(t, writes)
 

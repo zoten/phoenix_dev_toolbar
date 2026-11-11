@@ -367,6 +367,15 @@ export class FakeWindow extends Target {
   postMessage(data, targetOrigin) {
     this.posted.push({data, targetOrigin})
   }
+
+  // The runtime's timers, looked up per call so a test's mocked timers apply.
+  setTimeout(fun, ms) {
+    return globalThis.setTimeout(fun, ms)
+  }
+
+  clearTimeout(timer) {
+    globalThis.clearTimeout(timer)
+  }
 }
 
 class FakeDocument extends Node {

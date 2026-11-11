@@ -50,6 +50,10 @@ export const createExportCopy = (env) => {
   // `env.fallback` names what to use when the clipboard refuses (Download for
   // the Ecto export, nothing for the Markdown copy).
   const fallback = env.fallback === undefined ? ": use Download" : env.fallback
+  // `env.button` names the button to click again ("Copy" for the Ecto export).
+  const button = env.button === undefined ? "Copy" : env.button
+  const pageChanged = "The page changed: click " + button + " again"
+  const noExport = env.fallback === undefined ? NO_EXPORT : "Copy failed: no export arrived" + fallback
 
   const failed = (error) => {
     env.warn(error)
@@ -68,7 +72,7 @@ export const createExportCopy = (env) => {
       reject = fail
     })
     const copy = {resolve, reject, abandoned: false}
-    copy.timer = env.setTimeout(() => abandon(NO_EXPORT), EXPORT_WAIT_MS)
+    copy.timer = env.setTimeout(() => abandon(noExport), EXPORT_WAIT_MS)
     pending = copy
     env.say("Copying…")
     clipboard.write([new env.ClipboardItem({"text/plain": text})]).then(
@@ -80,7 +84,7 @@ export const createExportCopy = (env) => {
   const hold = (json) => {
     drop()
     held = {json, timer: env.setTimeout(drop, HELD_MS)}
-    env.say("Export ready: click Copy again")
+    env.say("Export ready: click " + button + " again")
   }
 
   const copyNow = (json) => {
@@ -113,7 +117,7 @@ export const createExportCopy = (env) => {
     arrive({payload, text, page, error}, formPage) {
       if (page !== formPage) {
         drop()
-        if (!abandon(PAGE_CHANGED)) env.say(PAGE_CHANGED)
+        if (!abandon(pageChanged)) env.say(pageChanged)
       } else if (error) {
         drop()
         const message = "Copy failed: " + error
@@ -125,7 +129,7 @@ export const createExportCopy = (env) => {
     // The form now shows another page: what was waiting no longer matches it.
     pageChanged() {
       const dropped = drop()
-      if (!abandon(PAGE_CHANGED) && dropped) env.say(PAGE_CHANGED)
+      if (!abandon(pageChanged) && dropped) env.say(pageChanged)
     },
     // A new choice in the form: the held export no longer matches it.
     changed() {

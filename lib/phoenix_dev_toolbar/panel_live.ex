@@ -107,13 +107,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   def handle_event("copy_markdown", _params, socket) do
     root = socket.assigns.page.root
 
-    data =
-      case root && Report.markdown(root) do
-        markdown when is_binary(markdown) -> %{text: markdown, page: root}
-        _gone -> %{error: "the page expired, reload it", page: root}
-      end
-
-    {:noreply, push_event(socket, "pdt:markdown", data)}
+    {:noreply, push_event(socket, "pdt:markdown", markdown_data(root))}
   end
 
   # From the PdtPanel hook: a client event the loader forwarded (untrusted
@@ -417,6 +411,19 @@ defmodule PhoenixDevToolbar.PanelLive do
     case connected?(socket) do
       true -> fun.()
       false -> :ok
+    end
+  end
+
+  # No root (a panel opened without a page): the error carries no page, as the
+  # form's data-pdt-page is absent too, so the hook shows it.
+  @expired %{error: "the page expired, reload it"}
+
+  defp markdown_data(nil), do: @expired
+
+  defp markdown_data(root) do
+    case Report.markdown(root) do
+      markdown when is_binary(markdown) -> %{text: markdown, page: root}
+      nil -> Map.put(@expired, :page, root)
     end
   end
 

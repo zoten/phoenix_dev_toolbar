@@ -8,6 +8,7 @@ defmodule PhoenixDevToolbar.Report.Markdown do
 
   @inline_sql 80
   @cell_max 300
+  @errors_max 20
 
   @doc "The Markdown for a `Report.summary/2` built with `verbose: true`."
   @spec render(PhoenixDevToolbar.Report.summary()) :: String.t()
@@ -30,7 +31,7 @@ defmodule PhoenixDevToolbar.Report.Markdown do
 
   defp heading(%{session: session}) do
     view = if session.view, do: " (`#{inspect(session.view)}`)"
-    "# #{cell(session.path || "unknown path")}#{view}"
+    "# #{plain(session.path || "unknown path")}#{view}"
   end
 
   defp request(nil), do: nil
@@ -66,7 +67,7 @@ defmodule PhoenixDevToolbar.Report.Markdown do
       "N",
       ["SQL", "Origin", "Count"],
       for g <- groups do
-        {g.sql, [cell(g.origin), g.count]}
+        {g.sql, [code(g.origin), g.count]}
       end
     )
   end
@@ -79,7 +80,7 @@ defmodule PhoenixDevToolbar.Report.Markdown do
       "Q",
       ["SQL", "Time", "Rows", "Origin"],
       for q <- queries do
-        {q.sql, [ms(q.duration_us), q.rows, cell(q.origin)]}
+        {q.sql, [ms(q.duration_us), q.rows, code(q.origin)]}
       end
     )
   end
@@ -90,10 +91,10 @@ defmodule PhoenixDevToolbar.Report.Markdown do
     rows =
       for c <- callbacks do
         [
-          cell(callback_name(c)),
+          code(callback_name(c)),
           ms(c.duration_us),
           c.queries,
-          cell(c.origin)
+          code(c.origin)
         ]
       end
 
@@ -110,7 +111,7 @@ defmodule PhoenixDevToolbar.Report.Markdown do
   defp unattributed(%{count: 0}), do: nil
 
   defp unattributed(%{origins: origins} = un) do
-    rows = for o <- origins, do: [cell(o.origin), o.count, ms(o.total_us)]
+    rows = for o <- origins, do: [code(o.origin), o.count, ms(o.total_us)]
 
     table(
       "## Unattributed queries\n\n#{un.count} queries in no callback (usually handle_info or PubSub).",
@@ -122,13 +123,21 @@ defmodule PhoenixDevToolbar.Report.Markdown do
   defp errors([]), do: nil
 
   defp errors(errors) do
-    table(
-      "## Errors",
-      ["Source", "Message", "Origin"],
-      for e <- errors do
-        [cell(e.source), cell(e.message), cell(e.origin)]
-      end
-    )
+    {shown, rest} = Enum.split(errors, @errors_max)
+
+    table =
+      table(
+        "## Errors",
+        ["Source", "Message", "Origin"],
+        for e <- shown do
+          [plain(e.source), code(e.message), code(e.origin)]
+        end
+      )
+
+    case length(rest) do
+      0 -> table
+      more -> table <> "\n\nand #{more} more (page_errors)"
+    end
   end
 
   defp lost(%{dropped: 0, trimmed: 0}), do: nil
@@ -163,7 +172,7 @@ defmodule PhoenixDevToolbar.Report.Markdown do
   end
 
   defp sql_cell(nil, _ref), do: "-"
-  defp sql_cell(sql, ref), do: if(fenced?(sql), do: "see #{ref}", else: cell(sql))
+  defp sql_cell(sql, ref), do: if(fenced?(sql), do: "see #{ref}", else: code(sql))
 
   defp fenced?(nil), do: false
 
@@ -187,15 +196,31 @@ defmodule PhoenixDevToolbar.Report.Markdown do
   defp to_cell(value) when is_binary(value), do: value
   defp to_cell(value), do: to_string(value)
 
-  # One line, no table or code syntax.
-  defp cell(nil), do: nil
+  # Captured text (SQL, messages, origins) as one inline code span: nothing in
+  # it is read as emphasis, HTML or a link. The span's backtick run is longer
+  # than any inside; `|` stays escaped for the table.
+  defp code(nil), do: nil
 
-  defp cell(value) do
+  defp code(value) do
+    text = value |> one_line() |> String.replace("|", "\\|")
+    ticks = String.duplicate("`", longest_run(text) + 1)
+    pad = if String.starts_with?(text, "`") or String.ends_with?(text, "`"), do: " ", else: ""
+    ticks <> pad <> text <> pad <> ticks
+  end
+
+  # Text outside code spans: every character Markdown or a table reads is escaped.
+  defp plain(nil), do: nil
+
+  defp plain(value) do
+    value
+    |> one_line()
+    |> String.replace(~r/[\\|`<>*_\[\]]/, "\\\\\\0")
+  end
+
+  defp one_line(value) do
     value
     |> to_string()
     |> String.replace(~r/\s*[\r\n]+\s*/, " ")
-    |> String.replace("|", "\\|")
-    |> String.replace("`", "\\`")
     |> String.slice(0, @cell_max)
   end
 

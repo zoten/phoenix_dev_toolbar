@@ -143,6 +143,7 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
 
       legacy = result!(Protocol.handle(rpc("tools/call", params), %{}, @opts))
       assert %{"content" => [%{"text" => ^text}]} = legacy
+      assert text =~ "panel: http://localhost:4000/__pdt/panel?sid=" <> s.sid
       refute Map.has_key?(legacy, "structuredContent")
     end
 

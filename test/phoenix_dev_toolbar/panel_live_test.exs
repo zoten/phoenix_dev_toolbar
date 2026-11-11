@@ -556,6 +556,16 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
       assert_push_event(view, "pdt:markdown", %{error: error, page: ^request})
       assert error =~ "expired"
     end
+
+    test "a panel without a page pushes the error without a page", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/__pdt/panel?path=/nowhere")
+
+      view |> element("#pdt-markdown-copy") |> render_click()
+
+      assert_push_event(view, "pdt:markdown", %{error: error} = data)
+      assert error =~ "expired"
+      refute Map.has_key?(data, :page)
+    end
   end
 
   describe "data-pdt-* attributes (ADR 14)" do

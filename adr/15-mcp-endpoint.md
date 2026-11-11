@@ -98,7 +98,10 @@ the default resolve to the request. `list_pages` with both `path` and
 port left out for 80 and 443): `http://localhost:4000/__pdt/panel?sid=...`, so the agent can hand it to the
 developer. `path` and `path_prefix` are at most 2048 bytes.
 
-Results come as `structuredContent` and as the same JSON in a text block. Keys
+Results come as `structuredContent` and as the same JSON in a text block, except
+`page_report`, whose text block is its Markdown (ending in a footer with the sid and
+the `panel_url`, also in `markdown`, so a 2025-03-26 client, which has no
+`structuredContent`, and a pasted report keep the link). Keys
 and values follow `Report` (ADR 13) through one JSON normalizer: string keys,
 modules and pids as `inspect/1` strings, timestamps in ISO 8601. Invalid
 arguments and a missing page are tool errors (`isError: true`) whose text says

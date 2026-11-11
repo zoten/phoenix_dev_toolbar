@@ -331,6 +331,7 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       assert url == "http://localhost:4000/__pdt/panel?sid=" <> s.sid
       assert md =~ "# /users"
       assert md =~ "SELECT * FROM users WHERE id = ?"
+      assert String.ends_with?(md, "\n---\nsid `#{s.sid}`, panel: #{url}\n")
     end
 
     test "resolves by path, errors without a page" do

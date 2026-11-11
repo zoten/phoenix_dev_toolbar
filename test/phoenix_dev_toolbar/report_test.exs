@@ -569,20 +569,100 @@ defmodule PhoenixDevToolbar.ReportTest do
       md = Report.markdown(s.sid)
 
       assert md =~ "```sql\n" <> sql <> "\n```"
-      assert md =~ "a \\| b second \\`line\\`"
+      assert md =~ "| `` ** (RuntimeError) a \\| b second `line` `` |"
 
       table_rows = md |> String.split("\n") |> Enum.filter(&String.starts_with?(&1, "|"))
       assert table_rows != []
       refute Enum.any?(table_rows, &(&1 =~ "second\n"))
     end
 
-    test "short single-line SQL stays in the table, escaped" do
+    test "short single-line SQL stays in the table as a code span, escaped" do
       s = session(:request, path: "/x")
       query(s, sql: "SELECT 1 | 2")
       md = Report.markdown(s.sid)
 
-      assert md =~ "| `SELECT 1 \\| 2` |" or md =~ "SELECT 1 \\| 2"
+      assert md =~ "| `SELECT 1 \\| 2` |"
       refute md =~ "```sql"
+    end
+
+    test "SQL and messages never turn into emphasis or HTML" do
+      s = session(:request, path: "/x")
+      query(s, sql: "SELECT count(*), max(*) FROM t", stacktrace: [])
+      query(s, sql: "#Ecto.Query<from u0 in User>", stacktrace: [])
+      md = Report.markdown(s.sid)
+
+      assert md =~ "| `SELECT count(*), max(*) FROM t` |"
+      assert md =~ "| `#Ecto.Query<from u0 in User>` |"
+    end
+
+    test "plain text cells escape markup characters" do
+      s = session(:request, path: "/a_b*<c>[d]")
+      md = Report.markdown(s.sid)
+
+      assert md =~ "# /a\\_b\\*\\<c\\>\\[d\\]"
+    end
+
+    test "SQL containing a fence gets a longer one" do
+      s = session(:request, path: "/x")
+      sql = "SELECT '```' FROM t\nWHERE 1 = 1"
+      query(s, sql: sql)
+
+      assert Report.markdown(s.sid) =~ "````sql\n" <> sql <> "\n````"
+    end
+
+    test "verbose details never reach the report" do
+      s = session(:live_view, path: "/x", view: DemoWeb.PageLive)
+      query(s, stacktrace: ["lib/a.ex:1: A.a/0", "lib/deep_frame.ex:2: Deep.frame/0"])
+
+      callback(s, :mount,
+        error: "** (RuntimeError) boom",
+        stack_args: ["secret-arg-1", "secret-arg-2"],
+        stacktrace: ["lib/a.ex:1: A.a/0", "lib/deep_frame.ex:2: Deep.frame/0"]
+      )
+
+      md = Report.markdown(s.sid)
+
+      refute md =~ "secret-arg"
+      refute md =~ "deep_frame"
+      refute md =~ "[1]"
+      refute md =~ "raw-secret-param"
+    end
+
+    test "a cell is capped at 300 characters" do
+      s = session(:live_view, path: "/x", view: DemoWeb.PageLive)
+
+      insert(s, :live_view, :callback, %{
+        view: DemoWeb.PageLive,
+        callback: :mount,
+        error: "** (RuntimeError) " <> String.duplicate("x", 500)
+      })
+
+      md = Report.markdown(s.sid)
+
+      assert md =~ ~r/\| `\*\* \(RuntimeError\) x+` \|/
+      assert md =~ ~r/x{250}/
+      refute md =~ ~r/x{300}/
+
+      assert md |> String.split("\n") |> Enum.find(&(&1 =~ "RuntimeError")) |> String.length() <
+               340
+    end
+
+    test "errors are capped, with the rest counted" do
+      s = session(:live_view, path: "/x", view: DemoWeb.PageLive)
+
+      for i <- 1..25 do
+        insert(s, :live_view, :callback, %{
+          view: DemoWeb.PageLive,
+          callback: :mount,
+          error: "** (RuntimeError) boom #{i}"
+        })
+      end
+
+      md = Report.markdown(s.sid)
+
+      error_rows = md |> String.split("\n") |> Enum.filter(&(&1 =~ "RuntimeError"))
+      assert length(error_rows) == 20
+      assert md =~ "and 5 more (page_errors)"
     end
   end
 

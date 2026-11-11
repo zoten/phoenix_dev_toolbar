@@ -31,7 +31,7 @@ Store, built for IEx and agents:
   `origin`; LiveView crashes carry their stacktrace in call order, cut after the last host frame plus one, and `origin` is their first host frame, ADR 07; an error carries `stack_args`, the call arguments of its frames, only when the developer set `stack_args: [agents: true]`, ADR 03): `verbose: true` returns the full items, `queries/2`, `callbacks/2`
   and `errors/2` the detail.
 - `recent_errors/1` lists the newest failures of every session the Store holds (a bounded read of its capped sessions), newest first, as error briefs plus `at` and the session `path`; `since:` (sid: errors after that page's last captured event, its connected mount included, so a fixed page shows none of its old crashes; `DateTime`: errors after it) and `limit:` (20, `nil` for all). It sees crashes in `handle_info` or another tab that no page lookup points at.
-- `markdown/2` renders a page as Markdown for an agent or a bug report (nil when gone), from `summary/2` with `verbose: true` (the slowest queries need their SQL; nothing beyond the summary caps): heading with path and view, request line, totals, N+1, slowest queries and callbacks, unattributed origins and errors with origin. Empty sections are left out, every table cell is one escaped line (`|`, backticks, newlines), SQL that is long or multi-line goes in a fenced block under its table. The panel's "Copy as Markdown" (ADR 04) and MCP `page_report` (ADR 15) return it.
+- `markdown/2` renders a page as Markdown for an agent or a bug report (nil when gone), from `summary/2` with `verbose: true` (the slowest queries need their SQL; nothing beyond the summary caps): heading with path and view, request line, totals, N+1, slowest queries and callbacks, unattributed origins and the first 20 errors (source, message and origin, not frames; the rest counted). Empty sections are left out. Captured text (SQL, messages, origins) is one inline code span per table cell, capped at 300 characters, with `|` escaped; other text is escaped so it never reads as Markdown or HTML. SQL that is long or multi-line goes in a fenced block under its table (a fence longer than any backtick run inside). The panel's "Copy as Markdown" (ADR 04) and MCP `page_report` (ADR 15) return it.
 - `compare/3` puts two targets side by side, built from two compact `summary/2`
   calls (options pass through; a connected mount reads as its request; nil when
   either side is gone): `queries`, `callbacks`, `renders` and `unattributed` as
@@ -114,5 +114,6 @@ Store, built for IEx and agents:
   mount (`list_pages` drops mounts).
 - `recent_errors` copies every captured event of up to 50 sessions per call (bounded, on demand).
 - `compare` `still` is a count only: an N+1 group dropping from 50 repetitions to 10 shows as still.
+- In the Markdown a dead render's and a connected mount's `mount` and `handle_params` rows look alike (same view and callback): the report does not say which session ran them.
 - `compare` reads at most 50 N+1 groups per side (summary cap): a larger set can yield false fixed or new.
 - Assigns snapshots, client `phx:*` events and the component tree are not exposed.

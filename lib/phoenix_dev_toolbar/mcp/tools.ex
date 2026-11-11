@@ -215,7 +215,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
     with {:ok, sid} <- resolve(args) do
       case Report.markdown(sid) do
         nil -> {:error, no_page()}
-        markdown -> {:ok, %{sid: sid, panel_url: panel_url(opts, sid), markdown: markdown}}
+        markdown -> {:ok, report(markdown, sid, panel_url(opts, sid))}
       end
     end
   end
@@ -561,6 +561,13 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   defp no_page_at(path) do
     "No captured page at #{String.slice(path, 0, 200)}. list_pages shows the captured paths; " <>
       "a live patch keeps its LiveView's mount path. Captured data expires after 10 minutes."
+  end
+
+  # The footer is part of the Markdown: the text block is all a 2025-03-26 client
+  # gets (no structuredContent), and a pasted report links back to the panel.
+  defp report(markdown, sid, panel_url) do
+    footer = "\n---\nsid `#{sid}`, panel: #{panel_url}\n"
+    %{sid: sid, panel_url: panel_url, markdown: markdown <> footer}
   end
 
   defp panel_url(opts, sid), do: Keyword.get(opts, :base_url, "") <> "/panel?sid=" <> sid

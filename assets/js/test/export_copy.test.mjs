@@ -187,3 +187,27 @@ test("a text (the Markdown copy) is copied as is, and a failure does not point a
   await flush()
   assert.equal(last(said), "Copy failed (Error)")
 })
+
+test("messages name the button and the fallback the env gives", async () => {
+  const said = []
+  const timers = []
+  const copier = createExportCopy({
+    clipboard: {write: ([entry]) => entry.data["text/plain"].then(() => {}, () => {}), writeText: undefined},
+    ClipboardItem: FakeItem,
+    Blob: FakeBlob,
+    execCopy: () => false,
+    fallback: "",
+    button: "Copy as Markdown",
+    setTimeout: (fun, ms) => (timers.push({fun, ms}), timers.length),
+    clearTimeout: () => {},
+    say: (text) => said.push(text),
+    warn: () => {},
+  })
+
+  copier.click()
+  timers.find((t) => t.ms === EXPORT_WAIT_MS).fun()
+  assert.equal(last(said), "Copy failed: no export arrived")
+
+  copier.arrive({text: "x", page: "a"}, "b")
+  assert.equal(last(said), "The page changed: click Copy as Markdown again")
+})

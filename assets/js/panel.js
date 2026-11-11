@@ -262,10 +262,14 @@ const PdtMarkdown = {
       Blob,
       execCopy,
       fallback: "",
+      button: "Copy as Markdown",
       setTimeout: (fun, ms) => window.setTimeout(fun, ms),
       clearTimeout: (timer) => window.clearTimeout(timer),
+      // A success fades after a few seconds: the line sits in the header.
       say: (text) => {
+        window.clearTimeout(this.fade)
         if (result) result.textContent = text
+        if (text === "Copied") this.fade = window.setTimeout(() => result && (result.textContent = ""), 3000)
       },
       warn: (error) => console.warn("[phoenix_dev_toolbar] copy failed:", error),
     })
@@ -287,6 +291,7 @@ const PdtMarkdown = {
   },
   destroyed() {
     this.el.removeEventListener("click", this.onClick, true)
+    window.clearTimeout(this.fade)
     this.copier.destroy()
   },
 }
