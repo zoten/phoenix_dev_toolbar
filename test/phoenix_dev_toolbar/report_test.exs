@@ -494,6 +494,95 @@ defmodule PhoenixDevToolbar.ReportTest do
              } = Report.compare(before.sid, after_.sid, threshold: 5)
     end
 
+    test "an N+1 whose call site moved to another line is still, not fixed and new" do
+      before =
+        page("/posts", @t0, fn s ->
+          for _ <- 1..5,
+              do: query(s, sql: @n1, span: 2, stacktrace: ["lib/app.ex:10: App.list/0"])
+        end)
+
+      after_ =
+        page("/posts", @t0 + 5, fn s ->
+          for _ <- 1..5,
+              do: query(s, sql: @n1, span: 2, stacktrace: ["lib/app.ex:14: App.list/0"])
+        end)
+
+      assert %{n_plus_one: %{fixed: [], new: [], still: 1}} =
+               Report.compare(before.sid, after_.sid, threshold: 5)
+    end
+
+    test "the same error with another pid or id is still, and repeats are counted once" do
+      before =
+        page("/posts", @t0, fn s ->
+          callback(s, :handle_event, error: "** (RuntimeError) boom #PID<0.123.0> id 41", us: 1)
+          callback(s, :handle_event, error: "** (RuntimeError) boom #PID<0.124.0> id 42", us: 1)
+        end)
+
+      after_ =
+        page("/posts", @t0 + 5, fn s ->
+          callback(s, :handle_event, error: "** (RuntimeError) boom #PID<0.999.0> id 7", us: 1)
+        end)
+
+      assert %{errors: %{fixed: [], new: [], still: 1}} =
+               Report.compare(before.sid, after_.sid)
+
+      gone = page("/posts", @t0 + 9, fn _s -> :ok end)
+
+      assert %{errors: %{fixed: [%{count: 2}], fixed_total: 1, new: [], new_total: 0}} =
+               Report.compare(before.sid, gone.sid)
+    end
+
+    test "fixed and new lists are capped, their totals are not" do
+      before =
+        page("/posts", @t0, fn s ->
+          for c <- ?a..?y, do: callback(s, :handle_event, error: "err " <> <<c>>, us: 1)
+        end)
+
+      after_ = page("/posts", @t0 + 5, fn _s -> :ok end)
+
+      assert %{errors: %{fixed: fixed, fixed_total: 25, new: [], new_total: 0}} =
+               Report.compare(before.sid, after_.sid)
+
+      assert length(fixed) == 20
+    end
+
+    test "a connected mount as before reads its request, both sides count their mounts" do
+      req_a = page("/posts", @t0, fn s -> query(s, span: 2, us: 100) end)
+
+      mount_a =
+        session(:live_view, path: "/posts", parent: req_a.sid, started_at: @t0 + 1)
+
+      query(mount_a, span: 3, us: 100)
+
+      req_b = page("/posts", @t0 + 5, fn s -> query(s, span: 2, us: 10) end)
+
+      mount_b =
+        session(:live_view, path: "/posts", parent: req_b.sid, started_at: @t0 + 6)
+
+      query(mount_b, span: 3, us: 10)
+
+      assert %{
+               before: %{sid: b, kind: :request, sids: [_, _]},
+               after: %{sid: a, kind: :request, sids: [_, _]},
+               queries: %{before: %{count: 2}, after: %{count: 2}, delta: %{total_us: -180}}
+             } = result = Report.compare(mount_a.sid, mount_b.sid)
+
+      assert {b, a} == {req_a.sid, req_b.sid}
+      refute Map.has_key?(result, :warning)
+    end
+
+    test "sides of another kind or session count carry a warning" do
+      req = page("/posts", @t0, fn _s -> :ok end)
+      mount = session(:live_view, path: "/posts", parent: req.sid, started_at: @t0 + 1)
+      _ = mount
+      nav = session(:live_view, path: "/posts", parent: "gone-lv", started_at: @t0 + 5)
+
+      assert %{after: %{kind: :live_view, sids: [_]}, warning: warning} =
+               Report.compare(req.sid, nav.sid)
+
+      assert warning =~ "request" and warning =~ "live_view"
+    end
+
     test "takes session maps, and is nil when either side is gone" do
       a = session(:request, path: "/a", started_at: @t0)
       b = session(:request, path: "/a", started_at: @t0 + 1)

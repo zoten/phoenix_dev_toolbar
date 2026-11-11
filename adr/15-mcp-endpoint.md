@@ -90,7 +90,7 @@ the default resolve to the request. `list_pages` with both `path` and
 | `page_callbacks` | as `page_queries` | `sid`, `panel_url`, `total`, `returned`, `callbacks` |
 | `page_n_plus_one` | `sid`, `path` | `sid`, `panel_url`, `n_plus_one` |
 | `page_errors` | `sid`, `path`, `limit` (1..100, 20) | `sid`, `panel_url`, `total`, `returned`, `errors` |
-| `compare_pages` | `before` (a captured sid, required), `after` (a captured sid) or `path` (the newest page at that path started after `before`; default: `before`'s path), not both | `Report.compare/3` plus `before_panel_url` and `after_panel_url`; no page after `before` is a tool error asking to reload the page |
+| `compare_pages` | `before` (a captured sid, required), `after` (a captured sid) or `path` (the newest page at that path started after `before`; default: `before`'s path), not both | `Report.compare/3` (a connected mount reads as its request; `warning` when the sides differ in kind or session count) plus `before_panel_url` and `after_panel_url`; no page after `before` is a tool error asking to reload the page, and an `after` older than `before` is a tool error |
 
 `panel_url` is absolute, built from the request's scheme, host and port (the
 port left out for 80 and 443): `http://localhost:4000/__pdt/panel?sid=...`, so the agent can hand it to the

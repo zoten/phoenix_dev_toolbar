@@ -390,6 +390,33 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       assert call_error("compare_pages", %{"before" => before.sid, "after" => "gone"}) =~ "after"
     end
 
+    test "an after older than before is a tool error" do
+      before = slow_page("/posts", @t0)
+      older = session(:request, path: "/posts", started_at: @t0 - 5)
+
+      msg = call_error("compare_pages", %{"before" => before.sid, "after" => older.sid})
+      assert msg =~ "older" and msg =~ "swap"
+    end
+
+    test "a before without a path never matches every page" do
+      before = session(:request, path: nil, started_at: @t0)
+      _other = session(:request, path: "/other", started_at: @t0 + 1)
+
+      assert call_error("compare_pages", %{"before" => before.sid}) =~ "Reload"
+    end
+
+    test "a connected mount as before compares its request" do
+      req = slow_page("/posts", @t0)
+      mount = session(:live_view, path: "/posts", parent: req.sid, started_at: @t0 + 1)
+      after_ = session(:request, path: "/posts", started_at: @t0 + 5)
+
+      assert %{"before" => %{"sid" => sid}, "before_panel_url" => url} =
+               call!("compare_pages", %{"before" => mount.sid, "after" => after_.sid})
+
+      assert sid == req.sid
+      assert url =~ req.sid
+    end
+
     test "after and path together is a tool error" do
       before = slow_page("/posts", @t0)
 

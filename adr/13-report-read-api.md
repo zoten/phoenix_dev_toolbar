@@ -31,11 +31,16 @@ Store, built for IEx and agents:
   `origin`; LiveView crashes carry their stacktrace in call order, cut after the last host frame plus one, and `origin` is their first host frame, ADR 07; an error carries `stack_args`, the call arguments of its frames, only when the developer set `stack_args: [agents: true]`, ADR 03): `verbose: true` returns the full items, `queries/2`, `callbacks/2`
   and `errors/2` the detail.
 - `compare/3` puts two targets side by side, built from two compact `summary/2`
-  calls (options pass through; nil when either side is gone): `queries`,
-  `callbacks`, `renders` and `unattributed` as `%{before, after, delta}` of
-  `count` and `total_us` (delta is after minus before), `n_plus_one` as
-  `%{fixed, new, still}` matched on SQL plus origin, `errors` as `%{fixed, new}`
-  matched on source plus message.
+  calls (options pass through; a connected mount reads as its request; nil when
+  either side is gone): `queries`, `callbacks`, `renders` and `unattributed` as
+  `%{before, after, delta}` of `count` and `total_us` (delta is after minus
+  before), `n_plus_one` and `errors` as `%{fixed, fixed_total, new, new_total,
+  still}`. Matching is by key, ignoring line numbers: N+1 on SQL plus origin,
+  errors on source plus origin plus the first message line with pids,
+  references, ports and digit runs normalized. Lists hold distinct keys (an
+  error carries its `count`), at most 20; the totals count all. `before` and
+  `after` carry `kind` and `sids`; a `warning` says when the kinds or session
+  counts differ (live navigation, a request without its mount).
 - A query's `origin` (queries, briefs, `unattributed.origins`) is the first stacktrace
   frame, else the task function (`initial_call`), else `task in View.callback "event"`
   or `task in View` for a query run inside `Task.async` or `start_async` (ADR 08).
@@ -105,4 +110,6 @@ Store, built for IEx and agents:
 - `started_at` is wall-clock time: a clock step back can hide pages from `since`.
 - `Report.sessions(since: request_sid)` includes that request's own connected
   mount (`list_pages` drops mounts).
+- `compare` `still` is a count only: an N+1 group dropping from 50 repetitions to 10 shows as still.
+- `compare` reads at most 50 N+1 groups per side (summary cap): a larger set can yield false fixed or new.
 - Assigns snapshots, client `phx:*` events and the component tree are not exposed.

@@ -49,6 +49,7 @@ defmodule PhoenixDevToolbar.Report do
   alias PhoenixDevToolbar.Store
 
   @slowest 5
+  @compare_cap 20
   @burst_gap_us 100_000
   @unattributed_origins 5
   @query_brief [:seq, :sid, :origin, :duration_us, :rows, :source, :n_plus_one?, :error]
@@ -277,22 +278,46 @@ defmodule PhoenixDevToolbar.Report do
         }
 
   @typedoc """
-  Two pages side by side (`compare/3`). `n_plus_one` matches findings on SQL
-  plus origin: `fixed` ones were only in `before`, `new` ones only in `after`,
-  `still` counts those in both. `errors` match on source plus message.
+  Two pages side by side (`compare/3`). Findings are matched by key, not by
+  position, so an edit that only moves a line does not change them:
+  `n_plus_one` on SQL plus origin, `errors` on source plus origin, both
+  without the line number, plus the first line of the message with pids,
+  references, ports and numbers normalized. `fixed` ones were only in
+  `before`, `new` ones only in `after`, `still` counts the distinct ones in
+  both (a count only: a group dropping from 50 repetitions to 10 is still).
+  Each list holds distinct keys, at most #{@compare_cap}; `fixed_total` and
+  `new_total` count them all. An error carries `count`, its occurrences.
+  `before` and `after` say which `kind` and `sids` were read; a `warning`
+  is present when the two differ in kind or session count.
   """
   @type comparison :: %{
-          before: %{sid: sid(), path: String.t() | nil, started_at: DateTime.t()},
-          after: %{sid: sid(), path: String.t() | nil, started_at: DateTime.t()},
-          queries: tally_change(),
-          callbacks: tally_change(),
-          renders: tally_change(),
-          unattributed: tally_change(),
-          n_plus_one: %{fixed: [n_plus_one()], new: [n_plus_one()], still: non_neg_integer()},
-          errors: %{
-            fixed: [error_brief() | error()],
-            new: [error_brief() | error()]
-          }
+          required(:before) => compared_side(),
+          required(:after) => compared_side(),
+          required(:queries) => tally_change(),
+          required(:callbacks) => tally_change(),
+          required(:renders) => tally_change(),
+          required(:unattributed) => tally_change(),
+          required(:n_plus_one) => findings(n_plus_one()),
+          required(:errors) => findings(error_brief() | error()),
+          optional(:warning) => String.t()
+        }
+
+  @typedoc "One side of a `t:comparison/0`."
+  @type compared_side :: %{
+          sid: sid(),
+          path: String.t() | nil,
+          started_at: DateTime.t(),
+          kind: :request | :live_view,
+          sids: [sid()]
+        }
+
+  @typedoc "Findings fixed, new and kept between two pages."
+  @type findings(item) :: %{
+          fixed: [item],
+          fixed_total: non_neg_integer(),
+          new: [item],
+          new_total: non_neg_integer(),
+          still: non_neg_integer()
         }
 
   ## Sessions
@@ -374,31 +399,81 @@ defmodule PhoenixDevToolbar.Report do
   Two pages side by side, for checking a change: what got faster, which N+1
   and errors were fixed, which are new. Built from two `summary/2` calls, so
   `before` and `after` are targets and the options (`threshold:`, `children:`)
-  pass through. Nil when either page is gone.
+  pass through. A connected mount reads as its request. Nil when either page
+  is gone. See `t:comparison/0` for the matching rules and the `warning`.
   """
   @spec compare(target(), target(), keyword()) :: comparison() | nil
   def compare(before_target, after_target, opts \\ []) do
-    with %{} = before_summary <- summary(before_target, opts),
-         %{} = after_summary <- summary(after_target, opts) do
-      b = before_summary
-      a = after_summary
-      {fixed, new, still} = diff(b.n_plus_one, a.n_plus_one, &{&1.sql, &1.origin})
-      {errors_fixed, errors_new, _still} = diff(b.errors, a.errors, &{&1.source, &1.message})
+    with %{} = b <- before_target |> root() |> summary(opts),
+         %{} = a <- after_target |> root() |> summary(opts) do
+      {fixed, new, still} = diff(b.n_plus_one, a.n_plus_one, &n_plus_one_key/1)
+      {errors_fixed, errors_new, errors_still} = diff(b.errors, a.errors, &error_key/1)
 
-      %{
-        before: side(b.session),
-        after: side(a.session),
+      comparison = %{
+        before: side(b),
+        after: side(a),
         queries: tally_change(b.queries, a.queries),
         callbacks: tally_change(b.callbacks, a.callbacks),
         renders: tally_change(b.renders, a.renders),
         unattributed: tally_change(b.unattributed, a.unattributed),
-        n_plus_one: %{fixed: fixed, new: new, still: still},
-        errors: %{fixed: errors_fixed, new: errors_new}
+        n_plus_one: with_totals(fixed, new, still),
+        errors: with_totals(errors_fixed, errors_new, errors_still)
       }
+
+      maybe_warn(comparison)
     end
   end
 
-  defp side(session), do: Map.take(session, [:sid, :path, :started_at])
+  # A connected mount reads as its request (like `PageLookup.newest/1`).
+  defp root(sid) when is_binary(sid), do: root_of(sid)
+
+  defp root(%{kind: :live_view, parent: parent, sid: sid}) when is_binary(parent),
+    do: root_of(parent, sid)
+
+  defp root(target), do: target
+
+  defp root_of(sid) do
+    case Store.session(sid) do
+      {:ok, %Session{kind: :live_view, parent: parent}} when is_binary(parent) ->
+        root_of(parent, sid)
+
+      _other ->
+        sid
+    end
+  rescue
+    ArgumentError -> sid
+  end
+
+  defp root_of(parent, sid) do
+    case Store.session(parent) do
+      {:ok, %Session{kind: :request}} -> parent
+      _other -> sid
+    end
+  rescue
+    ArgumentError -> sid
+  end
+
+  defp side(summary) do
+    summary.session
+    |> Map.take([:sid, :path, :started_at, :kind])
+    |> Map.put(:sids, summary.sids)
+  end
+
+  defp maybe_warn(%{before: b, after: a} = comparison) do
+    case {b.kind == a.kind, length(b.sids) == length(a.sids)} do
+      {true, true} ->
+        comparison
+
+      _different ->
+        Map.put(
+          comparison,
+          :warning,
+          "before is a #{b.kind} read from #{length(b.sids)} session(s), after is a #{a.kind} " <>
+            "read from #{length(a.sids)}: totals may not be comparable (live navigation, or a " <>
+            "dead render without its connected mount)."
+        )
+    end
+  end
 
   defp tally_change(before, after_) do
     b = Map.take(before, [:count, :total_us])
@@ -406,13 +481,57 @@ defmodule PhoenixDevToolbar.Report do
     %{before: b, after: a, delta: %{count: a.count - b.count, total_us: a.total_us - b.total_us}}
   end
 
-  defp diff(before, after_, key) do
-    before_keys = MapSet.new(before, key)
-    after_keys = MapSet.new(after_, key)
+  defp n_plus_one_key(group), do: {group.sql, without_line(group.origin)}
 
-    {Enum.reject(before, &(key.(&1) in after_keys)),
-     Enum.reject(after_, &(key.(&1) in before_keys)),
+  defp error_key(error),
+    do: {error.source, without_line(Map.get(error, :origin)), normalize_message(error.message)}
+
+  # "lib/app.ex:10: App.list/0" -> "lib/app.ex: App.list/0"
+  defp without_line(origin) when is_binary(origin),
+    do: Regex.replace(~r/\A(.*?):\d+: /, origin, "\\1: ")
+
+  defp without_line(origin), do: origin
+
+  # The first line, with pids, references, ports and numbers made equal.
+  defp normalize_message(message) when is_binary(message) do
+    message
+    |> String.split("\n", parts: 2)
+    |> hd()
+    |> String.replace(~r/#(PID|Reference|Port)<[^>]*>/, "#\\1")
+    |> String.replace(~r/\d+/, "N")
+  end
+
+  defp normalize_message(message), do: inspect(message, limit: 5)
+
+  # Distinct keys only, each with its number of occurrences (`count` on errors).
+  defp group(items, key) do
+    counts = Enum.frequencies_by(items, key)
+    items |> Enum.uniq_by(key) |> Enum.map(&{key.(&1), &1, Map.fetch!(counts, key.(&1))})
+  end
+
+  defp diff(before, after_, key) do
+    before_groups = group(before, key)
+    after_groups = group(after_, key)
+    before_keys = MapSet.new(before_groups, &elem(&1, 0))
+    after_keys = MapSet.new(after_groups, &elem(&1, 0))
+
+    {for({k, item, n} <- before_groups, k not in after_keys, do: counted(item, n)),
+     for({k, item, n} <- after_groups, k not in before_keys, do: counted(item, n)),
      MapSet.size(MapSet.intersection(before_keys, after_keys))}
+  end
+
+  # N+1 groups carry their own `count`; errors get the number of occurrences.
+  defp counted(%{callbacks: _} = group, _n), do: group
+  defp counted(error, n), do: Map.put(error, :count, n)
+
+  defp with_totals(fixed, new, still) do
+    %{
+      fixed: Enum.take(fixed, @compare_cap),
+      fixed_total: length(fixed),
+      new: Enum.take(new, @compare_cap),
+      new_total: length(new),
+      still: still
+    }
   end
 
   @doc """

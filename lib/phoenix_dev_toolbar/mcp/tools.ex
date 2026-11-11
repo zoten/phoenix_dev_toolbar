@@ -203,10 +203,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
           {:error, "A page expired before it could be compared. " <> @no_page_hint}
 
         comparison ->
-          {:ok,
-           comparison
-           |> Map.put(:before_panel_url, panel_url(opts, before_sid))
-           |> Map.put(:after_panel_url, panel_url(opts, after_sid))}
+          in_order(comparison, opts)
       end
     end
   end
@@ -240,6 +237,21 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
          "returned" => min(limit, length(errors)),
          "errors" => Enum.take(errors, limit)
        }}
+    end
+  end
+
+  defp in_order(%{before: b, after: a} = comparison, opts) do
+    case DateTime.compare(a.started_at, b.started_at) do
+      :lt ->
+        {:error,
+         "after is older than before, so the deltas would be flipped: swap them " <>
+           "(before is the earlier capture)."}
+
+      _later ->
+        {:ok,
+         comparison
+         |> Map.put(:before_panel_url, panel_url(opts, b.sid))
+         |> Map.put(:after_panel_url, panel_url(opts, a.sid))}
     end
   end
 
@@ -282,11 +294,15 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
 
   # The newest page at the path that started after `before`.
   defp after_page(before_sid, nil, path) do
-    path = path || session_path(before_sid)
+    case path || session_path(before_sid) do
+      nil ->
+        {:error, no_page_after(nil)}
 
-    case pages(Keyword.merge(PageLookup.filter(path: path), since: before_sid), 1) do
-      [%{sid: sid}] -> {:ok, sid}
-      [] -> {:error, no_page_after(path)}
+      path ->
+        case pages(Keyword.merge(PageLookup.filter(path: path), since: before_sid), 1) do
+          [%{sid: sid}] -> {:ok, sid}
+          [] -> {:error, no_page_after(path)}
+        end
     end
   end
 
