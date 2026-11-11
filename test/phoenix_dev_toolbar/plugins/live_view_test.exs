@@ -2,6 +2,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
   # Attaches global handlers and uses the node global Store.
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
   import PhoenixDevToolbar.PageHelpers, only: [attach_plugins: 0, ms: 1]
@@ -12,6 +13,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.Plugins.LiveView, as: LiveViewPlugin
+  alias PhoenixDevToolbar.Report
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
 
@@ -298,6 +300,57 @@ defmodule PhoenixDevToolbar.Plugins.LiveViewTest do
                &(&1.kind == :render and &1.data.component == DemoWeb.CounterComponent)
              ) ==
                component_render_spans?()
+    end
+  end
+
+  describe "exception stacktraces with a real host LiveView" do
+    setup do
+      attach_plugins()
+      :ok
+    end
+
+    defp boom_view do
+      conn =
+        build_conn()
+        |> Plug.Conn.put_req_header("accept", "text/html")
+        |> Plug.Conn.put_req_header("sec-fetch-dest", "document")
+        |> get("/demo/boom")
+
+      {:ok, view, _html} = live(conn)
+      view
+    end
+
+    # The view process crashes and takes the test process with it unless trapped.
+    defp crash(fun) do
+      Process.flag(:trap_exit, true)
+      capture_log(fn -> catch_exit(fun.()) end)
+    end
+
+    defp boom_errors do
+      [session] =
+        for s <- Store.sessions(), s.kind == :live_view, s.view == DemoWeb.BoomLive, do: s
+
+      for %{source: :live_view} = error <- Report.errors(session.sid), do: error
+    end
+
+    test "a LiveComponent handle_event that raises keeps its stacktrace" do
+      view = boom_view()
+      crash(fn -> view |> element("#boom-component") |> render_click() end)
+
+      assert [%{message: message, stacktrace: [first | _] = frames}] = boom_errors()
+      assert message =~ "bad component event"
+      assert first =~ "DemoWeb.BoomComponent.handle_event/3"
+      assert length(frames) <= 10
+      refute Enum.any?(frames, &(&1 =~ "PhoenixDevToolbar"))
+    end
+
+    test "a render that raises keeps its stacktrace" do
+      view = boom_view()
+      crash(fn -> render_hook(view, "break", %{}) end)
+
+      assert [%{message: message, stacktrace: [first | _]} | _] = boom_errors()
+      assert message =~ "bad render"
+      assert first =~ "DemoWeb.BoomLive.state/1"
     end
   end
 end

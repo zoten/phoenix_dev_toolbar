@@ -27,6 +27,7 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
   use PhoenixDevToolbar.Plugin, id: :live_view, name: "LiveView"
 
   alias Phoenix.LiveView.Socket
+  alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Components
   alias PhoenixDevToolbar.Context
   alias PhoenixDevToolbar.Event
@@ -114,7 +115,8 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
         params: params(callback, meta),
         changes: nil,
         pushed: nil,
-        error: nil
+        error: nil,
+        stacktrace: []
       }
       |> Map.merge(component_data(callback, component, socket, meta))
       |> Map.merge(outcome(stage, callback, socket, meta))
@@ -162,8 +164,8 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
     }
   end
 
-  defp outcome(:exception, _callback, _socket, %{kind: kind, reason: reason}),
-    do: %{error: Truncate.banner(kind, reason)}
+  defp outcome(:exception, _callback, _socket, %{kind: kind, reason: reason} = metadata),
+    do: %{error: Truncate.banner(kind, reason), stacktrace: crash_stacktrace(metadata)}
 
   defp pushed({:ok, names}), do: names
   defp pushed(:unavailable), do: :unavailable
@@ -173,7 +175,15 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
   defp render(:stop, measurements, metadata), do: record_render(measurements, metadata, %{})
 
   defp render(:exception, measurements, %{kind: kind, reason: reason} = metadata),
-    do: record_render(measurements, metadata, %{error: Truncate.banner(kind, reason)})
+    do:
+      record_render(measurements, metadata, %{
+        error: Truncate.banner(kind, reason),
+        stacktrace: crash_stacktrace(metadata)
+      })
+
+  # Exception path only (rare): host app frames first (ADR 07).
+  defp crash_stacktrace(metadata),
+    do: Truncate.exception_stacktrace(metadata[:stacktrace], Collector.host_apps())
 
   defp record_render(measurements, %{socket: %Socket{} = socket} = metadata, extra) do
     data =
@@ -185,7 +195,8 @@ defmodule PhoenixDevToolbar.Plugins.LiveView do
           id: component_id(metadata[:id]),
           force?: metadata[:force?],
           changed?: metadata[:changed?],
-          error: nil
+          error: nil,
+          stacktrace: []
         },
         extra
       )

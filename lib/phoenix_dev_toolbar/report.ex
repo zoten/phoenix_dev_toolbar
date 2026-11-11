@@ -149,7 +149,7 @@ defmodule PhoenixDevToolbar.Report do
           sids: [sid()]
         }
 
-  @typedoc "A failure: a request exception, a failed callback or render, a failed query."
+  @typedoc "A failure: a request exception, a failed callback or render, a failed query. Request, LiveView and Ecto errors carry a formatted stacktrace (LiveView: host frames first, ADR 07)."
   @type error :: %{
           sid: sid(),
           seq: pos_integer(),
@@ -553,7 +553,7 @@ defmodule PhoenixDevToolbar.Report do
 
   defp error(%Event{plugin: :live_view, kind: kind, data: %{error: message}} = event)
        when kind in [:callback, :render] and is_binary(message),
-       do: [error(event, :live_view, message, [])]
+       do: [error(event, :live_view, message, event.data[:stacktrace])]
 
   defp error(%Event{plugin: :ecto, kind: :query, data: %{result: {:error, message}}} = event),
     do: [error(event, :ecto, message, event.data[:stacktrace])]

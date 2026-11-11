@@ -50,6 +50,53 @@ defmodule PhoenixDevToolbar.TruncateTest do
     end
   end
 
+  describe "exception_stacktrace/2" do
+    defp frame(module, n), do: {module, :fun, n, [file: ~c"lib/f.ex", line: n]}
+
+    test "keeps frames up to the last app frame plus the one after it" do
+      frames = [
+        frame(MyApp.Page, 1),
+        frame(Phoenix.LiveView.Channel, 2),
+        frame(MyApp.Helper, 3),
+        frame(Phoenix.LiveView.Diff, 4),
+        frame(Phoenix.LiveView.Channel, 5),
+        frame(:gen_server, 6)
+      ]
+
+      trimmed = Truncate.exception_stacktrace(frames, [:my_app], &app_of/1)
+
+      # Format adds "(app version) " for loaded dependency modules.
+      assert Enum.map(trimmed, &String.replace(&1, ~r/^\(.*?\) /, "")) == [
+               "lib/f.ex:1: MyApp.Page.fun/1",
+               "lib/f.ex:2: Phoenix.LiveView.Channel.fun/2",
+               "lib/f.ex:3: MyApp.Helper.fun/3",
+               "lib/f.ex:4: Phoenix.LiveView.Diff.fun/4"
+             ]
+    end
+
+    test "drops toolbar and telemetry frames and caps at 10" do
+      own = [frame(PhoenixDevToolbar.Collector, 0), frame(:telemetry, 0)]
+      app = for n <- 1..15, do: frame(MyApp.Page, n)
+
+      frames = Truncate.exception_stacktrace(own ++ app, [:my_app], &app_of/1)
+
+      assert length(frames) == 10
+      assert hd(frames) == "lib/f.ex:1: MyApp.Page.fun/1"
+    end
+
+    test "falls back to the first frames without a known app set or app frame" do
+      frames = for n <- 1..12, do: frame(Phoenix.LiveView.Channel, n)
+
+      assert length(Truncate.exception_stacktrace(frames, nil, &app_of/1)) == 10
+      assert length(Truncate.exception_stacktrace(frames, [:my_app], &app_of/1)) == 10
+      assert Truncate.exception_stacktrace(nil, [:my_app], &app_of/1) == []
+    end
+
+    defp app_of(MyApp.Page), do: {:ok, :my_app}
+    defp app_of(MyApp.Helper), do: {:ok, :my_app}
+    defp app_of(_module), do: :undefined
+  end
+
   describe "redact/2" do
     test "matches key names case insensitively, atom or string" do
       assert Truncate.redact(%{"X-Auth-Token" => "y", Password: "x", name: "z"}) ==

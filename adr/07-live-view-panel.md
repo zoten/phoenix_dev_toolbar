@@ -81,6 +81,14 @@ navigation.
   reset. The pure helpers (`assets/js/client_events.mjs`) have Node unit tests
   (`mix test.js`).
 
+- **Crashes**: a callback or render that raises stores its banner (`error`) and
+  its `stacktrace`: formatted frames without the toolbar's and `:telemetry`'s,
+  cut after the last frame of the host's own applications plus the one after it,
+  at most 10. The host's applications (the Mix project's `:app`, an umbrella's
+  `apps_paths`) are resolved once at `Collector.attach/1` into a
+  `:persistent_term`, never in a handler; when unknown (no Mix) or when no host
+  frame is present, the first 10 frames are kept. Successes store `[]`.
+
 ## Consequences
 
 - The host pays for pulls only while someone looks: `Debug.socket/1` copies the

@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- LiveView callback and render exceptions keep their stacktrace, app frames first (ADR 07, 13)
 - Compact `summary/2` and `page_summary` by default, `verbose:` for full items (breaking, ADR 13, 15)
 - Shipped `mix.exs` no longer reads `PDT_LIVE_VIEW`: CI pins LiveView in its checkout (ADR 06)
 

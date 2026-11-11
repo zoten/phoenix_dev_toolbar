@@ -39,6 +39,31 @@ defmodule PhoenixDevToolbar.Collector do
 
   @plugins_key {Collector, :plugins}
   @configs_key {Collector, :configs}
+  @host_apps_key {Collector, :host_apps}
+
+  @doc """
+  The host's own applications (ADR 07), resolved once at `attach/1` so that
+  handlers never call `Mix`: the Mix project's app plus an umbrella's apps.
+  `nil` when unknown (no Mix project loaded).
+  """
+  @spec host_apps() :: [atom()] | nil
+  def host_apps, do: :persistent_term.get(@host_apps_key, nil)
+
+  defp resolve_host_apps do
+    case Code.ensure_loaded?(Mix.Project) and Mix.Project.get() do
+      mix when is_atom(mix) and mix not in [nil, false] -> mix_apps(Mix.Project.config())
+      _none -> nil
+    end
+  end
+
+  defp mix_apps(config) do
+    umbrella = config |> Keyword.get(:apps_paths, %{}) |> Map.keys()
+
+    case Enum.filter([config[:app] | umbrella], &is_atom/1) |> Enum.reject(&is_nil/1) do
+      [] -> nil
+      apps -> apps
+    end
+  end
 
   @doc """
   Attaches handlers for `plugins` (`Config.plugins/0` entries, or bare modules),
@@ -48,6 +73,7 @@ defmodule PhoenixDevToolbar.Collector do
   @spec attach([Config.entry() | module()]) :: :ok
   def attach(plugins) do
     detach()
+    :persistent_term.put(@host_apps_key, resolve_host_apps())
 
     attached = Enum.flat_map(plugins, &attachable/1)
     configs = Enum.map(attached, fn {plugin, _id, config, _events} -> {plugin, config} end)

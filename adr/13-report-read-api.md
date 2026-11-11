@@ -26,7 +26,7 @@ Store, built for IEx and agents:
   5 slowest, render totals, errors, and the events lost to the caps. The slowest
   queries, slowest callbacks and errors are briefs by default (no SQL, params,
   assigns changes, times or stacktrace; an error keeps its first frame as
-  `origin`): `verbose: true` returns the full items, `queries/2`, `callbacks/2`
+  `origin`; LiveView crashes carry their stacktrace, host frames first, ADR 07): `verbose: true` returns the full items, `queries/2`, `callbacks/2`
   and `errors/2` the detail.
   `queries/2`, `callbacks/2`, `n_plus_one/2` and `errors/2` return the full lists.
 - A target is a sid, a session map or a list of sids. A request target includes
