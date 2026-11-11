@@ -533,6 +533,31 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     end
   end
 
+  describe "Copy as Markdown (ADR 04, 13)" do
+    test "pushes the page report of the panel's root", %{conn: conn, request: request} do
+      response(request)
+      query(request, "SELECT 1 FROM users", 2)
+      view = open(conn, request)
+
+      assert has_element?(view, ~s(#pdt-markdown[data-pdt-page="#{request}"]))
+      view |> element("#pdt-markdown-copy") |> render_click()
+
+      assert_push_event(view, "pdt:markdown", %{text: text, page: ^request})
+      assert text =~ "# /users"
+      assert text =~ "SELECT 1 FROM users"
+    end
+
+    test "a page that expired answers with an error, not a crash", %{conn: conn, request: request} do
+      view = open(conn, request)
+      Store.reset()
+
+      view |> element("#pdt-markdown-copy") |> render_click()
+
+      assert_push_event(view, "pdt:markdown", %{error: error, page: ^request})
+      assert error =~ "expired"
+    end
+  end
+
   describe "data-pdt-* attributes (ADR 14)" do
     test "the panel, its tabs, query and request rows carry raw values",
          %{conn: conn, request: request} do

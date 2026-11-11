@@ -92,7 +92,7 @@ test("connects its own LiveSocket with the panel's hooks", async (t) => {
   const page = await load(t)
 
   assert.equal(page.socket.path, "/__pdt/live")
-  assert.deepEqual(Object.keys(page.socket.options.hooks).sort(), ["PdtExport", "PdtPanel", "PdtSummaryMore"])
+  assert.deepEqual(Object.keys(page.socket.options.hooks).sort(), ["PdtExport", "PdtMarkdown", "PdtPanel", "PdtSummaryMore"])
   assert.ok(page.socket.connected)
 })
 
@@ -264,3 +264,59 @@ test("a join forgets this page's recorded loads", async (t) => {
 
   assert.equal(page.window.sessionStorage.getItem("pdt:loads:s1"), null)
 })
+
+// "Copy as Markdown" (ADR 04, 13): the PdtMarkdown hook on #pdt-markdown.
+{
+  const MARKDOWN = [
+    "span",
+    {id: "pdt-markdown", "data-pdt-page": "root1"},
+    ["button", {id: "pdt-markdown-copy"}, "Copy as Markdown"],
+    ["span", {id: "pdt-markdown-result"}],
+  ]
+
+  const loadMarkdown = async (t, writes) => {
+    const saved = Object.getOwnPropertyDescriptor(globalThis, "navigator")
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {clipboard: {writeText: async (text) => writes.push(text)}},
+    })
+    t.after(() => (saved ? Object.defineProperty(globalThis, "navigator", saved) : delete globalThis.navigator))
+
+    const page = await load(t, {setup: ({document, build}) => document.body.append(build(MARKDOWN))})
+    const el = page.byId("pdt-markdown")
+    const markdown = Object.create(page.socket.options.hooks.PdtMarkdown)
+    markdown.el = el
+    markdown.handlers = {}
+    markdown.handleEvent = (name, fun) => (markdown.handlers[name] = fun)
+    markdown.mounted()
+    const result = () => page.byId("pdt-markdown-result").textContent
+    const flush = () => new Promise((resolve) => setImmediate(resolve))
+    return {page, el, markdown, result, flush}
+  }
+
+  test("the pushed Markdown reaches the clipboard as is, and says so", async (t) => {
+    const writes = []
+    const {markdown, page, result, flush} = await loadMarkdown(t, writes)
+
+    page.byId("pdt-markdown-copy").click()
+    markdown.handlers["pdt:markdown"]({text: "# /users\n\n| a |", page: "root1"})
+    await flush()
+
+    assert.deepEqual(writes, ["# /users\n\n| a |"])
+    assert.equal(result(), "Copied")
+  })
+
+  test("an error from the server is shown, a page that no longer matches is dropped", async (t) => {
+    const writes = []
+    const {markdown, result, flush} = await loadMarkdown(t, writes)
+
+    markdown.handlers["pdt:markdown"]({error: "the page expired, reload it", page: "root1"})
+    assert.equal(result(), "Copy failed: the page expired, reload it")
+
+    markdown.handlers["pdt:markdown"]({text: "# old", page: "other"})
+    await flush()
+
+    assert.deepEqual(writes, [])
+    assert.match(result(), /page changed/)
+  })
+}

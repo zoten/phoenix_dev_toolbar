@@ -112,6 +112,11 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 - **Panel downloads**: `GET <path>/export/ecto.json` answers the Ecto tab's Download as
   an attachment (ADR 08). Downloads use same-origin URLs, never `blob:` links: Firefox
   checks a link clicked in the iframe against the host's `frame-src`.
+- **Copy as Markdown**: a button in the panel header (`#pdt-markdown-copy`) copies
+  the page's report (`Report.markdown/2` of the panel's root, ADR 13). It goes through
+  `push_event/3` (`pdt:markdown`) and the same clipboard code as the Ecto Copy
+  (`export_copy.mjs`, hook `PdtMarkdown`): the click claims the clipboard, the report
+  fills it; a page that changed meanwhile or an expired one is reported, never copied.
 - **Panel socket**: `PhoenixDevToolbar.PanelSocket`. The plug upgrades
   `GET <path>/live/websocket` itself, through Phoenix's documented custom transport API:
   `Phoenix.Socket.Transport.connect_info/3`, then

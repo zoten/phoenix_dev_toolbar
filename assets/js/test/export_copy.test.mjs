@@ -166,3 +166,24 @@ test("writeText without ClipboardItem copies on arrival", async () => {
   assert.deepEqual(copied, ["{}"])
   assert.equal(last(said), "Copied")
 })
+
+test("a text (the Markdown copy) is copied as is, and a failure does not point at Download", async () => {
+  const {copier, copied} = setup({item: false, writeText: true})
+  copier.arrive({text: "# page\n| a |", page: "p"}, "p")
+  await flush()
+  assert.deepEqual(copied, ["# page\n| a |"])
+
+  const said = []
+  const quiet = createExportCopy({
+    clipboard: {writeText: async () => Promise.reject(new Error("denied"))},
+    Blob: FakeBlob,
+    fallback: "",
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+    say: (text) => said.push(text),
+    warn: () => {},
+  })
+  quiet.arrive({text: "x", page: "p"}, "p")
+  await flush()
+  assert.equal(last(said), "Copy failed (Error)")
+})

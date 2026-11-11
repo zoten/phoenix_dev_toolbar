@@ -47,10 +47,14 @@ export const createExportCopy = (env) => {
     return true
   }
 
+  // `env.fallback` names what to use when the clipboard refuses (Download for
+  // the Ecto export, nothing for the Markdown copy).
+  const fallback = env.fallback === undefined ? ": use Download" : env.fallback
+
   const failed = (error) => {
     env.warn(error)
     const why = (error && (error.name || error.message)) || "refused"
-    env.say("Copy failed (" + why + "): use Download")
+    env.say("Copy failed (" + why + ")" + fallback)
   }
 
   // In the click: claims the clipboard now, the text comes later.
@@ -101,11 +105,12 @@ export const createExportCopy = (env) => {
       }
       const json = held.json
       drop()
-      env.say(env.execCopy(json) ? "Copied" : "Copy failed: use Download")
+      env.say(env.execCopy(json) ? "Copied" : "Copy failed" + fallback)
       return true
     },
     // A `pdt:export` push, with the page the form shows now.
-    arrive({payload, page, error}, formPage) {
+    // A `text` (the Markdown copy) is copied as is, a `payload` as JSON.
+    arrive({payload, text, page, error}, formPage) {
       if (page !== formPage) {
         drop()
         if (!abandon(PAGE_CHANGED)) env.say(PAGE_CHANGED)
@@ -114,7 +119,7 @@ export const createExportCopy = (env) => {
         const message = "Copy failed: " + error
         if (!abandon(message)) env.say(message)
       } else {
-        copyNow(JSON.stringify(payload, null, 2))
+        copyNow(typeof text === "string" ? text : JSON.stringify(payload, null, 2))
       }
     },
     // The form now shows another page: what was waiting no longer matches it.

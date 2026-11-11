@@ -23,6 +23,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   alias PhoenixDevToolbar.PageLookup
   alias PhoenixDevToolbar.Panel
   alias PhoenixDevToolbar.PanelLayout
+  alias PhoenixDevToolbar.Report
   alias PhoenixDevToolbar.Shell
   alias PhoenixDevToolbar.Store
 
@@ -98,6 +99,21 @@ defmodule PhoenixDevToolbar.PanelLive do
       nil ->
         {:noreply, socket}
     end
+  end
+
+  # Copy as Markdown (ADR 04, 13): the page report of the panel's root, pushed
+  # to the PdtMarkdown hook, which holds the clipboard write the click started.
+  # The report is a bounded read from this process, no host process involved.
+  def handle_event("copy_markdown", _params, socket) do
+    root = socket.assigns.page.root
+
+    data =
+      case root && Report.markdown(root) do
+        markdown when is_binary(markdown) -> %{text: markdown, page: root}
+        _gone -> %{error: "the page expired, reload it", page: root}
+      end
+
+    {:noreply, push_event(socket, "pdt:markdown", data)}
   end
 
   # From the PdtPanel hook: a client event the loader forwarded (untrusted

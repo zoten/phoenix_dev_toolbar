@@ -250,6 +250,47 @@ const PdtExport = {
   },
 }
 
+// On #pdt-markdown (ADR 04, 13): "Copy as Markdown". Same clipboard path as
+// PdtExport: the click claims the clipboard, the server pushes `pdt:markdown`
+// ({text, page} or {error, page}) and export_copy.mjs copies the text as is.
+const PdtMarkdown = {
+  mounted() {
+    const result = this.el.querySelector("#pdt-markdown-result")
+    this.copier = createExportCopy({
+      clipboard: navigator.clipboard,
+      ClipboardItem: typeof ClipboardItem === "undefined" ? undefined : ClipboardItem,
+      Blob,
+      execCopy,
+      fallback: "",
+      setTimeout: (fun, ms) => window.setTimeout(fun, ms),
+      clearTimeout: (timer) => window.clearTimeout(timer),
+      say: (text) => {
+        if (result) result.textContent = text
+      },
+      warn: (error) => console.warn("[phoenix_dev_toolbar] copy failed:", error),
+    })
+    this.onClick = (event) => {
+      if (!event.target.closest("#pdt-markdown-copy")) return
+      if (this.copier.click()) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+    }
+    this.el.addEventListener("click", this.onClick, true)
+    this.page = this.el.dataset.pdtPage
+    this.handleEvent("pdt:markdown", (data) => this.copier.arrive(data, this.el.dataset.pdtPage))
+  },
+  updated() {
+    if (this.el.dataset.pdtPage === this.page) return
+    this.page = this.el.dataset.pdtPage
+    this.copier.pageChanged()
+  },
+  destroyed() {
+    this.el.removeEventListener("click", this.onClick, true)
+    this.copier.destroy()
+  },
+}
+
 // The toggle button collapses or expands, hide shrinks the toolbar to a corner
 // pill, and picking a tab always expands.
 document.addEventListener("click", (event) => {
@@ -409,7 +450,7 @@ let joinedOnce = false
 // The panel's own socket at <path>/live: WebSocket only (no long poll
 // fallback), no CSRF param (it carries no session).
 const liveSocket = new LiveSocket(script.dataset.socketPath, Socket, {
-  hooks: {PdtPanel, PdtSummaryMore, PdtExport},
+  hooks: {PdtPanel, PdtSummaryMore, PdtExport, PdtMarkdown},
 })
 
 if (tripped(recordLoad())) {

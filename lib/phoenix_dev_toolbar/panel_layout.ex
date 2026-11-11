@@ -119,6 +119,21 @@ defmodule PhoenixDevToolbar.PanelLayout do
             {tab.name}
           </button>
         </nav>
+        <%!-- Copy as Markdown (ADR 04, 13): the PdtMarkdown hook (assets/js/panel.js)
+             starts the clipboard write in the click, the server pushes the
+             report. The result line is owned by the hook. --%>
+        <span id="pdt-markdown" class="pdt-markdown" phx-hook="PdtMarkdown" data-pdt-page={@page.root}>
+          <button
+            id="pdt-markdown-copy"
+            type="button"
+            class="pdt-button pdt-button--small"
+            phx-click="copy_markdown"
+            title="Copy this page's report (queries, N+1, callbacks, errors) as Markdown"
+          >
+            Copy as Markdown
+          </button>
+          <span id="pdt-markdown-result" class="pdt-hint" phx-update="ignore" aria-live="polite"></span>
+        </span>
         <%!-- Where the toolbar docks: client side only, the loader moves it
              (assets/js/panel.js, ADR 04). Ignored by patches: panel.js owns
              the menu's hidden and pressed state. --%>
