@@ -223,7 +223,7 @@ defmodule PhoenixDevToolbar.StoreTest do
   describe "LiveView owner DOWN" do
     # A closed LiveView session follows the TTL sweep like a request (ADR 03).
     test "keeps the session and its indexes after the owner exits, until the TTL" do
-      Store.put_limits(down_grace_ms: 0, ttl_ms: 1_000)
+      Store.put_limits(ttl_ms: 1_000)
       now = System.system_time(:microsecond)
       owner = start_owner()
       transport = start_owner()

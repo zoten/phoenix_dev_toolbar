@@ -168,7 +168,6 @@ config :phoenix_dev_toolbar,
     events_per_second: 200,    # per session, the rest are counted as dropped
     # ttl_ms: 600_000,         # a session is dropped this long after its last event
     # sweep_ms: 30_000,        # how often expired sessions are looked for
-    # down_grace_ms: 60_000,   # no effect: a closed LiveView follows ttl_ms (kept for old configs)
   ]
 ```
 

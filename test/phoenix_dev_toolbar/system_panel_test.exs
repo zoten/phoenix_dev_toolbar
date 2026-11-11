@@ -419,8 +419,8 @@ defmodule PhoenixDevToolbar.SystemPanelTest do
         panel |> element("#pdt-system-confirm") |> render_click()
       end)
 
+      assert Process.info(pid, :status) == {:status, :suspended}
       send(pid, {:ping, self()})
-      refute_receive {:pong, ^pid}, 50
 
       # The test is linked to the panel LiveView (live/2).
       Process.flag(:trap_exit, true)

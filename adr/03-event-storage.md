@@ -67,9 +67,8 @@ serialize every query of the app behind one mailbox.
   | `events_per_second` | 200 per session |
   | `ttl_ms` | 10 minutes |
   | `sweep_ms` | 30 seconds |
-  | `down_grace_ms` | 60 seconds, no effect (accepted so old configs keep booting) |
 
-  Each override must be a positive integer (`ttl_ms` may be 0; `down_grace_ms` is accepted but unused). An
+  Each override must be a positive integer (`ttl_ms` may be 0). An
   unknown key or an invalid value (`:infinity` would disable a cap) is logged at boot
   and keeps its default: the host always boots.
 

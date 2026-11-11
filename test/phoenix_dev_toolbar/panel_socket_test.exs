@@ -457,6 +457,7 @@ defmodule PhoenixDevToolbar.PanelSocketTest do
   describe "a join behind a proxy" do
     defp eval_tab_diff(port, headers) do
       capture_log(fn -> attach_plugins([{PhoenixDevToolbar.Plugins.Eval, allow: :eval}]) end)
+      on_exit(fn -> attach_plugins() end)
       {id, join} = panel_join_params()
 
       {:ok, socket} =

@@ -128,6 +128,15 @@ defmodule PhoenixDevToolbar.ConfigTest do
       assert log =~ "max_sesions"
     end
 
+    test "down_grace_ms is gone: an old config logs it and keeps booting" do
+      defaults = PhoenixDevToolbar.Store.default_limits()
+
+      log =
+        capture_log(fn -> assert Config.limits([down_grace_ms: 0], defaults) == defaults end)
+
+      assert log =~ "down_grace_ms"
+    end
+
     test "a value that is not a keyword list keeps every default, with a warning" do
       log = capture_log(fn -> assert Config.limits(:oops, @limit_defaults) == @limit_defaults end)
       assert log =~ "keyword list"

@@ -223,7 +223,7 @@ Files: `lib/phoenix_dev_toolbar/store.ex`. Governing ADR: [ADR 03](../adr/03-eve
 - [ ] The panel allowlist that gates the panel socket holds at most 1000 ids and drops entries after a day.
   Held by: `allow_panel/1` (`evict_panel(:ets.info(@panels, :size) >= @max_panels and not :ets.member(@panels, id))`), `expire_panels/0` (`@panel_ttl_s`).
   Proved by: `store_test.exs`, "never holds more than 1000 panels, and the newest is always in" and "registering a panel again at the cap evicts nobody". No test of the one day expiry.
-- [ ] Limit overrides that are not positive integers (or 0 for `ttl_ms` and `down_grace_ms`) keep the default; `:infinity` never disables a cap.
+- [ ] Limit overrides that are not positive integers (or 0 for `ttl_ms`) keep the default; `:infinity` never disables a cap.
   Held by: `put_configured_limits/0` calling `Config.limits/2` (`valid_limit?/2`).
   Proved by: `config_test.exs`, "an invalid value keeps that key's default, with a warning" (under `describe "limits/2"`).
 

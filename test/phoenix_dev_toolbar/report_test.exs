@@ -3,6 +3,7 @@ defmodule PhoenixDevToolbar.ReportTest do
   # shared by the whole node.
   use ExUnit.Case, async: false
 
+  import PhoenixDevToolbar.EnvHelpers
   import PhoenixDevToolbar.ReportFixtures
 
   alias PhoenixDevToolbar.Report
@@ -1091,8 +1092,7 @@ defmodule PhoenixDevToolbar.ReportTest do
     s = session(:request, path: "/users")
     query(s)
 
-    Application.put_env(:phoenix_dev_toolbar, :enabled, false)
-    on_exit(fn -> Application.put_env(:phoenix_dev_toolbar, :enabled, true) end)
+    put_app_env(:enabled, false)
 
     assert Report.sessions() == []
     assert Report.latest() == nil

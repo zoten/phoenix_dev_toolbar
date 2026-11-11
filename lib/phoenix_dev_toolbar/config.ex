@@ -32,7 +32,7 @@ defmodule PhoenixDevToolbar.Config do
   @default_rules %{crypto: :hide}
 
   # Limits that may be 0 (expire at once); every other limit is a positive cap.
-  @zero_limits [:ttl_ms, :down_grace_ms]
+  @zero_limits [:ttl_ms]
 
   @doc "The built-in plugins `:defaults` expands to."
   @spec defaults() :: [module()]
@@ -149,7 +149,7 @@ defmodule PhoenixDevToolbar.Config do
 
   @doc """
   Merges `limits:` overrides into `defaults`. An unknown key or a value that is
-  not a positive integer (or 0 for `ttl_ms` and `down_grace_ms`) is logged and
+  not a positive integer (or 0 for `ttl_ms`) is logged and
   keeps the default: `:infinity` would silently disable a cap.
   """
   @spec limits(term(), %{atom() => non_neg_integer()}) :: %{atom() => non_neg_integer()}

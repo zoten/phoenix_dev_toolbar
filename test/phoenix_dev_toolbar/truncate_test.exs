@@ -222,9 +222,11 @@ defmodule PhoenixDevToolbar.TruncateTest do
     end
 
     test "a 1 MB key is matched on a bounded prefix" do
-      key = String.duplicate("é", 500_000)
-      {_, cost} = reductions(fn -> Truncate.redact(%{key => 1}) end)
-      assert cost < 20_000
+      # Against a 1 KB key in the same run (reduction counts vary with the OTP
+      # release): a scan of the whole key would cost about 500 times more.
+      {_, short} = reductions(fn -> Truncate.redact(%{String.duplicate("é", 1_000) => 1}) end)
+      {_, cost} = reductions(fn -> Truncate.redact(%{String.duplicate("é", 500_000) => 1}) end)
+      assert cost < short * 20
 
       long = "Password" <> String.duplicate("x", 1_000_000)
       assert Truncate.redact(%{long => "hunter2"}) == %{long => "[REDACTED]"}
@@ -352,9 +354,9 @@ defmodule PhoenixDevToolbar.TruncateTest do
   end
 
   describe "redact/2 node budget" do
-    defp wide_value do
+    defp wide_value(width) do
       for(
-        i <- 1..50,
+        i <- 1..width,
         into: %{},
         do: {"a#{i}", for(_ <- 1..50, do: for(_ <- 1..50, do: %{"k" => 1}))}
       )
@@ -369,11 +371,14 @@ defmodule PhoenixDevToolbar.TruncateTest do
     defp count_nodes(_value), do: 1
 
     test "a wide and deep value is walked within a fixed node budget" do
-      value = wide_value()
+      narrow = wide_value(5)
+      value = wide_value(200)
+      {_, narrow_cost} = reductions(fn -> Truncate.redact(narrow) end)
       {redacted, cost} = reductions(fn -> Truncate.redact(value) end)
 
+      # 40 times wider, about the same cost: the walk stops at the budget.
       assert count_nodes(redacted) <= 2_500
-      assert cost < 150_000
+      assert cost < narrow_cost * 2
     end
 
     test "a sensitive key within the budget is redacted, one beyond it is never shown" do

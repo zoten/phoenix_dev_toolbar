@@ -4,6 +4,7 @@ defmodule PhoenixDevToolbar.PlugTest do
 
   import Plug.Conn
   import Plug.Test
+  import PhoenixDevToolbar.EnvHelpers
 
   alias PhoenixDevToolbar.Attribution
   alias PhoenixDevToolbar.Event
@@ -17,11 +18,7 @@ defmodule PhoenixDevToolbar.PlugTest do
   setup do
     Store.reset()
 
-    on_exit(fn ->
-      Application.delete_env(:phoenix_dev_toolbar, :enabled)
-      Application.delete_env(:phoenix_dev_toolbar, :reserve_space)
-      Store.reset()
-    end)
+    on_exit(fn -> Store.reset() end)
   end
 
   defp page_conn(path \\ "/users") do
@@ -52,7 +49,7 @@ defmodule PhoenixDevToolbar.PlugTest do
     end
 
     test "tell the loader when reserving page space is turned off" do
-      Application.put_env(:phoenix_dev_toolbar, :reserve_space, false)
+      put_app_env(:reserve_space, false)
 
       assert [[tag]] = page_conn() |> respond() |> loader_tags()
       assert tag =~ ~s( data-pdt-reserve="false")
@@ -274,7 +271,7 @@ defmodule PhoenixDevToolbar.PlugTest do
     end
 
     test "everything, when the toolbar is disabled" do
-      Application.put_env(:phoenix_dev_toolbar, :enabled, false)
+      put_app_env(:enabled, false)
 
       conn = respond(page_conn())
 
@@ -285,7 +282,7 @@ defmodule PhoenixDevToolbar.PlugTest do
 
   describe "when the toolbar is disabled" do
     test "its own paths pass through, not halted and not answered" do
-      Application.put_env(:phoenix_dev_toolbar, :enabled, false)
+      put_app_env(:enabled, false)
 
       for path <- [
             "/__pdt/assets/loader.js",

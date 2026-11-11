@@ -49,9 +49,7 @@ defmodule PhoenixDevToolbar.Store do
     max_sessions: 50,
     ttl_ms: :timer.minutes(10),
     sweep_ms: :timer.seconds(30),
-    events_per_second: 200,
-    # Accepted for old configs, no effect (ADR 03).
-    down_grace_ms: :timer.seconds(60)
+    events_per_second: 200
   }
 
   @type limits :: %{
@@ -60,8 +58,7 @@ defmodule PhoenixDevToolbar.Store do
           max_sessions: pos_integer(),
           ttl_ms: non_neg_integer(),
           sweep_ms: pos_integer(),
-          events_per_second: pos_integer(),
-          down_grace_ms: non_neg_integer()
+          events_per_second: pos_integer()
         }
 
   @type insert_result :: :ok | :dropped | :no_session

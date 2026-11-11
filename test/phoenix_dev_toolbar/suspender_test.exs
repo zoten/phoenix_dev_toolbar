@@ -72,6 +72,15 @@ defmodule PhoenixDevToolbar.SuspenderTest do
   end
 
   test "a Suspender crash resumes everything it suspended" do
+    # The crash hits a Suspender of this test's supervisor: the toolbar's
+    # supervisor spends no restart intensity, so repeated runs stay green.
+    :ok = Supervisor.terminate_child(PhoenixDevToolbar.Supervisor, Suspender)
+
+    on_exit(fn ->
+      {:ok, _pid} = Supervisor.restart_child(PhoenixDevToolbar.Supervisor, Suspender)
+    end)
+
+    start_supervised!(Suspender)
     pid = ponger()
     :ok = Suspender.suspend(pid, 60_000, self())
     suspender = Process.whereis(Suspender)
@@ -83,9 +92,7 @@ defmodule PhoenixDevToolbar.SuspenderTest do
     send(pid, {:ping, self()})
     assert_receive {:pong, ^pid}
 
-    # The supervisor has restarted it before the next test (a sync call to it
-    # runs after it handled the exit).
-    _ = Supervisor.which_children(PhoenixDevToolbar.Supervisor)
-    assert is_pid(Process.whereis(Suspender))
+    wait_until(fn -> Process.whereis(Suspender) not in [nil, suspender] end)
+    assert Suspender.suspended() == %{}
   end
 end

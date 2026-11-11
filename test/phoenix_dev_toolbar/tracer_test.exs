@@ -8,15 +8,20 @@ defmodule PhoenixDevToolbar.TracerTest do
 
   @moduletag :trace_sessions
 
-  # The Tracer has handled every trace message sent before this call. A DOWN
-  # comes from another sender: the Tracer may get it after a later call, so
-  # the tests that wait on one sync with it first.
   defp status(owner \\ self()), do: Tracer.status(owner)
 
+  # The Tracer has handled every trace message sent before this call. A DOWN
+  # comes from another sender, so the tests that wait on one poll instead.
   defp sync, do: _ = :sys.get_state(Tracer)
 
+  # The trace session of the running trace: private state, read in one place,
+  # to deliver the TTL timer now and to check the session died with a crash.
+  defp trace_session, do: :sys.get_state(Tracer).trace.session
+
   setup do
-    on_exit(fn -> Tracer.stop(self()) end)
+    # on_exit runs in another process: stop this test's trace by its owner.
+    owner = self()
+    on_exit(fn -> Tracer.stop(owner) end)
   end
 
   test "records what the process receives and sends, redacted" do
@@ -55,7 +60,7 @@ defmodule PhoenixDevToolbar.TracerTest do
     :ok = Tracer.start(pid, self())
     send(pid, :hello)
     stop(pid)
-    sync()
+    wait_until(fn -> match?(%{stopped: :exited}, status()) end)
 
     assert %{running?: false, stopped: :exited, events: [%{message: ":hello"} | _rest]} =
              status()
@@ -84,9 +89,8 @@ defmodule PhoenixDevToolbar.TracerTest do
     :ok = Tracer.start(pid, owner)
 
     stop(owner)
-    sync()
+    wait_until(fn -> status(owner) == nil end)
 
-    assert status(owner) == nil
     assert Tracer.start(pid, self()) == :ok
   end
 
@@ -98,9 +102,8 @@ defmodule PhoenixDevToolbar.TracerTest do
     assert %{running?: false} = status(owner)
 
     stop(owner)
-    sync()
 
-    assert status(owner) == nil
+    wait_until(fn -> status(owner) == nil end)
   end
 
   test "an exited process cannot be traced" do
@@ -113,7 +116,7 @@ defmodule PhoenixDevToolbar.TracerTest do
   test "stops by itself when its time is up" do
     pid = ponger()
     :ok = Tracer.start(pid, self())
-    %{trace: %{session: session}} = :sys.get_state(Tracer)
+    session = trace_session()
 
     # The timer the Tracer armed, delivered now instead of after the TTL.
     send(Tracer, {:pdt_trace_time, session})
@@ -127,18 +130,27 @@ defmodule PhoenixDevToolbar.TracerTest do
   end
 
   test "a Tracer crash ends the trace; a new one can start" do
+    # The crash hits a Tracer of this test's supervisor: the toolbar's
+    # supervisor spends no restart intensity, so repeated runs stay green.
+    :ok = Supervisor.terminate_child(PhoenixDevToolbar.Supervisor, Tracer)
+
+    on_exit(fn ->
+      {:ok, _pid} = Supervisor.restart_child(PhoenixDevToolbar.Supervisor, Tracer)
+    end)
+
+    start_supervised!(Tracer)
+
     pid = ponger()
     :ok = Tracer.start(pid, self())
-    %{trace: %{session: session}} = :sys.get_state(Tracer)
+    session = trace_session()
     tracer = Process.whereis(Tracer)
     ref = Process.monitor(tracer)
 
     Process.exit(tracer, :kill)
     assert_receive {:DOWN, ^ref, :process, ^tracer, :killed}
 
-    # The supervisor restarts it (a call to it runs once it is back), with no trace.
-    _ = Supervisor.which_children(PhoenixDevToolbar.Supervisor)
-    assert is_pid(Process.whereis(Tracer))
+    # Restarted, with no trace.
+    wait_until(fn -> Process.whereis(Tracer) not in [nil, tracer] end)
     assert status() == nil
 
     # The old session died with its tracer: the target is not traced any more.

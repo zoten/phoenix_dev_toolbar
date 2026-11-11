@@ -35,6 +35,9 @@ defmodule PhoenixDevToolbar.PanelPayloadTest do
 
     try do
       result = fun.()
+      # Every trace message sent so far is in the mailbox once this arrives.
+      ref = :erlang.trace_delivered(:all)
+      assert_receive {:trace_delivered, :all, ^ref}
       {result, drain(%{})}
     after
       :erlang.trace(:new_processes, false, [:send])
@@ -45,7 +48,7 @@ defmodule PhoenixDevToolbar.PanelPayloadTest do
     receive do
       {:trace, pid, :send, msg, _to} -> drain(Map.update(acc, pid, size(msg), &(&1 + size(msg))))
     after
-      50 -> acc
+      0 -> acc
     end
   end
 
@@ -60,7 +63,14 @@ defmodule PhoenixDevToolbar.PanelPayloadTest do
   test "the panel pushes the open tab's rows only, on mount and on new events" do
     {request, live} = seed()
 
-    {panel, sent} = trace_sends(fn -> open_panel(request.sid) end)
+    # render/1 returns once the panel handled what its mount queued.
+    {panel, sent} =
+      trace_sends(fn ->
+        panel = open_panel(request.sid)
+        _ = render(panel)
+        panel
+      end)
+
     mount_bytes = Map.fetch!(sent, panel.pid)
 
     {_, sent} =
