@@ -72,6 +72,11 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     assert has_element?(panel, "#pdt-process-target-label", "DemoWeb.PageLive")
     refute has_element?(panel, "#pdt-process-vitals")
 
+    # The status is read from the live process: let the host finish its mount
+    # work (it answers a system message only from its receive loop), so the
+    # sample sees it parked in `receive` and not running or runnable.
+    _ = :sys.get_state(host.pid)
+
     visible(panel)
 
     assert has_element?(panel, "#pdt-process-memory", "B")
@@ -79,7 +84,6 @@ defmodule PhoenixDevToolbar.ProcessPanelTest do
     assert has_element?(panel, "#pdt-process-details", "waiting")
     assert has_element?(panel, "#pdt-process-links")
     assert has_element?(panel, "#pdt-process-monitored-by")
-    _ = host
   end
 
   test "it samples only while shown and visible, one loop at a time" do
