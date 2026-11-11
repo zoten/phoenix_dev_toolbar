@@ -121,8 +121,14 @@ defmodule PhoenixDevToolbar.MixProject do
     [
       main: "readme",
       source_ref: @version,
-      extras: ["README.md", "guides/writing-a-plugin.md", "CHANGELOG.md", "SECURITY.md"],
-      groups_for_extras: [Guides: ["guides/writing-a-plugin.md"]],
+      extras: [
+        "README.md",
+        "guides/agent-setup.md",
+        "guides/writing-a-plugin.md",
+        "CHANGELOG.md",
+        "SECURITY.md"
+      ],
+      groups_for_extras: [Guides: ["guides/agent-setup.md", "guides/writing-a-plugin.md"]],
       # Examples and the release tooling are compiled in dev and tests, where the
       # docs are built: neither belongs in them.
       filter_modules: fn module, _meta ->

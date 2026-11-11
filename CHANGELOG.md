@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standalone panel `?path=` and newest page limited to MCP's clients rule (ADR 14)
 - One "this machine" rule: `actions:` and Eval `clients:` take `:local` (ADR 10, ADR 12)
 - Eval default `clients:` widened to `:local`, own LAN address included (ADR 12)
+- Agent setup guide; README `usage_rules` config made skills-only, block rewrite warned (ADR 13)
 - MCP refusals name the peer and the option; clearer "No captured page" errors (ADR 15)
 
 ## [0.0.1] - 2026-11-10

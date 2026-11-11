@@ -40,7 +40,7 @@ you are working on.
 
 ```elixir
 # mix.exs
-{:phoenix_dev_toolbar, "~> 0.0.1", only: :dev}
+{:phoenix_dev_toolbar, "~> 0.0.2", only: :dev}
 
 # config/dev.exs
 config :phoenix_dev_toolbar, repos: [MyApp.Repo]  # optional: defaults to your apps' :ecto_repos
@@ -52,7 +52,9 @@ if code_reloading? do
 end
 ```
 
-That's all: no router, layout or `app.js` changes. See
+That's all: no router, layout or `app.js` changes. Installing with a coding agent? Point it
+at the [agent setup guide](https://hexdocs.pm/phoenix_dev_toolbar/agent-setup.html): the
+toolbar, its MCP server and its agent skill, with a check for each step. See
 [ADR 01](https://github.com/zoten/phoenix_dev_toolbar/blob/main/adr/01-zero-prod-footprint-and-installation.md) for why it never reaches production.
 
 ## Configuration
@@ -202,18 +204,14 @@ config :phoenix_dev_toolbar, mcp: [clients: ["192.168.1.0/24", "172.17.0.0/16"]]
 
 `clients: :any` accepts everyone who reaches the server, proxies included: anyone on the network can then read what the toolbar captured. Anything on this machine that relays to the dev server (an SSH forward, socat, a local proxy without `X-Forwarded-*` headers, a VM or container with user-mode NAT) counts as this machine, as it already does for loopback.
 
-The package ships [usage rules](https://hexdocs.pm/usage_rules) and a skill that teaches coding agents this check-before-and-after routine. With `usage_rules` in your project:
+The package ships [usage rules](https://hexdocs.pm/usage_rules) and a skill that teaches coding agents this check-before-and-after routine. With `usage_rules` in your project, a skills-only config:
 
 ```elixir
 # mix.exs, project/0
-usage_rules: [
-  file: "AGENTS.md",
-  usage_rules: [:phoenix_dev_toolbar],
-  skills: [package_skills: [:phoenix_dev_toolbar]]
-]
+usage_rules: [skills: [package_skills: [:phoenix_dev_toolbar]]]
 ```
 
-then `mix usage_rules.sync`.
+then `mix usage_rules.sync`. Adding `file:` and `usage_rules: [:phoenix_dev_toolbar]` also syncs the rules, but rewrites the file's whole `usage-rules` block and drops the sections you do not list (`phx.new` puts Phoenix's there). The [agent setup guide](https://hexdocs.pm/phoenix_dev_toolbar/agent-setup.html) covers both, and installing without `usage_rules`.
 
 ## How it compares
 

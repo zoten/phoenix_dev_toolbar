@@ -42,7 +42,11 @@ Store, built for IEx and agents:
   not running, every function returns `[]` or `nil`.
 - The package ships `usage-rules.md` and an agent skill,
   `usage-rules/skills/phoenix-dev-toolbar-report/SKILL.md`, in the `usage_rules`
-  layout: host apps pull them with `mix usage_rules.sync`. The skill teaches the
+  layout: host apps pull them with `mix usage_rules.sync`. The documented config is
+  skills-only (`skills: [package_skills: [...]]`): a `file:` sync rewrites the host's
+  whole `usage-rules` block, which `phx.new` fills with Phoenix's rules.
+  `guides/agent-setup.md` is a step by step install, with checks, for coding agents
+  (dependency, plug, MCP, skill). The skill teaches the
   before and after routine (reach the running VM, trigger the page, read
   `summary/2`, check status and dropped events, compare). Both are part of the
   API's docs: a renamed key or function changes them too.
