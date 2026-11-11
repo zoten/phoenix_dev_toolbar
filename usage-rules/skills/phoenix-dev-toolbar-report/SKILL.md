@@ -79,7 +79,11 @@ and compare the same fields. Report the delta: "/posts: 23 queries (21 ms) ->
 ## Going deeper
 
 - `Report.n_plus_one(page)`: repeated SQL with its `origin` (the calling line).
-  `origin: nil` means the repo lacks `stacktrace: true` in `config/dev.exs`.
+  `origin` (also on queries, briefs, inferred callbacks and errors) is the first
+  app stack frame, else the function a task was started with, else
+  `task in View.callback` or `task in View`. `nil` usually means the repo lacks
+  `stacktrace: true` in `config/dev.exs`, but a `start_async` query can still
+  have a nil N+1 origin.
 - `Report.callbacks(page)`: each LiveView callback with its duration and the
   `queries` and `query_us` it caused; find the expensive `mount` or
   `handle_event`.

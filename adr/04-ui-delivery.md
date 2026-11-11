@@ -224,11 +224,12 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   tab (a click, or `Panel.navigate/3`) re-reads the page's events and resets its streams.
   A tab keeps live updates only while open, so state a panel keeps beside its rows (an
   EXPLAIN plan, open rows) is lost when a stale tab opens (its reset). The reset carries only events the
-  panel already accounted for (shown, or older than the re-read window): the next flush delivers the rest once. Measured on 40 queries with 12 frame
-  stacktraces and 30 LiveView callbacks (`test/phoenix_dev_toolbar/panel_payload_test.exs`,
-  JSON bytes of the panel's join reply and diffs): mount 82 KB to 60 KB, 5 new events 7.7 KB to 0.3 KB.
+  panel already accounted for (shown, or older than the re-read window): the next flush delivers the rest once. `test/phoenix_dev_toolbar/panel_payload_test.exs`
+  guards the payload size of the join reply and diffs.
   The open Ecto tab renders a query's details (params, stacktrace, timings) only once the row's
-  toggle is clicked (open rows and EXPLAIN plans are kept in the component, 50 each): mount 60 KB to 33 KB.
+  toggle is clicked (open rows and EXPLAIN plans are kept in the component, 50 each, lost on reset).
+  Limitation (deferred): with more than 50 rows expanded, the oldest stays expanded on screen
+  but leaves the open set, so its first click does nothing visible.
 
 ## Consequences
 

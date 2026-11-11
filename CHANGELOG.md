@@ -7,15 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Stack frames with call arguments print the arity only: no params or socket in stacktraces (ADR 03)
-- MCP docs: clients connect at agent start (`ECONNREFUSED`, `/mcp`), LAN and `${PHX_IP:-...}` URLs (ADR 15)
-- Query origin inside `Task.async` and `start_async`: app frame, task function or owning callback (ADR 08, 13)
-- Panel loads tab rows when the tab opens: mount 82 KB to 60 KB, new events 7.7 KB to 0.3 KB (ADR 04)
-- Ecto rows render params and stacktrace when expanded: mount 60 KB to 33 KB (ADR 04)
-- LiveView callback and render exceptions keep their stacktrace, cut after the last host frame (ADR 07, 13)
+- Stack frames print the arity, not the call's arguments: no params or socket (ADR 03)
+- MCP docs: connect at agent start, LAN and `${PHX_IP:-...}` URLs (ADR 15)
+- Query origin inside `Task.async` and `start_async`: task function or callback (ADR 08, 13)
+- Lazy panel: tab rows load when the tab opens, Ecto details on expand (82 KB to 33 KB, ADR 04)
+- LiveView callback and render exceptions keep a stacktrace cut at the last host frame (ADR 07, 13)
 - Compact `summary/2` and `page_summary` by default, `verbose:` for full items (breaking, ADR 13, 15)
-- Inferred `:async` callbacks, N+1 origin from `initial_call` (ADR 08, 13)
-- `unattributed` queries in `summary/2`, inferred `handle_info` callbacks (ADR 13)
+- Inferred `:async`, `handle_info` callbacks, N+1 origin, `unattributed` summary (ADR 08, 13)
 - Shipped `mix.exs` no longer reads `PDT_LIVE_VIEW`: CI pins LiveView in its checkout (ADR 06)
 
 ## [0.0.2] - 2026-11-11
