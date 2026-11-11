@@ -163,6 +163,46 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert %{callback: :handle_event, event: "inc", queries: 2, query_us: 50} = event
       assert %{queries: 0, query_us: 0} = params
     end
+
+    test "infers handle_info entries from queries no callback owns" do
+      s = session(:live_view, path: "/users", view: DemoWeb.PageLive)
+      callback(s, :mount, span: 1, us: 500)
+      query(s, span: 2, us: 40, at: @t0 + 1_000)
+      query(s, span: 2, us: 60, at: @t0 + 2_000)
+      query(s, span: 2, us: 10, at: @t0 + 500_000, stacktrace: [])
+      callback(s, :handle_event, span: 3, us: 300, event: "inc")
+      insert(s, :live_view, :render, %{view: DemoWeb.PageLive, error: nil}, span: 4, us: 5)
+      query(s, span: 4, us: 7)
+
+      assert [mount, first, second, event] = Report.callbacks(s.sid)
+      assert %{callback: :mount, inferred: false} = mount
+      assert %{callback: :handle_event, inferred: false} = event
+
+      assert %{
+               callback: :handle_info,
+               inferred: true,
+               view: DemoWeb.PageLive,
+               component: nil,
+               event: nil,
+               params: nil,
+               changes: nil,
+               error: nil,
+               duration_us: nil,
+               queries: 2,
+               query_us: 100,
+               span: 2
+             } = first
+
+      assert %{inferred: true, queries: 1, query_us: 10, span: 2} = second
+      assert first.seq < second.seq
+      assert first.at == DateTime.from_unix!(@t0 + 1_000, :microsecond)
+    end
+
+    test "request sessions have no inferred callbacks" do
+      s = session(:request, path: "/users")
+      query(s, span: 2)
+      assert Report.callbacks(s.sid) == []
+    end
   end
 
   describe "errors/2" do
@@ -223,6 +263,32 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert %{dropped: 0, trimmed: 0} = summary
     end
 
+    test "unattributed groups orphan live view queries by origin, top 5" do
+      s = session(:live_view, path: "/users")
+      callback(s, :mount, span: 1, us: 500)
+      query(s, span: 1, us: 999)
+      for n <- 1..6, do: query(s, span: 2, us: n * 10, stacktrace: ["lib/o#{n}.ex:1: O.f/0"])
+      query(s, span: 2, us: 1, stacktrace: ["lib/o6.ex:1: O.f/0"])
+      query(s, span: 2, us: 2, stacktrace: [])
+
+      summary = Report.summary(s.sid)
+      assert %{count: 8, total_us: 213, origins: origins} = summary.unattributed
+      assert length(origins) == 5
+
+      assert [%{origin: "lib/o6.ex:1: O.f/0", count: 2, total_us: 61}, %{total_us: 50} | _] =
+               origins
+
+      assert %{count: 1, total_us: 500} = summary.callbacks
+      assert Map.keys(hd(origins)) |> Enum.sort() == ~w(count origin total_us)a
+      assert %{unattributed: %{count: 8}} = Report.summary(s.sid, verbose: true)
+    end
+
+    test "request queries are never unattributed" do
+      s = session(:request, path: "/users")
+      query(s, span: 2)
+      assert %{count: 0, total_us: 0, origins: []} = Report.summary(s.sid).unattributed
+    end
+
     test "items are compact by default, full with verbose: true" do
       root = session(:request, path: "/users")
       mount = session(:live_view, path: "/users", parent: root.sid, started_at: @t0 + 1)
@@ -242,7 +308,7 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert brief.origin == "lib/app.ex:10: App.list/0"
 
       assert Map.keys(cb_brief) |> Enum.sort() ==
-               ~w(callback component duration_us error event queries query_us seq sid view)a
+               ~w(callback component duration_us error event inferred queries query_us seq sid view)a
 
       assert Map.keys(err_brief) |> Enum.sort() == ~w(message origin seq sid source)a
       assert err_brief.message == "boom"

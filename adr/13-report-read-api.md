@@ -29,6 +29,16 @@ Store, built for IEx and agents:
   `origin`; LiveView crashes carry their stacktrace, host frames first, ADR 07): `verbose: true` returns the full items, `queries/2`, `callbacks/2`
   and `errors/2` the detail.
   `queries/2`, `callbacks/2`, `n_plus_one/2` and `errors/2` return the full lists.
+- LiveView emits no telemetry for `handle_info`, so a query of a `:live_view`
+  session whose `{sid, span}` no `:callback` or `:render` event owns is
+  unattributed (usually `handle_info` or a PubSub reload). `summary/2` reports
+  `unattributed: %{count, total_us, origins}` (top 5 origins by time; compact
+  and verbose alike), and `callbacks/2` adds inferred entries (`callback:
+  :handle_info`, `inferred: true`, no duration): one per `{sid, span}`, split
+  where two consecutive queries are more than 100 ms apart. Limit: several
+  `handle_info` within 100 ms in one span merge into one entry, and a
+  `handle_info` that runs no query is invisible. `summary.callbacks` counts and
+  times real callbacks only. Request sessions are never unattributed.
 - A target is a sid, a session map or a list of sids. A request target includes
   the LiveView sessions whose parent it is (its connected mount, `children: true`
   by default), so one call covers the dead render and the connected mount. Live

@@ -49,6 +49,8 @@ defmodule PhoenixDevToolbar.Report do
   alias PhoenixDevToolbar.Store
 
   @slowest 5
+  @burst_gap_us 100_000
+  @unattributed_origins 5
   @query_brief [:seq, :sid, :origin, :duration_us, :rows, :source, :n_plus_one?, :error]
   @callback_brief [
     :seq,
@@ -57,6 +59,7 @@ defmodule PhoenixDevToolbar.Report do
     :component,
     :callback,
     :event,
+    :inferred,
     :duration_us,
     :queries,
     :query_us,
@@ -118,8 +121,15 @@ defmodule PhoenixDevToolbar.Report do
   `:handle_event`, `:handle_info`, `:update`, ...). `queries` and `query_us`
   count the queries run in it, its tasks included. `changes` is the assigns
   diff it produced (see `t:PhoenixDevToolbar.Truncate.changes/0`).
+
+  LiveView emits no telemetry for `handle_info`, so `inferred: true` entries
+  stand for it: the queries of a LiveView span no callback owns, split where two
+  consecutive queries are more than 100 ms apart. They have no duration, event,
+  params or changes. Several `handle_info` within 100 ms in one span merge into
+  one entry; one that runs no query is invisible.
   """
   @type callback :: %{
+          inferred: boolean(),
           sid: sid(),
           seq: pos_integer(),
           span: non_neg_integer() | nil,
@@ -179,6 +189,7 @@ defmodule PhoenixDevToolbar.Report do
           component: module() | nil,
           callback: atom(),
           event: String.t() | nil,
+          inferred: boolean(),
           duration_us: non_neg_integer() | nil,
           queries: non_neg_integer(),
           query_us: non_neg_integer(),
@@ -209,6 +220,9 @@ defmodule PhoenixDevToolbar.Report do
   Each `slowest` list holds at most #{@slowest} items, slowest first. Items are
   briefs unless `summary/2` got `verbose: true`.
   `dropped` and `trimmed` add up the events lost to the caps.
+  `callbacks` counts real callbacks only. `unattributed` counts the queries of
+  LiveView sessions that no callback or render owns (usually `handle_info` or
+  PubSub reloads), with its top #{@unattributed_origins} `origins` by time.
   """
   @type summary :: %{
           sids: [sid()],
@@ -221,6 +235,13 @@ defmodule PhoenixDevToolbar.Report do
             slowest: [query_brief() | query()]
           },
           n_plus_one: [n_plus_one()],
+          unattributed: %{
+            count: non_neg_integer(),
+            total_us: non_neg_integer(),
+            origins: [
+              %{origin: String.t() | nil, count: pos_integer(), total_us: non_neg_integer()}
+            ]
+          },
           callbacks: %{
             count: non_neg_integer(),
             total_us: non_neg_integer(),
@@ -272,6 +293,7 @@ defmodule PhoenixDevToolbar.Report do
       {[first | _] = sessions, events} ->
         queries = queries_of(events, threshold(opts))
         callbacks = callbacks_of(events)
+        orphans = orphans_of(events, sessions)
         renders = for %Event{plugin: :live_view, kind: :render} = event <- events, do: event
         brief = brief_fun(Keyword.get(opts, :verbose, false))
 
@@ -286,6 +308,7 @@ defmodule PhoenixDevToolbar.Report do
             slowest: queries |> slowest() |> Enum.map(&brief.(&1, @query_brief))
           },
           n_plus_one: n_plus_one_of(events, threshold(opts)),
+          unattributed: unattributed(orphans),
           callbacks: %{
             count: length(callbacks),
             total_us: total(callbacks),
@@ -324,8 +347,10 @@ defmodule PhoenixDevToolbar.Report do
   @doc "Every LiveView and LiveComponent callback of `target`, oldest first. Option: `children:`."
   @spec callbacks(target(), keyword()) :: [callback()]
   def callbacks(target, opts \\ []) do
-    {_sessions, events} = read(target, opts)
-    callbacks_of(events)
+    {sessions, events} = read(target, opts)
+
+    (callbacks_of(events) ++ inferred_of(events, sessions))
+    |> Enum.sort_by(& &1.seq)
   end
 
   @doc "Every failure of `target`, oldest first. Option: `children:`."
@@ -497,6 +522,7 @@ defmodule PhoenixDevToolbar.Report do
         view: data[:view],
         component: data[:component],
         id: data[:id],
+        inferred: false,
         event: data[:event],
         params: data[:params],
         changes: data[:changes],
@@ -505,6 +531,90 @@ defmodule PhoenixDevToolbar.Report do
         error: data[:error]
       }
     end
+  end
+
+  # Queries of LiveView sessions whose {sid, span} no callback or render owns.
+  defp orphans_of(events, sessions) do
+    live = for %Session{kind: :live_view, sid: sid} <- sessions, into: MapSet.new(), do: sid
+
+    owned =
+      for %Event{plugin: :live_view, kind: kind} = event <- events,
+          kind in [:callback, :render],
+          into: MapSet.new(),
+          do: {event.sid, event.span}
+
+    for %Event{plugin: :ecto, kind: :query} = event <- events,
+        MapSet.member?(live, event.sid),
+        not MapSet.member?(owned, {event.sid, event.span}),
+        do: event
+  end
+
+  defp unattributed(orphans) do
+    origins =
+      orphans
+      |> Enum.group_by(&origin/1)
+      |> Enum.map(fn {origin, queries} ->
+        %{origin: origin, count: length(queries), total_us: total(queries)}
+      end)
+      |> Enum.sort_by(& &1.total_us, :desc)
+      |> Enum.take(@unattributed_origins)
+
+    %{count: length(orphans), total_us: total(orphans), origins: origins}
+  end
+
+  defp origin(%Event{data: data}), do: List.first(data[:stacktrace] || [])
+
+  # One `handle_info` stand-in per burst of orphan queries (a span, split on gaps).
+  defp inferred_of(events, sessions) do
+    views = Map.new(sessions, &{&1.sid, &1.view})
+
+    events
+    |> orphans_of(sessions)
+    |> Enum.group_by(&{&1.sid, &1.span})
+    |> Enum.flat_map(fn {_key, queries} -> bursts(queries) end)
+    |> Enum.map(fn [first | _] = burst ->
+      %{
+        sid: first.sid,
+        seq: first.seq,
+        span: first.span,
+        at: datetime(first.at),
+        duration_us: nil,
+        callback: :handle_info,
+        inferred: true,
+        view: views[first.sid],
+        component: nil,
+        id: nil,
+        event: nil,
+        params: nil,
+        changes: nil,
+        queries: length(burst),
+        query_us: total(burst),
+        error: nil
+      }
+    end)
+  end
+
+  defp bursts(queries) do
+    queries
+    |> Enum.sort_by(& &1.seq)
+    |> Enum.chunk_while(
+      [],
+      fn
+        query, [] ->
+          {:cont, [query]}
+
+        query, [last | _] = acc ->
+          if query.at - last.at > @burst_gap_us do
+            {:cont, Enum.reverse(acc), [query]}
+          else
+            {:cont, [query | acc]}
+          end
+      end,
+      fn
+        [] -> {:cont, []}
+        acc -> {:cont, Enum.reverse(acc), []}
+      end
+    )
   end
 
   defp query_time_by_span(events) do

@@ -254,6 +254,27 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
     end
   end
 
+  describe "inferred handle_info" do
+    test "page_callbacks lists them and page_summary counts unattributed queries" do
+      s = session(:live_view, path: "/i")
+      callback(s, :mount, span: 1, us: 100)
+      query(s, span: 2, us: 30)
+
+      assert %{
+               "callbacks" => [
+                 %{"inferred" => false},
+                 %{"callback" => "handle_info", "inferred" => true}
+               ]
+             } =
+               call!("page_callbacks", %{"sid" => s.sid})
+
+      assert %{
+               "unattributed" => %{"count" => 1, "total_us" => 30, "origins" => [%{"count" => 1}]}
+             } =
+               call!("page_summary", %{"sid" => s.sid})
+    end
+  end
+
   describe "page_n_plus_one" do
     test "reports repeated queries, or an empty list" do
       s = session(:request, path: "/n")

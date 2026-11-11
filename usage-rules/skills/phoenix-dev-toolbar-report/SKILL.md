@@ -57,7 +57,10 @@ Check, in this order:
 - `dropped` and `trimmed`: above 0 means events were lost to the caps, so a
   missing query or N+1 proves nothing.
 - `errors`, `n_plus_one`, `queries.count`, `queries.total_us`,
-  `queries.slowest`, `callbacks.slowest`. These items are compact (no SQL,
+  `queries.slowest`, `callbacks.slowest`, `unattributed`: queries of a
+  LiveView page no callback owns, usually `handle_info` or PubSub reloads
+  (`callbacks/2` lists them as `inferred: true`, `callback: :handle_info`).
+  These items are compact (no SQL,
   params or assigns): use `queries/2` and `callbacks/2`, or `summary(page,
   verbose: true)` (`page_summary` with `verbose: true`), for the detail.
 
