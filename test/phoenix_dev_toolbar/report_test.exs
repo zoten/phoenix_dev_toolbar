@@ -16,6 +16,28 @@ defmodule PhoenixDevToolbar.ReportTest do
   @t0 1_800_000_000_000_000
 
   describe "sessions/1 and latest/1" do
+    test "since: a sid or a DateTime keeps only sessions started after it" do
+      a = session(:request, path: "/a", started_at: @t0)
+      b = session(:request, path: "/b", started_at: @t0 + 5)
+      c = session(:request, path: "/c", started_at: @t0 + 9)
+
+      assert [c.sid, b.sid] == Enum.map(Report.sessions(since: a.sid), & &1.sid)
+      assert [c.sid] == Enum.map(Report.sessions(since: b.sid), & &1.sid)
+      assert [] == Report.sessions(since: c.sid)
+
+      cursor = DateTime.from_unix!(@t0 + 5, :microsecond)
+      assert [c.sid] == Enum.map(Report.sessions(since: cursor), & &1.sid)
+      assert [c.sid] == Enum.map(Report.sessions(since: cursor, path: "/c"), & &1.sid)
+    end
+
+    test "since: an unknown sid or an unusable value gives no sessions, never a raise" do
+      session(:request, path: "/a", started_at: @t0)
+
+      assert [] == Report.sessions(since: "gone")
+      assert [] == Report.sessions(since: 42)
+      assert [%{path: "/a"}] = Report.sessions(since: nil)
+    end
+
     test "lists sessions newest first, with plain fields" do
       old = session(:request, path: "/a", started_at: @t0)
       new = session(:live_view, path: "/b", view: DemoWeb.PageLive, started_at: @t0 + 5)

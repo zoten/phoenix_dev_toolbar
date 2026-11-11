@@ -42,7 +42,9 @@ Report.sessions(path: ~r{^/posts}, limit: 5)
 When the project's MCP config has the `phoenix-dev-toolbar` server
 (`http://localhost:4000/__pdt/mcp`), prefer its tools to evaluating code:
 
-- `list_pages` (filter with `path` or `path_prefix`), then `page_summary` with
+- `list_pages` (filter with `path` or `path_prefix`; `since` takes a sid or
+  ISO 8601 time: note the sid you measured, edit, reload, then list with
+  `since` to get only the new pages), then `page_summary` with
   the page's `sid` or its `path` (compact; `verbose: true` for full items).
   Without either, tools read the newest page.
 - `page_queries`, `page_callbacks` (`sort: "slowest"`, `limit`),

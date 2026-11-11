@@ -20,7 +20,9 @@ the plugins.
 Store, built for IEx and agents:
 
 - `sessions/1` lists page views newest first, filtered by `:path` (string or
-  regex), `:view`, `:kind`, `:limit`; `latest/1` is the newest match.
+  regex), `:view`, `:kind`, `:limit`, `:since` (a sid or a `DateTime`: only
+  sessions that started after it; an unknown sid gives `[]`); `latest/1` is the
+  newest match.
 - `summary/2` gives one compact map per page: the request, query count, failures
   and total time with the 5 slowest queries, N+1 groups, callback totals with the
   5 slowest, render totals, errors, and the events lost to the caps. The slowest

@@ -87,6 +87,29 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       assert %{"pages" => [%{"path" => "/posts"}]} = call!("list_pages", %{"path" => "/posts"})
     end
 
+    test "since takes a sid or an ISO 8601 time and lists only later pages" do
+      a = session(:request, path: "/a", started_at: @t0)
+      b = session(:request, path: "/b", started_at: @t0 + 5_000_000)
+      c = session(:request, path: "/c", started_at: @t0 + 9_000_000)
+
+      assert %{"pages" => pages} = call!("list_pages", %{"since" => a.sid})
+      assert Enum.map(pages, & &1["sid"]) == [c.sid, b.sid]
+      assert [%{"started_at" => started}, _] = pages
+      assert {:ok, _dt, 0} = DateTime.from_iso8601(started)
+
+      iso = DateTime.to_iso8601(DateTime.from_unix!(@t0 + 5_000_000, :microsecond))
+      assert %{"pages" => [%{"sid" => sid}]} = call!("list_pages", %{"since" => iso})
+      assert sid == c.sid
+
+      assert %{"pages" => []} = call!("list_pages", %{"since" => "unknown-sid"})
+    end
+
+    test "an invalid since is a tool error saying what is accepted" do
+      msg = call_error("list_pages", %{"since" => "not a time!"})
+      assert msg =~ "since" and msg =~ "ISO 8601" and msg =~ "sid"
+      assert call_error("list_pages", %{"since" => 5}) =~ "since"
+    end
+
     test "path and path_prefix together are a tool error" do
       msg = call_error("list_pages", %{"path" => "/a", "path_prefix" => "/b"})
       assert msg == "Use path or path_prefix, not both."

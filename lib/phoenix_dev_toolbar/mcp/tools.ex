@@ -37,6 +37,11 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
             "type" => "string",
             "description" => "Only pages whose path starts with this."
           },
+          "since" => %{
+            "type" => "string",
+            "description" =>
+              "Only pages that started after this: a sid from an earlier list_pages, or an ISO 8601 timestamp."
+          },
           "limit" => int_prop("Maximum pages to return.", 1, 50, 10)
         }
       ),
@@ -148,8 +153,10 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
     with {:ok, path} <- string_arg(args, "path"),
          {:ok, prefix} <- string_arg(args, "path_prefix"),
          :ok <- exclusive(path, prefix),
+         {:ok, since} <- since_arg(args),
          {:ok, limit} <- int_arg(args, "limit", 10, 1, 50) do
-      pages = pages([path: path, path_prefix: prefix] |> PageLookup.filter(), limit)
+      filter = Keyword.merge(PageLookup.filter(path: path, path_prefix: prefix), since)
+      pages = pages(filter, limit)
 
       {:ok, %{"pages" => Enum.map(pages, &Map.put(&1, :panel_url, panel_url(opts, &1.sid)))}}
     end
@@ -196,6 +203,34 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
        }}
     end
   end
+
+  # A sid, else an ISO 8601 timestamp.
+  defp since_arg(args) do
+    case Map.get(args, "since") do
+      nil ->
+        {:ok, []}
+
+      value when is_binary(value) ->
+        parse_since(value)
+
+      _other ->
+        {:error, since_message()}
+    end
+  end
+
+  defp parse_since(value) do
+    with false <- PageLookup.valid_sid?(value),
+         {:ok, datetime, _offset} <- DateTime.from_iso8601(value) do
+      {:ok, since: datetime}
+    else
+      true -> {:ok, since: value}
+      {:error, _reason} -> {:error, since_message()}
+    end
+  end
+
+  defp since_message,
+    do:
+      "since must be a page sid (from list_pages) or an ISO 8601 timestamp such as 2026-11-11T10:00:00Z."
 
   defp exclusive(path, prefix) when is_binary(path) and is_binary(prefix),
     do: {:error, "Use path or path_prefix, not both."}

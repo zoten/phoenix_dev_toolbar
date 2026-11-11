@@ -68,7 +68,9 @@ Check, in this order:
 `latest/1` can pick up a page the user opened in another tab. When unsure, use
 `Report.sessions(path: "/posts", limit: 5)` (over MCP, `list_pages` with
 `path: "/posts"`) and keep the session whose
-`started_at` follows your trigger.
+`started_at` follows your trigger. For a before/after check, remember the sid
+you measured, then use `Report.sessions(since: sid)` (over MCP, `list_pages`
+with `since`).
 
 ## 4. Change the code, trigger again, compare
 

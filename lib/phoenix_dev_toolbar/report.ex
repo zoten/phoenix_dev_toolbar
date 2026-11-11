@@ -272,12 +272,17 @@ defmodule PhoenixDevToolbar.Report do
   Lists the sessions the Store holds, newest first.
 
   Options: `:path` (exact string or a `Regex`), `:view` (module), `:kind`
-  (`:request` or `:live_view`), `:limit`.
+  (`:request` or `:live_view`), `:limit`, `:since` (a sid: only sessions that
+  started after that session; a `DateTime`: only sessions that started after
+  it; an unknown sid or any other value gives `[]`, never a raise).
   """
   @spec sessions(keyword()) :: [session()]
   def sessions(opts \\ []) do
-    all_sessions()
+    all = all_sessions()
+
+    all
     |> Enum.filter(&matches?(&1, opts))
+    |> since(all, opts[:since])
     |> Enum.sort_by(& &1.started_at, :desc)
     |> limit(opts[:limit])
     |> Enum.map(&session/1)
@@ -438,6 +443,22 @@ defmodule PhoenixDevToolbar.Report do
       _other -> true
     end)
   end
+
+  defp since(sessions, _all, nil), do: sessions
+
+  defp since(sessions, _all, %DateTime{} = cursor),
+    do: after_us(sessions, DateTime.to_unix(cursor, :microsecond))
+
+  defp since(sessions, all, sid) when is_binary(sid) do
+    case Enum.find(all, &(&1.sid == sid)) do
+      %Session{started_at: us} -> after_us(sessions, us)
+      nil -> []
+    end
+  end
+
+  defp since(_sessions, _all, _other), do: []
+
+  defp after_us(sessions, us), do: Enum.filter(sessions, &(&1.started_at > us))
 
   defp limit(sessions, limit) when is_integer(limit) and limit >= 0,
     do: Enum.take(sessions, limit)
