@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-11-11
+
 - `stack_args:` opt-in call arguments in crash stacktraces, panel only by default; conn cookies, headers and `:crypto` never printed (ADR 03)
 - Stack frames print the arity, not the call's arguments: no params or socket (ADR 03)
 - MCP docs: connect at agent start, LAN and `${PHX_IP:-...}` URLs (ADR 15)
