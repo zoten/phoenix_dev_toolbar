@@ -175,7 +175,8 @@ defmodule MyApp.Toolbar.JobsPanel do
   @impl Phoenix.LiveComponent
   def mount(socket), do: {:ok, stream_configure(socket, :jobs, dom_id: &"jobs-#{&1.seq}")}
 
-  # A new page (the panel opened, live navigation): every stored event.
+  # Live navigation: []. A tab opened after missing events: every stored event.
+  # A closed tab gets no handle_events, so rebuild everything here.
   @impl Panel
   def handle_reset(events, socket), do: stream(socket, :jobs, events, reset: true, limit: -500)
 

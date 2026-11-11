@@ -41,6 +41,21 @@ defmodule PhoenixDevToolbar.PluginPanelTest do
     assert has_element?(panel, "#tabbed[data-shown=true][data-navigated=tabbed]")
   end
 
+  test "a tab opened after missing events gets them all through handle_reset" do
+    {host, sid} = visit("/demo")
+    panel = open_panel(sid)
+
+    render_hook(host, "echo", %{"value" => "one"})
+    render_hook(host, "echo", %{"value" => "two"})
+    flush(panel)
+    refute has_element?(panel, "#tabbed-list li")
+
+    open_panel_tab(panel, "tabbed")
+
+    assert has_element?(panel, "#tabbed-list li", "echo one")
+    assert has_element?(panel, "#tabbed-list li", "echo two")
+  end
+
   test "Panel.navigate/3 outside the panel (a host LiveView) does nothing" do
     socket = %Phoenix.LiveView.Socket{view: DemoWeb.PageLive}
 

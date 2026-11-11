@@ -37,10 +37,12 @@ defmodule PhoenixDevToolbar.Panel do
       end
 
   Events are the plugin's own, oldest first. Keep them in streams, never in
-  plain assigns: a page can produce thousands. `handle_reset/2` gets every
-  stored event of a new page (the panel opened, live navigation), and runs
-  once with `[]` before the first render; `handle_events/2` gets the new ones
-  since. DOM ids must be unique in the whole panel: prefix them with your
+  plain assigns: a page can produce thousands. `handle_reset/2` runs once with
+  `[]` before the first render, with `[]` on live navigation, and with every
+  stored event of the page when the tab opens after missing events (the
+  toolbar sends events only to the open tab); `handle_events/2` gets the new
+  ones since, and nothing while the tab is closed. Rebuild everything from
+  `handle_reset/2` and keep no state that only `handle_events/2` maintains. DOM ids must be unique in the whole panel: prefix them with your
   plugin's name and use the event's `seq`.
 
   The toolbar assigns, before calling either callback:

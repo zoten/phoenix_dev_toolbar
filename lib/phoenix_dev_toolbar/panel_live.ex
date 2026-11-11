@@ -137,8 +137,9 @@ defmodule PhoenixDevToolbar.PanelLive do
   def handle_info({:pdt_navigate, tab, params}, socket) do
     case Enum.find(socket.assigns.tabs, &(&1.id == tab)) do
       %{panel: panel} ->
+        socket = open_tab(socket, tab)
         Panel.send_now(self(), panel, panel_id(tab), {:navigate, params})
-        {:noreply, open_tab(socket, tab)}
+        {:noreply, socket}
 
       nil ->
         {:noreply, socket}
@@ -299,8 +300,18 @@ defmodule PhoenixDevToolbar.PanelLive do
     end
   end
 
-  defp load_tab(%{assigns: %{page: %Page{sids: sids}}} = socket, tab) do
-    routed = Shell.route(socket.assigns.shell, PageData.read_all(sids))
+  # Only events already accounted for (shown, or older than the re-read window):
+  # the Store may hold newer ones the next flush has yet to deliver, and handing
+  # them out here too would deliver them twice.
+  defp load_tab(%{assigns: %{page: %Page{sids: sids}, seqs: seqs, seen: seen}} = socket, tab) do
+    lows = Map.new(sids, &{&1, max(Map.get(seqs, &1, 0) - @reread_window, 0)})
+
+    events =
+      sids
+      |> PageData.read_all()
+      |> Enum.filter(&(seen?(seen, &1) or &1.seq < Map.get(lows, &1.sid, 0)))
+
+    routed = Shell.route(socket.assigns.shell, events)
 
     case Enum.find(socket.assigns.tabs, &(&1.id == tab)) do
       %{panel: panel} ->

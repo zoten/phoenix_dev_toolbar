@@ -7,6 +7,7 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
   import Phoenix.LiveViewTest
   import PhoenixDevToolbar.EnvHelpers
   import PhoenixDevToolbar.PageHelpers
+  import PhoenixDevToolbar.ReportFixtures, only: [query: 2, session: 2]
 
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Plugins
@@ -127,6 +128,26 @@ defmodule PhoenixDevToolbar.NPlusOnePanelTest do
     render_hook(host, "queries", %{"sql" => "SELECT 3", "count" => 9})
     settle(panel)
     refute has_element?(panel, "#pdt-badge-ecto-n-plus-one")
+    refute has_element?(panel, "#pdt-n-plus-one")
+  end
+
+  test "opening the stale Ecto tab before the pending flush does not count queries twice" do
+    Store.reset()
+    on_exit(&Store.reset/0)
+    request = session(:request, path: "/demo")
+    live = session(:live_view, parent: request.sid, path: "/demo", view: DemoWeb.PageLive)
+    panel = open_panel(request.sid)
+    open_panel_tab(panel, "live_view")
+
+    # 3 identical queries in one span: below the threshold (5)
+    query(live, span: 7)
+    flush(panel)
+    for _ <- 1..2, do: query(live, span: 7)
+
+    # the two unflushed queries must reach the tab once, through the flush
+    open_panel_tab(panel, "ecto")
+    flush(panel)
+
     refute has_element?(panel, "#pdt-n-plus-one")
   end
 end

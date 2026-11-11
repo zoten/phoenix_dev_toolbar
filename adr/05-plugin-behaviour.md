@@ -59,8 +59,9 @@ atom other than the reserved `:client` and the name a string):
   `PhoenixDevToolbar.Truncate`, stored as is), `sid` and `seq` set on insert.
 - **Panel** (`use PhoenixDevToolbar.Panel`, a `Phoenix.LiveComponent`): the toolbar
   defines `update/2` (a panel defining `update/2` or `update_many/1` fails to compile) and delivers the
-  plugin's events through `handle_reset(events, socket)` (a new page: every stored
-  event; also once with `[]` before the first render) and `handle_events(events,
+  plugin's events through `handle_reset(events, socket)` (`[]` on live navigation and once before the first render; every stored
+  event when the tab opens after missing events: a closed tab gets no `handle_events`, so rebuild everything
+  from `handle_reset` and keep no state only `handle_events` maintains) and `handle_events(events,
   socket)` (new events, oldest first), with `send_update` after the panel's own
   callback, so deliveries keep their order. Props: `@config`, `@page`, `@shown?` (tab
   selected), `@visible?` (panel open and browser tab visible); `handle_props/1` runs
