@@ -125,7 +125,7 @@ The before/after loop for checking a change:
 2. Change the code and reload the page in the browser.
 3. `compare_pages` with `before: sid`: query and time deltas, N+1 and errors fixed
    or new.
-4. `recent_errors` with `since: sid`: crashes the page lookups miss.
+4. `recent_errors` with `since: sid` (errors after that page started, never its own): crashes the page lookups miss.
 
 If the dev server listens on a LAN address (check the endpoint's `http: [ip: ...]`
 in `config/dev.exs`), use that address in the URL. When it comes from an environment

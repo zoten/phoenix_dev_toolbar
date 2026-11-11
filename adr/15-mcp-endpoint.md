@@ -80,8 +80,8 @@ never a crash of the host's request process.
 **Tools.** Read-only (`readOnlyHint: true`), over `Report` and the page
 resolution of the standalone panel (ADR 14): a page is a `sid`, else the newest
 page at an exact `path`, else the newest page. An explicit `sid` is used as
-given (a connected mount's sid is not remapped to its request); only `path` and
-the default resolve to the request. `list_pages` with both `path` and
+given, except a connected mount's sid, which reads as its request's page (`PageLookup.root/1`, so one page, one answer); `path` and
+the default resolve to the request too. `list_pages` with both `path` and
 `path_prefix` is an error.
 
 | Tool | Arguments | Result |
@@ -92,10 +92,10 @@ the default resolve to the request. `list_pages` with both `path` and
 | `page_callbacks` | as `page_queries` | `sid`, `panel_url`, `total`, `returned`, `callbacks` |
 | `page_n_plus_one` | `sid`, `path` | `sid`, `panel_url`, `n_plus_one` |
 | `page_errors` | `sid`, `path`, `limit` (1..100, 20) | `sid`, `panel_url`, `total`, `returned`, `errors` |
-| `recent_errors` | `since` (a captured sid: errors after that page's last captured event; or ISO 8601 time; same parsing and errors as `list_pages`), `limit` (1..100, 20) | `total`, `returned`, `errors` (`Report.recent_errors/1`, newest first), each with a `panel_url` (a connected mount links to its request's page) |
+| `recent_errors` | `since` (a captured sid: errors after that page started, never its own sessions; or ISO 8601 time; same parsing and errors as `list_pages`), `limit` (1..100, 20) | `total`, `returned`, `errors` (`Report.recent_errors/1`, newest first), each with `page_sid` (the root: a connected mount reads as its request) and a `panel_url` to that page |
 | `page_report` | `sid`, `path` | `sid`, `panel_url`, `markdown` (`Report.markdown/2`) as `structuredContent`; the text block is the Markdown itself, not JSON |
 | `page_assigns_shape` | `sid`, `path` | `sid`, `view`, `live_view_sid` and `live_view_path` (the LiveView actually read: live navigation can make it a later one than the page's path), `panel_url`, `total_words`, `omitted`, `assigns` (at most 100, largest first, by `:erts_debug.flat_size/1` words of the untruncated value): `key` (inspect string), `type` (`list`, `map`, `struct Mod`, `binary`, ...), `length` (lists and maps), `words`, `stream?`. No values; each stream is its own entry, and a stream's words are what the server holds (its items live in the client). The LiveView is the page's newest one (a request page: its connected mount); no LiveView, a dead owner or a LiveView that is gone is a tool error saying the page must be open in a browser |
-| `compare_pages` | `before` (a captured sid, required), `after` (a captured sid) or `path` (the newest page at that path started after `before`; default: `before`'s path), not both | `Report.compare/3` (a connected mount reads as its request; `warning` when the sides differ in kind or session count) plus `before_panel_url` and `after_panel_url`; no page after `before` is a tool error asking to reload the page, and an `after` older than `before` is a tool error |
+| `compare_pages` | `before` (a captured sid, required), `after` (a captured sid) or `path` (the newest page at that path started after `before`; default: `before`'s path), not both | `Report.compare/3` (a connected mount reads as its request; `warning` when the sides differ in kind, session count or path) plus `before_panel_url` and `after_panel_url`; no page after `before` is a tool error asking to reload the page, and an `after` older than `before` is a tool error |
 
 `panel_url` is absolute, built from the request's scheme, host and port (the
 port left out for 80 and 443): `http://localhost:4000/__pdt/panel?sid=...`, so the agent can hand it to the
@@ -143,6 +143,7 @@ not a breaking change, renaming or removing is (a CHANGELOG line).
 - `page_assigns_shape`: a host `max_heap_size` can kill the copying task and with it the request (a 500).
 - `page_assigns_shape`: a closed newest tab hides an older open tab of the same path.
 - `recent_errors` with a sid that expires between validation and read returns no errors instead of a tool error.
+- `compare_pages` without `after` can pick a live navigation back to the same path (no reload) as the after page; `warning` flags a kind or session count mismatch, not that case.
 - A dev server bound to a Unix socket has no peer address to match: only
   `clients: :any` lets its clients in.
 - Anything on this machine that relays to the dev server counts as this machine,

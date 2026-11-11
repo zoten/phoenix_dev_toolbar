@@ -44,6 +44,7 @@ defmodule PhoenixDevToolbar.Report do
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.NPlusOne
+  alias PhoenixDevToolbar.PageLookup
   alias PhoenixDevToolbar.Plugins
   alias PhoenixDevToolbar.Report.Markdown
   alias PhoenixDevToolbar.Session
@@ -228,7 +229,8 @@ defmodule PhoenixDevToolbar.Report do
           message: String.t(),
           origin: String.t() | nil,
           at: DateTime.t(),
-          path: String.t() | nil
+          path: String.t() | nil,
+          page_sid: sid()
         }
 
   @typedoc "An option of `recent_errors/1`."
@@ -304,7 +306,7 @@ defmodule PhoenixDevToolbar.Report do
   Each list holds distinct keys, at most #{@compare_cap}; `fixed_total` and
   `new_total` count them all. An error carries `count`, its occurrences.
   `before` and `after` say which `kind` and `sids` were read; a `warning`
-  is present when the two differ in kind or session count.
+  is present when the two differ in kind, session count or path.
   """
   @type comparison :: %{
           required(:before) => compared_side(),
@@ -343,8 +345,10 @@ defmodule PhoenixDevToolbar.Report do
 
   Options: `:path` (exact string or a `Regex`), `:view` (module), `:kind`
   (`:request` or `:live_view`), `:limit`, `:since` (a sid: only sessions that
-  started after that session; a `DateTime`: only sessions that started after
-  it; an unknown sid or any other value gives `[]`, never a raise).
+  started after that page, a connected mount reading as its request; the
+  request's own mount is listed since it started later, use `compare/3` to
+  read a whole page; a `DateTime`: only sessions that started after it; an
+  unknown sid or any other value gives `[]`, never a raise).
   """
   @spec sessions(keyword()) :: [session()]
   def sessions(opts \\ []) do
@@ -458,34 +462,10 @@ defmodule PhoenixDevToolbar.Report do
     end
   end
 
-  # A connected mount reads as its request (like `PageLookup.newest/1`).
-  defp root(sid) when is_binary(sid), do: root_of(sid)
-
-  defp root(%{kind: :live_view, parent: parent, sid: sid}) when is_binary(parent),
-    do: root_of(parent, sid)
-
+  # A connected mount reads as its request (`PageLookup.root/1`).
+  defp root(sid) when is_binary(sid), do: PageLookup.root(sid)
+  defp root(%{sid: sid}) when is_binary(sid), do: PageLookup.root(sid)
   defp root(target), do: target
-
-  defp root_of(sid) do
-    case Store.session(sid) do
-      {:ok, %Session{kind: :live_view, parent: parent}} when is_binary(parent) ->
-        root_of(parent, sid)
-
-      _other ->
-        sid
-    end
-  rescue
-    ArgumentError -> sid
-  end
-
-  defp root_of(parent, sid) do
-    case Store.session(parent) do
-      {:ok, %Session{kind: :request}} -> parent
-      _other -> sid
-    end
-  rescue
-    ArgumentError -> sid
-  end
 
   defp side(summary) do
     summary.session
@@ -494,19 +474,30 @@ defmodule PhoenixDevToolbar.Report do
   end
 
   defp maybe_warn(%{before: b, after: a} = comparison) do
-    case {b.kind == a.kind, length(b.sids) == length(a.sids)} do
-      {true, true} ->
-        comparison
+    case warnings(b, a) do
+      [] -> comparison
+      warnings -> Map.put(comparison, :warning, Enum.join(warnings, " "))
+    end
+  end
 
-      _different ->
-        Map.put(
-          comparison,
-          :warning,
+  defp warnings(b, a) do
+    kind =
+      b.kind != a.kind or length(b.sids) != length(a.sids)
+
+    path = b.path != a.path
+
+    Enum.filter(
+      [
+        kind &&
           "before is a #{b.kind} read from #{length(b.sids)} session(s), after is a #{a.kind} " <>
             "read from #{length(a.sids)}: totals may not be comparable (live navigation, or a " <>
-            "dead render without its connected mount)."
-        )
-    end
+            "dead render without its connected mount).",
+        path &&
+          "before is #{inspect(b.path)}, after is #{inspect(a.path)}: different pages, so " <>
+            "fixed and new reflect the pages, not a change."
+      ],
+      & &1
+    )
   end
 
   defp tally_change(before, after_) do
@@ -608,26 +599,29 @@ defmodule PhoenixDevToolbar.Report do
 
   @doc """
   The newest failures across every page the Store holds, newest first, as
-  `t:recent_error/0` items: an `t:error_brief/0` plus the session `path` and
+  `t:recent_error/0` items: an `t:error_brief/0` plus the session `path`, the
+  `page_sid` (its root: a connected mount reads as its request) and
   the error's `at`. It sees LiveView callbacks (a `handle_info` crash, another
   tab) that no page lookup would point at.
 
-  Options: `:since` (a sid: errors after that page's last captured event, its
-  connected mount included, so a fix that leaves the old crash behind reads as
-  fixed; a `DateTime`: errors after it; an unknown sid or any other value gives
-  `[]`) and `:limit` (default 20, `nil` for all). Reads the events of at most
-  the capped number of sessions the Store holds.
+  Options: `:since` (a sid: errors after that page started, the page's own
+  sessions, its request and connected mount, never listed, so a fix that
+  leaves the old crash behind reads as fixed and the old tab's later events
+  do not hide other pages; a `DateTime`: errors after it; an unknown sid or
+  any other value gives `[]`) and `:limit` (default 20, `nil` for all). Reads
+  the events of at most the capped number of sessions the Store holds.
   """
   @spec recent_errors([recent_errors_opt()]) :: [recent_error()]
   def recent_errors(opts \\ []) do
     all = all_sessions()
 
-    case cursor_us(all, opts[:since]) do
+    case cursor(all, opts[:since]) do
       :none ->
         []
 
-      after_us ->
+      {after_us, own_page} ->
         all
+        |> Enum.reject(&own_page?(&1, own_page))
         |> Enum.flat_map(&session_errors(&1, after_us))
         |> Enum.sort_by(&{DateTime.to_unix(&1.at, :microsecond), &1.seq}, :desc)
         |> limit(Keyword.get(opts, :limit, 20))
@@ -635,19 +629,25 @@ defmodule PhoenixDevToolbar.Report do
     end
   end
 
-  defp cursor_us(_all, nil), do: 0
-  defp cursor_us(_all, %DateTime{} = cursor), do: DateTime.to_unix(cursor, :microsecond)
+  defp cursor(_all, nil), do: {0, nil}
+  defp cursor(_all, %DateTime{} = at), do: {DateTime.to_unix(at, :microsecond), nil}
 
-  # The page's last captured event (the page and its connected mounts).
-  defp cursor_us(_all, sid) when is_binary(sid) do
-    case read(sid, []) do
-      {[], _events} -> :none
-      {[first | _], []} -> first.started_at
-      {_sessions, events} -> events |> Enum.map(& &1.at) |> Enum.max()
+  # The page's root start: its own sessions are excluded, the rest is "after".
+  defp cursor(all, sid) when is_binary(sid) do
+    root = PageLookup.root(sid)
+
+    case Enum.find(all, &(&1.sid == root)) do
+      %Session{started_at: us} -> {us, root}
+      nil -> :none
     end
   end
 
-  defp cursor_us(_all, _other), do: :none
+  defp cursor(_all, _other), do: :none
+
+  defp own_page?(_session, nil), do: false
+  defp own_page?(%Session{sid: root}, root), do: true
+  defp own_page?(%Session{parent: root}, root), do: true
+  defp own_page?(_session, _root), do: false
 
   defp session_errors(%Session{} = session, after_us) do
     events = events(session.sid)
@@ -662,6 +662,7 @@ defmodule PhoenixDevToolbar.Report do
     error
     |> error_item(&Map.take/2)
     |> Map.merge(Map.take(error, [:at, :path]))
+    |> Map.put(:page_sid, PageLookup.root(error.sid))
   end
 
   ## Reading the Store
@@ -735,7 +736,9 @@ defmodule PhoenixDevToolbar.Report do
     do: after_us(sessions, DateTime.to_unix(cursor, :microsecond))
 
   defp since(sessions, all, sid) when is_binary(sid) do
-    case Enum.find(all, &(&1.sid == sid)) do
+    root = PageLookup.root(sid)
+
+    case Enum.find(all, &(&1.sid == root)) do
       %Session{started_at: us} -> after_us(sessions, us)
       nil -> []
     end

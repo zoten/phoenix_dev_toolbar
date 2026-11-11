@@ -22,15 +22,29 @@ defmodule PhoenixDevToolbar.PageLookup do
   @spec newest(keyword()) :: String.t() | nil
   def newest(opts \\ []) do
     case Report.latest(filter(opts)) do
-      %{kind: :live_view, sid: sid, parent: parent} when is_binary(parent) ->
+      %{sid: sid} -> root(sid)
+      nil -> nil
+    end
+  end
+
+  @doc """
+  The root sid of the page `sid` belongs to: a connected mount (a LiveView whose
+  `parent` is a captured request) reads as its request; anything else, a live
+  navigated LiveView or an unknown sid, is its own root. The one place of this
+  rule (ADR 13, 15).
+  """
+  @spec root(Session.sid()) :: Session.sid()
+  def root(sid) when is_binary(sid) do
+    case Store.session(sid) do
+      {:ok, %Session{kind: :live_view, parent: parent}} when is_binary(parent) ->
         request_parent(parent, sid)
 
-      %{sid: sid} ->
+      _other ->
         sid
-
-      nil ->
-        nil
     end
+  rescue
+    # The Store's tables are gone while it restarts.
+    ArgumentError -> sid
   end
 
   @doc "The `Report.sessions/1` options for `:path` / `:path_prefix`."

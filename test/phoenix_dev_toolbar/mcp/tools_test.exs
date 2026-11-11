@@ -197,6 +197,20 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
 
       assert call_error("page_summary", %{"verbose" => "yes"}) =~ "verbose must be a boolean"
     end
+
+    test "an explicit connected mount sid reads its whole page" do
+      req = session(:request, path: "/users", started_at: @t0)
+      query(req)
+      mount = session(:live_view, path: "/users", parent: req.sid, started_at: @t0 + 1)
+      query(mount)
+
+      assert %{"queries" => %{"count" => 2}, "panel_url" => url} =
+               call!("page_summary", %{"sid" => mount.sid})
+
+      assert url == "http://localhost:4000/__pdt/panel?sid=" <> req.sid
+      assert %{"sid" => sid, "total" => 2} = call!("page_queries", %{"sid" => mount.sid})
+      assert sid == req.sid
+    end
   end
 
   describe "page_callbacks sids" do
@@ -400,6 +414,24 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
                call!("recent_errors", %{"since" => a.sid})
     end
 
+    test "items carry page_sid, the request for a connected mount" do
+      req = session(:request, path: "/a", started_at: @t0)
+      mount = failing(:live_view, "/a", @t0 + 1, "in handle_info", parent: req.sid)
+
+      assert %{"errors" => [%{"sid" => sid, "page_sid" => page}]} = call!("recent_errors")
+      assert {sid, page} == {mount.sid, req.sid}
+    end
+
+    test "a sid cursor does not move while its tab emits later events" do
+      req = failing(:request, "/a", @t0, "old")
+      mount = session(:live_view, path: "/a", parent: req.sid, started_at: @t0 + 1_000_000)
+      _b = failing(:request, "/b", @t0 + 5_000_000, "newer")
+      callback(mount, :handle_info, error: "old tab again", at: @t0 + 9_000_000)
+
+      assert %{"errors" => [%{"message" => "newer"}]} =
+               call!("recent_errors", %{"since" => req.sid})
+    end
+
     test "an empty Store gives an empty list" do
       assert %{"total" => 0, "returned" => 0, "errors" => []} = call!("recent_errors")
     end
@@ -457,6 +489,16 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
                call!("compare_pages", %{"before" => before.sid, "path" => "/other"})
 
       assert sid == other.sid
+    end
+
+    test "an explicit path at another page warns that the pages differ" do
+      before = slow_page("/posts", @t0)
+      _other = session(:request, path: "/other", started_at: @t0 + 2)
+
+      assert %{"warning" => warning} =
+               call!("compare_pages", %{"before" => before.sid, "path" => "/other"})
+
+      assert warning =~ "/posts" and warning =~ "/other"
     end
 
     test "no page after before is a tool error telling to reload" do

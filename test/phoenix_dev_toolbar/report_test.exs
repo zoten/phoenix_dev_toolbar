@@ -30,6 +30,15 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert [c.sid] == Enum.map(Report.sessions(since: cursor, path: "/c"), & &1.sid)
     end
 
+    test "since: a connected mount sid means after its page (the request) started" do
+      req = session(:request, path: "/a", started_at: @t0)
+      mount = session(:live_view, path: "/a", parent: req.sid, started_at: @t0 + 5)
+      later = session(:request, path: "/b", started_at: @t0 + 9)
+
+      assert [later.sid, mount.sid] == Enum.map(Report.sessions(since: mount.sid), & &1.sid)
+      assert [later.sid, mount.sid] == Enum.map(Report.sessions(since: req.sid), & &1.sid)
+    end
+
     test "since: an unknown sid or an unusable value gives no sessions, never a raise" do
       session(:request, path: "/a", started_at: @t0)
 
@@ -362,13 +371,38 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert ["c", "b", "a"] == messages.(since: nil)
     end
 
-    test "since: a sid cuts after the page's last captured event, its mount child included" do
+    test "since: a sid means after that page started, never the page's own events" do
       req = failing(:request, "/a", @t0, "page crash", @t0 + 3)
       mount = session(:live_view, path: "/a", parent: req.sid, started_at: @t0 + 1)
       callback(mount, :handle_info, error: "mount crash", at: @t0 + 4)
       _newer = failing(:request, "/b", @t0 + 8, "newer page", @t0 + 9)
 
       assert ["newer page"] == Report.recent_errors(since: req.sid) |> Enum.map(& &1.message)
+      assert ["newer page"] == Report.recent_errors(since: mount.sid) |> Enum.map(& &1.message)
+    end
+
+    test "since: a sid does not move while the old page stays open and emits events" do
+      req = failing(:request, "/a", @t0, "old crash", @t0 + 1)
+      mount = session(:live_view, path: "/a", parent: req.sid, started_at: @t0 + 2)
+      _other = failing(:request, "/b", @t0 + 5, "other page error", @t0 + 6)
+      # The old tab keeps emitting after the other page's error.
+      callback(mount, :handle_info, error: "old tab crash", at: @t0 + 20)
+
+      assert ["other page error"] ==
+               Report.recent_errors(since: req.sid) |> Enum.map(& &1.message)
+    end
+
+    test "items carry page_sid, the request for a connected mount" do
+      req = session(:request, path: "/a", started_at: @t0)
+      mount = failing(:live_view, "/a", @t0 + 1, "in handle_info", @t0 + 2)
+      mount_child = session(:live_view, path: "/a", parent: req.sid, started_at: @t0 + 3)
+      callback(mount_child, :handle_info, error: "child", at: @t0 + 4)
+
+      assert [%{sid: child_sid, page_sid: child_page}, %{sid: sid, page_sid: page}] =
+               Report.recent_errors()
+
+      assert {child_sid, child_page} == {mount_child.sid, req.sid}
+      assert {sid, page} == {mount.sid, mount.sid}
     end
 
     test "request exceptions and render failures are listed, a mount's error once under its sid" do
@@ -821,6 +855,24 @@ defmodule PhoenixDevToolbar.ReportTest do
                Report.compare(req.sid, nav.sid)
 
       assert warning =~ "request" and warning =~ "live_view"
+    end
+
+    test "pages at different paths carry a warning naming both" do
+      a = page("/posts", @t0, fn _s -> :ok end)
+      b = page("/users", @t0 + 1, fn _s -> :ok end)
+
+      assert %{warning: warning} = Report.compare(a.sid, b.sid)
+      assert warning =~ "/posts" and warning =~ "/users"
+    end
+
+    test "a connected mount sid reads as its request page" do
+      req = page("/posts", @t0, fn s -> query(s) end)
+      mount = session(:live_view, path: "/posts", parent: req.sid, started_at: @t0 + 1)
+      after_ = page("/posts", @t0 + 5, fn _s -> :ok end)
+
+      assert %{before: %{sid: sid, sids: sids}} = Report.compare(mount.sid, after_.sid)
+      assert sid == req.sid
+      assert req.sid in sids
     end
 
     test "takes session maps, and is nil when either side is gone" do

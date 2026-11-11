@@ -72,7 +72,7 @@ Check, in this order:
 `Report.sessions(path: "/posts", limit: 5)` (over MCP, `list_pages` with
 `path: "/posts"`) and keep the session whose
 `started_at` follows your trigger. For a before/after check, remember the sid
-you measured, then use `Report.sessions(since: sid)` (over MCP, `list_pages`
+you measured, then use `Report.compare(sid, after_sid)`, or `Report.sessions(since: sid)` (it lists the request's own connected mount too; over MCP, `list_pages`
 with `since`). Over MCP the loop is: `page_summary`, note the sid, edit,
 reload, `compare_pages(before: sid)`; in Elixir, `Report.compare(before_sid,
 after_sid)` returns the same deltas.
@@ -83,7 +83,7 @@ Re-run steps 2 and 3 (code reloading applies the change on the next request)
 and compare: `compare_pages(before: sid)` over MCP, `Report.compare(before_sid,
 after_sid)` in Elixir (deltas, N+1 and errors fixed or new; mind its
 `warning`). Report the delta: "/posts: 23 queries (21 ms) ->
-3 queries (4 ms), N+1 on `comments` gone". Also check `recent_errors` (`Report.recent_errors(since: sid)`) after a change (a sid cursor hides that page's own old crashes): it shows crashes in `handle_info` or other tabs that the page does not.
+3 queries (4 ms), N+1 on `comments` gone". Also check `recent_errors` (`Report.recent_errors(since: sid)`) after a change (a sid cursor means after that page started and never lists that page's own crashes): it shows crashes in `handle_info` or other tabs that the page does not.
 
 ## Going deeper
 

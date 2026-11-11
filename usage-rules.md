@@ -44,7 +44,7 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
 
 - `list_pages` (filter with `path` or `path_prefix`; `since` takes a sid or
   ISO 8601 time: note the sid you measured, edit, reload, then list with
-  `since` to get only the new pages), then `page_summary` with
+  `since` to get only pages that started after it), then `page_summary` with
   the page's `sid` or its `path` (compact; `verbose: true` for full items).
   Without either, tools read the newest page.
 - To check a change: `page_summary`, note its `sid`, edit, reload the page,
@@ -58,7 +58,7 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
 - The `audit_page` prompt (argument `path`) runs the whole audit of one page:
   summary, N+1, slowest queries, errors, assigns shape, then a report.
 - `recent_errors` after a change: crashes in `handle_info` or in other tabs that
-  the page lookups miss (`since` takes the sid you measured, hiding that page's old crashes, or a time; `limit`).
+  the page lookups miss (`since` takes the sid you measured: errors after that page started, never that page's own; or a time; `limit`).
 - `page_queries`, `page_callbacks` (`sort: "slowest"`, `limit`),
   `page_n_plus_one`, `page_errors` for the details.
 - A "No page captured" error means the page was not loaded in the last 10

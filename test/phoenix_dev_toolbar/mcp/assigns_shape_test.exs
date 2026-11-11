@@ -61,7 +61,10 @@ defmodule PhoenixDevToolbar.Mcp.AssignsShapeTest do
     assert result["live_view_sid"] == live.sid
     assert result["live_view_path"] == "/shape"
 
-    assert shape!(%{"sid" => live.sid})["sid"] == live.sid
+    # An explicit connected mount sid reads as its page (ADR 13).
+    by_mount = shape!(%{"sid" => live.sid})
+    assert by_mount["sid"] == request.sid
+    assert by_mount["live_view_sid"] == live.sid
   end
 
   test "a dead owner and a page without a LiveView are tool errors",

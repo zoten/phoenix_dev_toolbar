@@ -20,8 +20,8 @@ the plugins.
 Store, built for IEx and agents:
 
 - `sessions/1` lists page views newest first, filtered by `:path` (string or
-  regex), `:view`, `:kind`, `:limit`, `:since` (a sid or a `DateTime`: only
-  sessions that started after it; an unknown sid gives `[]`); `latest/1` is the
+  regex), `:view`, `:kind`, `:limit`, `:since` (a sid, read as its page root, or a `DateTime`: only
+  sessions that started after that page; an unknown sid gives `[]`); `latest/1` is the
   newest match.
 - `summary/2` gives one compact map per page: the request, query count, failures
   and total time with the 5 slowest queries, N+1 groups, callback totals with the
@@ -30,10 +30,10 @@ Store, built for IEx and agents:
   assigns changes, times or stacktrace; an error keeps its first frame as
   `origin`; LiveView crashes carry their stacktrace in call order, cut after the last host frame plus one, and `origin` is their first host frame, ADR 07; an error carries `stack_args`, the call arguments of its frames, only when the developer set `stack_args: [agents: true]`, ADR 03): `verbose: true` returns the full items, `queries/2`, `callbacks/2`
   and `errors/2` the detail.
-- `recent_errors/1` lists the newest failures of every session the Store holds (a bounded read of its capped sessions), newest first, as error briefs plus `at` and the session `path`; `since:` (sid: errors after that page's last captured event, its connected mount included, so a fixed page shows none of its old crashes; `DateTime`: errors after it) and `limit:` (20, `nil` for all). It sees crashes in `handle_info` or another tab that no page lookup points at.
+- `recent_errors/1` lists the newest failures of every session the Store holds (a bounded read of its capped sessions), newest first, as error briefs plus `at`, the session `path`, `page_sid` (the root: a connected mount reads as its request) and `since:` (sid: errors after that page started, the page's own sessions, request and connected mount, never listed, so a fixed page shows none of its old crashes and its tab emitting later does not hide other pages; `DateTime`: errors after it) and `limit:` (20, `nil` for all). It sees crashes in `handle_info` or another tab that no page lookup points at.
 - `markdown/2` renders a page as Markdown for an agent or a bug report (nil when gone), from `summary/2` with `verbose: true` (the slowest queries need their SQL; nothing beyond the summary caps): heading with path and view, request line, totals, N+1, slowest queries and callbacks, unattributed origins and the first 20 errors (source, message and origin, not frames; the rest counted). Empty sections are left out. Captured text (SQL, messages, origins) is one inline code span per table cell, capped at 300 characters, with `|` escaped; other text is escaped so it never reads as Markdown or HTML. SQL that is long or multi-line goes in a fenced block under its table (a fence longer than any backtick run inside). The panel's "Copy as Markdown" (ADR 04) and MCP `page_report` (ADR 15) return it.
 - `compare/3` puts two targets side by side, built from two compact `summary/2`
-  calls (options pass through; a connected mount reads as its request; nil when
+  calls (options pass through; a connected mount reads as its request, via `PageLookup.root/1`, the one place of that rule for compare, recent_errors and the MCP tools; nil when
   either side is gone): `queries`, `callbacks`, `renders` and `unattributed` as
   `%{before, after, delta}` of `count` and `total_us` (delta is after minus
   before), `n_plus_one` and `errors` as `%{fixed, fixed_total, new, new_total,
@@ -110,7 +110,7 @@ Store, built for IEx and agents:
   have no Report shape.
 - `since` excludes sessions that start in the same microsecond as the cursor.
 - `started_at` is wall-clock time: a clock step back can hide pages from `since`.
-- `Report.sessions(since: request_sid)` includes that request's own connected
+- `Report.sessions(since: sid)` includes that request's own connected
   mount (`list_pages` drops mounts).
 - `recent_errors` copies every captured event of up to 50 sessions per call (bounded, on demand).
 - `compare` `still` is a count only: an N+1 group dropping from 50 repetitions to 10 shows as still.

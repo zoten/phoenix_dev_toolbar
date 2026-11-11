@@ -93,12 +93,12 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "recent_errors",
         "List recent errors across pages",
-        "The newest failures across every captured page, newest first, each with its page path and panel_url. Catches crashes the page lookups miss: a handle_info crash, another browser tab. Check it after a change.",
+        "The newest failures across every captured page, newest first, each with its page path, page_sid (a connected mount reads as its request) and panel_url. Catches crashes the page lookups miss: a handle_info crash, another browser tab. Check it after a change.",
         %{
           "since" => %{
             "type" => "string",
             "description" =>
-              "Only errors after this: a sid from an earlier list_pages or page_summary (errors after that page's last captured event, so a fixed page shows none of its old crashes) or an ISO 8601 timestamp."
+              "Only errors after this: a sid from an earlier list_pages or page_summary (errors after that page started, never that page's own, so a fixed page shows none of its old crashes) or an ISO 8601 timestamp."
           },
           "limit" => int_prop("Maximum errors to return.", 1, 100, 20)
         }
@@ -114,12 +114,13 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
           },
           "after" => %{
             "type" => "string",
-            "description" => "Sid of the later capture. Not with path. Default: see path."
+            "description" =>
+              "Sid of the later capture. Not with path. Default: see path. A connected mount sid reads as its page."
           },
           "path" => %{
             "type" => "string",
             "description" =>
-              "Exact request path: compare with its newest capture started after before. Default: before's own path."
+              "Exact request path: compare with its newest capture started after before. Default: before's own path. A different path than before's gets a warning."
           }
         }
       ),
@@ -299,22 +300,10 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       errors =
         all
         |> Enum.take(limit)
-        |> Enum.map(&Map.put(&1, :panel_url, panel_url(opts, page_sid(&1.sid))))
+        |> Enum.map(&Map.put(&1, :panel_url, panel_url(opts, &1.page_sid)))
 
       {:ok, %{"total" => length(all), "returned" => length(errors), "errors" => errors}}
     end
-  end
-
-  # A connected mount belongs to its request's page (see `reject_mounts/1`).
-  defp page_sid(sid) do
-    with {:ok, %{kind: :live_view, parent: parent}} when is_binary(parent) <- Store.session(sid),
-         {:ok, %{kind: :request}} <- Store.session(parent) do
-      parent
-    else
-      _own_page -> sid
-    end
-  rescue
-    ArgumentError -> sid
   end
 
   defp in_order(%{before: b, after: a} = comparison, opts) do
@@ -562,7 +551,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
 
   defp resolve_page(sid, _path) do
     case PageLookup.valid_sid?(sid) do
-      true -> found(existing(sid))
+      true -> found(sid |> existing() |> root())
       false -> {:error, "sid must match [A-Za-z0-9_-], 1 to 64 characters"}
     end
   end
@@ -575,6 +564,10 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   rescue
     ArgumentError -> nil
   end
+
+  # An explicit mount sid reads its whole page (PageLookup.root/1).
+  defp root(nil), do: nil
+  defp root(sid), do: PageLookup.root(sid)
 
   defp found(nil), do: {:error, no_page()}
   defp found(sid), do: {:ok, sid}
