@@ -95,4 +95,8 @@ Store, built for IEx and agents:
   MCP endpoint (ADR 15) work.
 - Plugin events other than the built-ins (`:ecto`, `:request`, `:live_view`)
   have no Report shape.
+- `since` excludes sessions that start in the same microsecond as the cursor.
+- `started_at` is wall-clock time: a clock step back can hide pages from `since`.
+- `Report.sessions(since: request_sid)` includes that request's own connected
+  mount (`list_pages` drops mounts).
 - Assigns snapshots, client `phx:*` events and the component tree are not exposed.

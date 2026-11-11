@@ -101,7 +101,9 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       assert %{"pages" => [%{"sid" => sid}]} = call!("list_pages", %{"since" => iso})
       assert sid == c.sid
 
-      assert %{"pages" => []} = call!("list_pages", %{"since" => "unknown-sid"})
+      msg = call_error("list_pages", %{"since" => "unknown-sid"})
+      assert msg =~ "no longer captured" and msg =~ "started_at" and msg =~ "ISO 8601"
+      assert call_error("list_pages", %{"since" => "2026-11-11"}) =~ "no longer captured"
     end
 
     test "an invalid since is a tool error saying what is accepted" do

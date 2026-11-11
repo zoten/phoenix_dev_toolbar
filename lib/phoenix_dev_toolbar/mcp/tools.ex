@@ -214,23 +214,37 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
         parse_since(value)
 
       _other ->
-        {:error, since_message()}
+        {:error, since_message(false)}
     end
   end
 
+  # A sid must still be in the Store; otherwise it may be a timestamp.
   defp parse_since(value) do
-    with false <- PageLookup.valid_sid?(value),
-         {:ok, datetime, _offset} <- DateTime.from_iso8601(value) do
-      {:ok, since: datetime}
+    with true <- PageLookup.valid_sid?(value),
+         sid when is_binary(sid) <- existing(value) do
+      {:ok, since: sid}
     else
-      true -> {:ok, since: value}
-      {:error, _reason} -> {:error, since_message()}
+      _not_a_live_sid -> parse_timestamp(value)
     end
   end
 
-  defp since_message,
+  defp parse_timestamp(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, datetime, _offset} -> {:ok, since: datetime}
+      {:error, _reason} -> {:error, since_message(PageLookup.valid_sid?(value))}
+    end
+  end
+
+  defp since_message(true),
     do:
-      "since must be a page sid (from list_pages) or an ISO 8601 timestamp such as 2026-11-11T10:00:00Z."
+      "since: that sid is no longer captured (sessions are capped and expire). " <>
+        "Pass its started_at (ISO 8601, such as 2026-11-11T10:00:00Z) instead; " <>
+        "accepted: a captured page sid or an ISO 8601 timestamp."
+
+  defp since_message(false),
+    do:
+      "since must be a captured page sid (from list_pages) or an ISO 8601 timestamp " <>
+        "such as 2026-11-11T10:00:00Z."
 
   defp exclusive(path, prefix) when is_binary(path) and is_binary(prefix),
     do: {:error, "Use path or path_prefix, not both."}
