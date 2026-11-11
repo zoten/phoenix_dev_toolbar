@@ -11,12 +11,12 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
   alias PhoenixDevToolbar.ClientEvent
   alias PhoenixDevToolbar.ComponentTree
   alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.LiveViewAssigns
   alias PhoenixDevToolbar.Page
   alias PhoenixDevToolbar.Panel
   alias PhoenixDevToolbar.Panels.LiveView
   alias PhoenixDevToolbar.Panels.LiveViewSections
   alias PhoenixDevToolbar.Profile
-  alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
   alias PhoenixDevToolbar.Truncate
 
@@ -241,9 +241,9 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
   end
 
   defp take_snapshot(owner) do
-    case Phoenix.LiveView.Debug.socket(owner) do
-      {:ok, %{assigns: assigns}} -> Truncate.snapshot(assigns)
-      {:error, _reason} -> {:missing, :gone}
+    case LiveViewAssigns.fetch(owner) do
+      {:ok, assigns} -> Truncate.snapshot(assigns)
+      :error -> {:missing, :gone}
     end
   end
 
@@ -303,19 +303,7 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
   defp live_view_pids(%Page{sids: sids}),
     do: Enum.flat_map(sids, fn sid -> safe(fn -> Store.pids_for(sid) end, []) end)
 
-  # The page's newest LiveView (read now: a rejoin changes the owner).
-  defp live_view_owner(%Page{sids: sids}) do
-    sids
-    |> Enum.reverse()
-    |> Enum.find_value(&live_view_owner_of/1)
-  end
-
-  defp live_view_owner_of(sid) do
-    case safe(fn -> Store.session(sid) end, :error) do
-      {:ok, %Session{kind: :live_view, owner: owner}} when is_pid(owner) -> owner
-      _other -> nil
-    end
-  end
+  defp live_view_owner(page), do: LiveViewAssigns.owner(page)
 
   # The Store's tables vanish while it restarts: the panel shows what it can.
   defp safe(fun, fallback) do

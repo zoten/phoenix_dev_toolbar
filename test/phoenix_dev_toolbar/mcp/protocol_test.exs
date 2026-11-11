@@ -83,7 +83,7 @@ defmodule PhoenixDevToolbar.Mcp.ProtocolTest do
           Protocol.handle(rpc("tools/list"), %{"mcp-protocol-version" => "2025-06-18"}, @opts)
         )
 
-      assert length(result["tools"]) == 9
+      assert length(result["tools"]) == 10
       refute Map.has_key?(result, "resultType")
     end
 

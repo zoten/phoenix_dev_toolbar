@@ -92,6 +92,7 @@ the default resolve to the request. `list_pages` with both `path` and
 | `page_errors` | `sid`, `path`, `limit` (1..100, 20) | `sid`, `panel_url`, `total`, `returned`, `errors` |
 | `recent_errors` | `since` (a captured sid: errors after that page's last captured event; or ISO 8601 time; same parsing and errors as `list_pages`), `limit` (1..100, 20) | `total`, `returned`, `errors` (`Report.recent_errors/1`, newest first), each with a `panel_url` (a connected mount links to its request's page) |
 | `page_report` | `sid`, `path` | `sid`, `panel_url`, `markdown` (`Report.markdown/2`) as `structuredContent`; the text block is the Markdown itself, not JSON |
+| `page_assigns_shape` | `sid`, `path` | `sid`, `view`, `panel_url`, `total_words`, `omitted`, `assigns` (at most 100, largest first, by `:erts_debug.flat_size/1` words of the untruncated value): `key` (inspect string), `type` (`list`, `map`, `struct Mod`, `binary`, ...), `length` (lists and maps), `words`, `stream?`. No values; each stream is its own entry. The LiveView is the page's newest one (a request page: its connected mount); no LiveView, a dead owner or a LiveView that is gone is a tool error saying the page must be open in a browser |
 | `compare_pages` | `before` (a captured sid, required), `after` (a captured sid) or `path` (the newest page at that path started after `before`; default: `before`'s path), not both | `Report.compare/3` (a connected mount reads as its request; `warning` when the sides differ in kind or session count) plus `before_panel_url` and `after_panel_url`; no page after `before` is a tool error asking to reload the page, and an `after` older than `before` is a tool error |
 
 `panel_url` is absolute, built from the request's scheme, host and port (the
@@ -123,6 +124,7 @@ not a breaking change, renaming or removing is (a CHANGELOG line).
 
 ## Open limits
 
+- `page_assigns_shape` reads the LiveView live (`Phoenix.LiveView.Debug.socket/1`, shared with the panel's Assigns snapshot, ADR 07): it needs the page open, copies the LiveView's assigns into a task of the request (large assigns are briefly held twice) and is a tool error after 2 s (a busy LiveView). Nested LiveViews and components are not covered; the task, not the LiveView, does the size walk.
 - `recent_errors` with a sid that expires between validation and read returns no errors instead of a tool error.
 - A dev server bound to a Unix socket has no peer address to match: only
   `clients: :any` lets its clients in.

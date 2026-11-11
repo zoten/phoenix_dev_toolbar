@@ -28,11 +28,11 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
     message
   end
 
-  test "list/0 describes nine read-only tools with strict schemas" do
+  test "list/0 describes ten read-only tools with strict schemas" do
     tools = Tools.list()
 
     assert Enum.map(tools, & &1["name"]) ==
-             ~w(list_pages page_summary page_queries page_callbacks page_n_plus_one page_errors recent_errors compare_pages page_report)
+             ~w(list_pages page_summary page_queries page_callbacks page_n_plus_one page_errors recent_errors compare_pages page_report page_assigns_shape)
 
     for tool <- tools do
       assert tool["annotations"] == %{"readOnlyHint" => true}

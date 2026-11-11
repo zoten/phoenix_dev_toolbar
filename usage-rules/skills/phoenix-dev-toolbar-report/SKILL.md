@@ -23,7 +23,8 @@ The data lives in the dev server's VM (`mix phx.server` or `mix dev`, in dev).
   instead of the Elixir below: `page_summary` (`path: "/posts"`) for step 3,
   `page_n_plus_one`, `page_queries`, `page_callbacks` (`sort: "slowest"`) and
   `page_errors` for the details, `page_report` for a Markdown page to paste
-  (`Report.markdown/2`). Same keys as `Report`. No VM access needed.
+  (`Report.markdown/2`), `page_assigns_shape` for big lists in assigns that
+  should be streams (live read: the page must be open). Same keys as `Report`. No VM access needed.
 - With Tidewave: run the code below through `project_eval`.
 - With only a browser tool: skip the Elixir below and read the standalone
   panel, `http://localhost:4000/__pdt/panel?path=/posts`, through its

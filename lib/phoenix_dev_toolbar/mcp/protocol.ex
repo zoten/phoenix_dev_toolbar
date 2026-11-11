@@ -15,7 +15,7 @@ defmodule PhoenixDevToolbar.Mcp.Protocol do
 
   @instructions "Read-only access to what Phoenix Dev Toolbar captured in the running dev app: " <>
                   "list_pages, then page_summary, page_queries, page_callbacks, page_n_plus_one " <>
-                  "and page_errors for a page, page_report for a page as Markdown, recent_errors for failures across pages (also after a change). list_pages takes since (a sid or a time) for " <>
+                  "and page_errors for a page, page_report for a page as Markdown, page_assigns_shape for assign sizes (the page must be open), recent_errors for failures across pages (also after a change). list_pages takes since (a sid or a time) for " <>
                   "pages captured after an earlier call. To check a change: page_summary, note " <>
                   "its sid, edit, reload the page, then compare_pages with before: sid. " <>
                   "Load the page first (a browser, or curl with " <>

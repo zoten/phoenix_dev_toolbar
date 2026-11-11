@@ -52,6 +52,9 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
   after it, or pass `after` or `path`): deltas, N+1 and errors fixed or new.
 - `page_report` returns a page as Markdown (tables, SQL in fenced blocks): use it
   to paste a finding into a bug report or answer.
+- `page_assigns_shape` weighs the assigns of the page's LiveView (type, length,
+  words, `stream?`, no values): look for big lists that should be streams. It
+  reads the LiveView live, so the page must be open in a browser.
 - `recent_errors` after a change: crashes in `handle_info` or in other tabs that
   the page lookups miss (`since` takes the sid you measured, hiding that page's old crashes, or a time; `limit`).
 - `page_queries`, `page_callbacks` (`sort: "slowest"`, `limit`),

@@ -3,6 +3,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   # The MCP tools (ADR 15): read-only views over `PhoenixDevToolbar.Report`.
   # Pure: no conn. Every result goes through `Mcp.Json.safe/1`.
 
+  alias PhoenixDevToolbar.AssignsShape
   alias PhoenixDevToolbar.Mcp.Json
   alias PhoenixDevToolbar.PageLookup
   alias PhoenixDevToolbar.Report
@@ -127,6 +128,12 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
         "Report a page as Markdown",
         "The page summary as Markdown, ready to read or paste into a bug report: request line, totals, N+1 findings, slowest queries (with SQL) and callbacks, errors.",
         page_props()
+      ),
+      tool(
+        "page_assigns_shape",
+        "Weigh a LiveView's assigns",
+        "The size of each assign of the page's LiveView, largest first, with no values: type, length, words (memory) and stream?. Look for big lists that should be streams. Read live: the page must be open in a browser.",
+        page_props()
       )
     ]
   end
@@ -216,6 +223,22 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       case Report.markdown(sid) do
         nil -> {:error, no_page()}
         markdown -> {:ok, report(markdown, sid, panel_url(opts, sid))}
+      end
+    end
+  end
+
+  # A live read of the host LiveView, in a task with a timeout (AssignsShape).
+  defp execute("page_assigns_shape", args, opts) do
+    with {:ok, sid} <- resolve(args) do
+      case AssignsShape.read(sid) do
+        {:ok, shape} ->
+          {:ok, Map.merge(shape, %{sid: sid, panel_url: panel_url(opts, sid)})}
+
+        {:error, :timeout} ->
+          {:error, "Reading the assigns timed out: the LiveView is busy. Try again in a moment."}
+
+        {:error, _no_live_view_or_gone} ->
+          {:error, "The page must be open in a browser (assigns are read live)."}
       end
     end
   end

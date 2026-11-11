@@ -40,7 +40,9 @@ navigation.
   and after new callbacks at most once per second while the panel is open and
   visible (a throttled refresh is scheduled, so the last callback is never missed).
   Keys changed by the last callback are highlighted. A dead page shows "No LiveView
-  on this page", a dead owner "not running anymore".
+  on this page", a dead owner "not running anymore". The read itself is one
+  internal function, `LiveViewAssigns.fetch/1` (and `owner/1` for the page's newest
+  LiveView), shared with MCP `page_assigns_shape` (ADR 15).
 - **Components**: `PhoenixDevToolbar.ComponentTree` reads, in a task, the page's
   LiveView and its nested LiveViews (the processes tracked as the page,
   `Store.pids_for/1`, labelled through `LiveViewCompat.live_view_label/1`), and for
