@@ -29,7 +29,7 @@ defmodule PhoenixDevToolbar.Components do
         data-pdt-level={badge.level}
         title={badge[:title]}
       >
-        {badge.text}
+        {badge.text}<span :if={badge[:title]} class="pdt-sr-only">: {badge[:title]}</span>
       </span>
       <span
         :if={@dropped > 0}
@@ -38,7 +38,7 @@ defmodule PhoenixDevToolbar.Components do
         data-pdt-level="warn"
         title="Events over the per second limit were not recorded: counts are lower than reality"
       >
-        +{@dropped} dropped
+        +{@dropped} dropped<span class="pdt-sr-only">: Events over the per second limit were not recorded: counts are lower than reality</span>
       </span>
       <span
         :if={@trimmed > 0}
@@ -47,7 +47,7 @@ defmodule PhoenixDevToolbar.Components do
         data-pdt-level="warn"
         title="The oldest events were removed past the per session limits: lists start later than the page"
       >
-        {@trimmed} older trimmed
+        {@trimmed} older trimmed<span class="pdt-sr-only">: The oldest events were removed past the per session limits: lists start later than the page</span>
       </span>
     </div>
     """
@@ -85,21 +85,21 @@ defmodule PhoenixDevToolbar.Components do
         <.phase_tag sid={@event.sid} root={@root} />
         <span :if={@event.data.source} class="pdt-tag">{@event.data.source}</span>
         <span class="pdt-tag">{result(@event.data.result)}</span>
-        <span :if={@event.data.caller?} class="pdt-tag" title="Run by a Task.async child of the page">task</span>
+        <span :if={@event.data.caller?} class="pdt-tag" title="Run by a Task.async child of the page">task<span class="pdt-sr-only">: Run by a Task.async child of the page</span></span>
         <span
           :if={@noise}
           id={"pdt-noise-#{@event.seq}"}
           class="pdt-tag"
           title="A framework query (such as Phoenix.Ecto.CheckRepoStatus, run on every dev request): left out of the query count"
         >
-          framework
+          framework<span class="pdt-sr-only">: A framework query (such as Phoenix.Ecto.CheckRepoStatus, run on every dev request): left out of the query count</span>
         </span>
         <span
           :if={@event.data[:n_plus_one?]}
           class="pdt-tag pdt-tag--warn"
           title="Repeated in one callback (or between two callbacks): see the N+1 list above"
         >
-          N+1
+          N+1<span class="pdt-sr-only">: Repeated in one callback (or between two callbacks): see the N+1 list above</span>
         </span>
         <span :if={origin(@event)} class="pdt-origin">{origin(@event)}</span>
         <button
@@ -296,7 +296,7 @@ defmodule PhoenixDevToolbar.Components do
       data-pdt-phase="http"
       title="Ran during the HTTP request (dead render)"
     >
-      HTTP
+      HTTP<span class="pdt-sr-only">: Ran during the HTTP request (dead render)</span>
     </span>
     """
   end
@@ -304,7 +304,7 @@ defmodule PhoenixDevToolbar.Components do
   defp phase_tag(assigns) do
     ~H"""
     <span class="pdt-tag pdt-tag--live" data-pdt-phase="live" title="Ran in the connected LiveView">
-      live
+      live<span class="pdt-sr-only">: Ran in the connected LiveView</span>
     </span>
     """
   end
