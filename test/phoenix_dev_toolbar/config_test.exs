@@ -2,7 +2,6 @@ defmodule PhoenixDevToolbar.ConfigTest do
   use ExUnit.Case, async: true
 
   import ExUnit.CaptureLog
-  import PhoenixDevToolbar.EnvHelpers
 
   alias PhoenixDevToolbar.Config
   alias PhoenixDevToolbar.Plugins
