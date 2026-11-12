@@ -2,8 +2,9 @@
    iframe, so nothing here can leak into the host page. The header is exactly
    as tall as the collapsed iframe (34px, see assets/js/loader.js).
 
-   Convention: flow relative properties (margin-inline-start, inset-block-start,
-   text-align: start). Physical ones only for screen edges, under a `physical:` comment. */
+   Convention: flow relative properties on both axes (margin-inline-start,
+   padding-block-end, inset-block-start, text-align: start). Physical ones only
+   for screen edges, under a `physical:` comment. */
 
 :root {
   --pdt-bg: light-dark(#ffffff, #161922);
@@ -245,8 +246,14 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
   border-radius: 6px;
   background: var(--pdt-header);
   box-shadow: 0 4px 16px rgba(0, 0, 0, .3);
-  max-height: calc(100vh - 42px);
+  max-height: calc(100% - 4px);
   overflow-y: auto;
+  font-size: 0.75rem;
+}
+
+/* Popover without anchor positioning: hang the menu under the picker by hand. */
+@supports not (position-area: block-end) {
+  .pdt-dock-menu { inset: 38px 8px auto auto; }
 }
 
 .pdt-dock-menu:not(:popover-open) { display: none; }
@@ -315,7 +322,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
   content-visibility: auto;
   contain-intrinsic-size: auto 48px;
   padding: 6px 12px;
-  border-bottom: 1px solid var(--pdt-border);
+  border-block-end: 1px solid var(--pdt-border);
 }
 
 .pdt-row:nth-child(even) { background: var(--pdt-bg-alt); }
@@ -331,7 +338,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-top: 3px;
+  margin-block-start: 3px;
   color: var(--pdt-muted);
 }
 
@@ -365,10 +372,10 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 .pdt-tag--warn { color: var(--pdt-warn); border-color: color-mix(in srgb, var(--pdt-warn) 45%, transparent); }
 
 /* The N+1 groups above the Ecto queries (ADR 08). */
-.pdt-export { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 12px; border-bottom: 1px solid var(--pdt-border); font-size: 0.6875rem; }
+.pdt-export { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 12px; border-block-end: 1px solid var(--pdt-border); font-size: 0.6875rem; }
 .pdt-export__label { font-weight: 600; color: var(--pdt-muted); }
 .pdt-export label { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
-.pdt-n-plus-one { border-bottom: 1px solid var(--pdt-border); background: var(--pdt-bg-alt); }
+.pdt-n-plus-one { border-block-end: 1px solid var(--pdt-border); background: var(--pdt-bg-alt); }
 .pdt-n-plus-one__head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 0; }
 .pdt-n-plus-one__title { margin: 0; font-size: 0.75rem; color: var(--pdt-warn); }
 #pdt-n-plus-one-advice { margin: 0; padding: 4px 12px; }
@@ -391,7 +398,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 
 .pdt-hint { color: var(--pdt-muted); }
 
-.pdt-details { margin-top: 3px; }
+.pdt-details { margin-block-start: 3px; }
 
 .pdt-details summary, .pdt-details__toggle {
   width: max-content;
@@ -428,7 +435,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
   overflow-wrap: anywhere;
 }
 
-.pdt-error { margin-top: 4px; color: var(--pdt-error); }
+.pdt-error { margin-block-start: 4px; color: var(--pdt-error); }
 
 /* LiveView tab: sub-tabs, profiler table, diff and push tags */
 
@@ -440,11 +447,11 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
   gap: 2px;
   padding: 4px 8px;
   background: var(--pdt-bg);
-  border-bottom: 1px solid var(--pdt-border);
+  border-block-end: 1px solid var(--pdt-border);
 }
 
 .pdt-subtab {
-  height: 22px;
+  min-block-size: 22px;
   padding: 0 10px;
   border: 0;
   border-radius: 4px;
@@ -461,7 +468,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 
 .pdt-table th, .pdt-table td {
   padding: 4px 12px;
-  border-bottom: 1px solid var(--pdt-border);
+  border-block-end: 1px solid var(--pdt-border);
   text-align: start;
   white-space: nowrap;
 }
@@ -477,7 +484,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 .pdt-snapshot-bar { display: flex; align-items: center; gap: 10px; padding: 6px 12px; }
 
 .pdt-button {
-  height: 22px;
+  min-block-size: 22px;
   padding: 0 10px;
   border: 1px solid var(--pdt-border);
   border-radius: 4px;
@@ -488,7 +495,9 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 }
 
 .pdt-button:hover { background: var(--pdt-bg-alt); }
-.pdt-button--small { height: 18px; padding: 0 6px; font: 600 min(0.6875rem, 12px)/16px var(--pdt-mono); }
+.pdt-button--small { min-block-size: 18px; padding: 0 6px; font: 600 0.6875rem/1.45 var(--pdt-mono); }
+/* In the header the button stays capped: the bar is a fixed 34px. */
+.pdt-header .pdt-button--small { block-size: 18px; font: 600 min(0.6875rem, 12px)/16px var(--pdt-mono); }
 .pdt-button:disabled { opacity: .6; cursor: progress; }
 
 /* An EXPLAIN result under its query row (ADR 08). */
@@ -514,7 +523,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 }
 
 .pdt-disabled p { margin: 0 0 4px; }
-.pdt-disabled .pdt-button { margin-top: 6px; }
+.pdt-disabled .pdt-button { margin-block-start: 6px; }
 
 .pdt-snapshot { margin: 0; }
 
@@ -523,7 +532,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
   grid-template-columns: minmax(8rem, max-content) 1fr;
   gap: 12px;
   padding: 3px 12px;
-  border-bottom: 1px solid var(--pdt-border);
+  border-block-end: 1px solid var(--pdt-border);
 }
 
 .pdt-snapshot__entry dt { font: 0.71875rem var(--pdt-mono); color: var(--pdt-muted); }
@@ -555,7 +564,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 .pdt-process__details { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0; padding: 4px 12px 8px; }
 .pdt-process__details dt { color: var(--pdt-muted); }
 .pdt-process__details dd { margin: 0; overflow-wrap: anywhere; }
-.pdt-process__relations { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 12px; padding: 0 12px 8px; border-top: 1px solid var(--pdt-border); }
+.pdt-process__relations { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 12px; padding: 0 12px 8px; border-block-start: 1px solid var(--pdt-border); }
 .pdt-process__title { margin: 8px 0 4px; font-size: 0.75rem; }
 .pdt-process__relations > div { min-width: 0; }
 .pdt-process__relation { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; padding: 3px 0; }
@@ -569,7 +578,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 .pdt-pid-link code { color: var(--pdt-accent-text); }
 .pdt-pid-link:hover code { text-decoration: underline; }
 .pdt-system__search { display: flex; flex: 1; gap: 6px; align-items: center; min-width: 0; }
-.pdt-system__search input { flex: 1; min-width: 0; max-width: 360px; height: 20px; padding: 0 6px; border: 1px solid var(--pdt-border); border-radius: 4px; background: var(--pdt-bg); color: inherit; font: 0.71875rem var(--pdt-mono); }
+.pdt-system__search input { flex: 1; min-width: 0; max-width: 360px; min-block-size: 20px; padding: 0 6px; border: 1px solid var(--pdt-border); border-radius: 4px; background: var(--pdt-bg); color: inherit; font: 0.71875rem var(--pdt-mono); }
 .pdt-system__search input:focus-visible { outline: 2px solid var(--pdt-accent); outline-offset: 0; }
 .pdt-crumbs { display: flex; flex-wrap: wrap; gap: 2px 4px; padding: 0 12px 6px; }
 .pdt-crumb { padding: 0 4px; border: 0; border-radius: 3px; background: none; color: var(--pdt-muted); font: 0.6875rem var(--pdt-mono); cursor: pointer; }
@@ -577,13 +586,13 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 .pdt-crumb[aria-current="true"] { color: inherit; font-weight: 600; }
 .pdt-crumb:hover { background: var(--pdt-bg-alt); }
 .pdt-system__frames code { font: 0.6875rem var(--pdt-mono); color: var(--pdt-code); overflow-wrap: anywhere; }
-.pdt-system__state { padding: 0 12px 8px; border-top: 1px solid var(--pdt-border); }
+.pdt-system__state { padding: 0 12px 8px; border-block-start: 1px solid var(--pdt-border); }
 .pdt-system__state pre { margin: 0; font: 0.6875rem/1.5 var(--pdt-mono); color: var(--pdt-code); white-space: pre-wrap; overflow-wrap: anywhere; }
 .pdt-system__state .pdt-button { margin-inline-start: 8px; vertical-align: middle; }
-.pdt-actions-bar { flex-wrap: wrap; padding-top: 0; }
+.pdt-actions-bar { flex-wrap: wrap; padding-block-start: 0; }
 .pdt-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .pdt-actions__kill { display: flex; gap: 4px; align-items: center; }
-.pdt-actions__kill select { height: 18px; border: 1px solid var(--pdt-border); border-radius: 4px; background: var(--pdt-bg); color: inherit; font: 0.6875rem var(--pdt-mono); }
+.pdt-actions__kill select { min-block-size: 18px; border: 1px solid var(--pdt-border); border-radius: 4px; background: var(--pdt-bg); color: inherit; font: 0.6875rem var(--pdt-mono); }
 .pdt-actions__confirm { font-weight: 600; }
 .pdt-actions__error { color: var(--pdt-error); }
 .pdt-button--danger { border-color: var(--pdt-error); color: var(--pdt-error); }
@@ -597,7 +606,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 .pdt-eval__form textarea { width: 100%; box-sizing: border-box; padding: 4px 6px; border: 1px solid var(--pdt-border); border-radius: 4px; background: var(--pdt-bg); color: inherit; font: 0.71875rem/1.5 var(--pdt-mono); resize: vertical; }
 .pdt-eval__form textarea:focus-visible { outline: 2px solid var(--pdt-accent); outline-offset: 0; }
 .pdt-eval__form .pdt-button { justify-self: start; }
-.pdt-eval__run { padding: 6px 12px; border-bottom: 1px solid var(--pdt-border); }
+.pdt-eval__run { padding: 6px 12px; border-block-end: 1px solid var(--pdt-border); }
 .pdt-eval__run pre { margin: 4px 0 0; font: 0.6875rem/1.5 var(--pdt-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .pdt-eval__result { color: var(--pdt-code); }
 .pdt-eval__output { color: var(--pdt-muted); }
@@ -641,7 +650,9 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
     outline-width: 4px;
   }
   .pdt-dock-option[aria-pressed="true"]:not(.pdt-dock-reserve) { text-decoration: underline; }
+  /* physical: the bottom dock's inner edge is the screen's top edge */
   .pdt-dock-bottom .pdt-panel { border-top: 1px solid CanvasText; }
+  /* physical: the top dock's inner edge is the screen's bottom edge */
   .pdt-dock-top .pdt-panel { border-bottom: 1px solid CanvasText; }
   /* physical: the border faces the page, which sits on a screen edge per dock */
   .pdt-dock-left .pdt-panel { border-right: 1px solid CanvasText; }

@@ -27,9 +27,9 @@ test("font sizes are in rem, a px size only inside min() or clamp()", () => {
 // a screen edge opts out with a `/* physical: <why> */` comment right before its selector.
 const RAW = readFileSync(new URL("../../css/panel.css", import.meta.url), "utf8")
 const PHYSICAL = [
-  /(?:^|[;\s])(?:margin|padding|border)-(?:left|right)(?:-(?:width|color|style))?\s*:[^;]*/g,
-  /(?:^|[;\s])text-align\s*:\s*(?:left|right)\b[^;]*/g,
-  /(?:^|[;\s])(?:left|right|top|bottom)\s*:[^;]*/g
+  /(?:^|[;\s])(?:margin|padding|border)-(?:left|right|top|bottom)(?:-(?:width|color|style))?\s*:[^;]*/gi,
+  /(?:^|[;\s])text-align\s*:\s*(?:left|right)\b[^;]*/gi,
+  /(?:^|[;\s])(?:left|right|top|bottom)\s*:[^;]*/gi
 ]
 
 test("physical margin, padding, border, text-align and offsets need a `physical:` comment", () => {
@@ -37,8 +37,9 @@ test("physical margin, padding, border, text-align and offsets need a `physical:
   const rule = /(?<![^}{])\s*((?:\/\*[\s\S]*?\*\/\s*)*)([^{}]*)\{([^{}]*)\}/g
   for (const [, comments, selector, body] of RAW.matchAll(rule)) {
     if (/\/\*\s*physical:/.test(comments)) continue
+    const decls = body.replace(/\/\*[\s\S]*?\*\//g, "")
     for (const re of PHYSICAL) {
-      for (const [decl] of body.matchAll(re)) offenders.push(`${selector.trim()} { ${decl.trim()} }`)
+      for (const [decl] of decls.matchAll(re)) offenders.push(`${selector.trim()} { ${decl.trim()} }`)
     }
   }
   assert.deepEqual(offenders, [])
