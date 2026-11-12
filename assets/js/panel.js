@@ -148,6 +148,19 @@ document.addEventListener("keydown", (event) => {
   toParent("toggle")
 })
 
+// No loader to ask: the panel's own origin shares the loader's stored layout.
+const storedTheme = () => {
+  try {
+    return parseLayout(window.localStorage.getItem("pdt:layout")).theme
+  } catch (_error) {
+    return "auto"
+  }
+}
+
+// Apply the stored theme before the first pdt:state, so a pinned theme does
+// not flash the system one on every load (pdt:state still wins after).
+setTheme(storedTheme())
+
 window.addEventListener("message", (event) => {
   if (event.origin !== window.location.origin || event.source !== window.parent) return
   const data = event.data
@@ -167,15 +180,6 @@ window.addEventListener("message", (event) => {
 
 document.addEventListener("visibilitychange", pushVisibility)
 
-// No loader to ask: the panel's own origin shares the loader's stored layout.
-const storedTheme = () => {
-  try {
-    return parseLayout(window.localStorage.getItem("pdt:layout")).theme
-  } catch (_error) {
-    return "auto"
-  }
-}
-
 // Opened in a browser tab of its own (ADR 14), not in the loader's iframe: no
 // loader sends pdt:state, so the panel is open at the bottom dock, and CSS
 // hides the controls that would talk to a loader (pdt-standalone).
@@ -183,7 +187,6 @@ if (window.parent === window) {
   document.documentElement.classList.add("pdt-standalone")
   setDock("bottom")
   setOpen(true)
-  setTheme(storedTheme())
 }
 
 // The live region #pdt-live-status (phx-update="ignore") announces the

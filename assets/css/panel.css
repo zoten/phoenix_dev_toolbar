@@ -233,6 +233,8 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
   border-radius: 6px;
   background: var(--pdt-header);
   box-shadow: 0 4px 16px rgba(0, 0, 0, .3);
+  max-height: calc(100vh - 42px);
+  overflow-y: auto;
 }
 
 .pdt-dock-menu[hidden] { display: none; }
@@ -263,7 +265,7 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
 
 /* The theme group: a label, then three options like the docks. */
 .pdt-dock-theme { display: grid; gap: 2px; margin-block-start: 2px; padding-block-start: 2px; border-block-start: 1px solid rgba(255, 255, 255, .12); }
-.pdt-dock-theme__label { padding: 2px 8px 0; font-size: 11px; color: color-mix(in srgb, var(--pdt-header-fg) 75%, transparent); }
+.pdt-dock-menu .pdt-dock-theme__label { padding: 2px 8px 0; font-size: 11px; color: color-mix(in srgb, var(--pdt-header-fg) 75%, transparent); }
 .pdt-reserve__check { width: 14px; text-align: center; }
 .pdt-dock-reserve[aria-pressed="true"] .pdt-reserve__check::before { content: "\2713"; }
 

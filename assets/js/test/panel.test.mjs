@@ -173,6 +173,30 @@ test("standalone, the theme comes from the stored layout", async (t) => {
   assert.equal(page.byId("pdt-theme-dark").getAttribute("aria-pressed"), "true")
 })
 
+test("framed, the stored theme applies at boot, before any message", async (t) => {
+  const page = await load(t, {
+    setup: (env) => env.window.localStorage.setItem("pdt:layout", '{"dock":"bottom","sizes":{},"theme":"dark"}'),
+  })
+
+  assert.equal(page.document.documentElement.getAttribute("data-theme"), "dark")
+  page.fromLoader({type: "pdt:state", open: true, dock: "bottom", reserve: true, theme: "light"})
+  assert.equal(page.document.documentElement.getAttribute("data-theme"), "light", "pdt:state wins")
+})
+
+test("standalone with unreadable storage stays on auto", async (t) => {
+  const page = await load(t, {
+    framed: false,
+    setup: (env) =>
+      Object.defineProperty(env.window, "localStorage", {
+        get() {
+          throw new Error("denied")
+        },
+      }),
+  })
+
+  assert.equal(page.document.documentElement.getAttribute("data-theme"), null)
+})
+
 test("header clicks post to the parent page on the panel's origin only", async (t) => {
   const page = await load(t)
 

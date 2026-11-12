@@ -163,7 +163,7 @@ defmodule PhoenixDevToolbar.PanelLayout do
             id="pdt-dock-menu"
             class="pdt-dock-menu"
             role="group"
-            aria-label="Dock the toolbar"
+            aria-label="Toolbar layout"
             hidden
           >
             <button

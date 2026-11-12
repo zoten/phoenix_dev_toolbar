@@ -48,6 +48,27 @@ test("triggered skips repeats, composition and typing", () => {
   assert.ok(!triggered(spec, press({target: {tagName: "INPUT"}})))
 })
 
+test("triggered reads the real target through a shadow root", () => {
+  const spec = parseShortcut("alt+f5")
+  const press = (extra) => ({code: "F5", altKey: true, target: {tagName: "MY-ELEMENT"}, ...extra})
+
+  assert.ok(!triggered(spec, press({composedPath: () => [{tagName: "INPUT"}, {tagName: "MY-ELEMENT"}]})))
+  assert.ok(triggered(spec, press({composedPath: () => []})))
+})
+
+test("triggered yields to a handler that already claimed the combo", () => {
+  const spec = parseShortcut("alt+f5")
+  assert.ok(!triggered(spec, {code: "F5", altKey: true, target: {tagName: "BODY"}, defaultPrevented: true}))
+})
+
+test("triggered ignores AltGr, which reports ctrl+alt", () => {
+  const spec = parseShortcut("ctrl+alt+f5")
+  const event = {code: "F5", ctrlKey: true, altKey: true, target: {tagName: "BODY"}}
+
+  assert.ok(triggered(spec, event))
+  assert.ok(!triggered(spec, {...event, getModifierState: (name) => name === "AltGraph"}))
+})
+
 test("label reads like a title", () => {
   assert.equal(label("ctrl+shift+d"), "Ctrl+Shift+D")
   assert.equal(label("meta+1"), "Meta+1")

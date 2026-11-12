@@ -135,3 +135,9 @@ for (const [mode, t] of [["light", LIGHT], ["dark", DARK]]) {
     assert.deepEqual(failures, [])
   })
 }
+
+test("color tokens are declared in the first :root block only", () => {
+  const first = /:root\s*\{[^}]*\}/.exec(CSS)
+  const rest = CSS.slice(0, first.index) + CSS.slice(first.index + first[0].length)
+  assert.doesNotMatch(rest, /--pdt-[a-z-]+\s*:/, "a --pdt-* override outside the first :root block escapes the contrast checks")
+})

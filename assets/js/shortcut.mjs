@@ -36,9 +36,19 @@ export const matches = (spec, event) =>
 export const editable = (target) =>
   Boolean(target) && (EDITABLE.includes(String(target.tagName).toUpperCase()) || target.isContentEditable === true)
 
-// The keydown guard shared by both listeners: a fresh, matching, non typing press.
+// The real target: a listener on window sees an input inside a shadow root
+// retargeted to its host element, composedPath()[0] is the input itself.
+const realTarget = (event) => (typeof event.composedPath === "function" && event.composedPath()[0]) || event.target
+
+// The keydown guard shared by both listeners: a fresh, matching, non typing
+// press that no handler claimed. Windows AltGr reports ctrl+alt: not a combo.
 export const triggered = (spec, event) =>
-  matches(spec, event) && !event.repeat && !event.isComposing && !editable(event.target)
+  matches(spec, event) &&
+  !event.repeat &&
+  !event.isComposing &&
+  !event.defaultPrevented &&
+  !event.getModifierState?.("AltGraph") &&
+  !editable(realTarget(event))
 
 // "Ctrl+Shift+D" for titles.
 export const label = (string) => {
