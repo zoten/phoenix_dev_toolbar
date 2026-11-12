@@ -98,6 +98,11 @@ dock picker, `assets/js/panel.js` dock menu code (lines 86-125, 377-390),
   the smaller size is applied on `transitionend` with a timeout fallback; all four docks;
   `prefers-reduced-motion` skips it; an interrupted toggle settles to the last state).
   Otherwise record the numbers here and close the item as won't do.
+- Result (commit 1f19c48, 1440x900, 4x CPU throttling, 55 rows, panel 420px): 20 open and
+  collapse toggles over the bottom and left docks, measured in page with
+  `requestAnimationFrame` intervals and long animation frame entries. Every frame took
+  17ms (60fps) except one 34ms frame on the very first open; no long animation frame.
+  Below the threshold: **closed as won't do**, no E5.
 
 ## Risks
 

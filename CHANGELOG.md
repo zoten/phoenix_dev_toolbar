@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Dock menu on the Popover API with CSS anchor positioning; supported browsers raised (ADR 04)
+- Panel font sizes in `rem`, logical CSS properties, both guarded by a CSS test (ADR 04)
 - Panel theme: Auto, Light or Dark from the dock menu, stored per browser (ADR 04)
 - `pill_corner:` and opt-in `shortcut:` config to place the pill and toggle the toolbar (ADR 04)
 - Panel keyboard and screen reader pass: toggle state, Home/End, live status, sr-only titles (ADR 04)

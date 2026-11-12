@@ -43,6 +43,11 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 - **Panel styling**: color tokens meet WCAG AA, checked by `assets/js/test/contrast.test.mjs`.
   `--pdt-accent-text` colors accent text; `--pdt-accent` is for fills, focus rings and borders.
   Forced colors (state shown by borders and outlines, not shadows) and reduced motion are supported.
+  Font sizes are `rem`, so the browser's font size setting applies; text in the 34px
+  header (the collapsed bar's fixed height) is capped with `min()`, and controls use
+  `min-block-size` rather than fixed heights. Flow relative (logical) properties
+  everywhere; physical ones only where the meaning is a screen edge, each under a
+  `/* physical: */` comment. `assets/js/test/css_rules.test.mjs` guards both conventions.
   One shared `:focus-visible` ring. Explanations in `title` (badges, tags) are repeated as
   `pdt-sr-only` text, so keyboard and screen reader users get them too.
   Theme: Auto (the OS), Light or Dark, picked in the dock menu and stored per browser as
@@ -70,8 +75,12 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   `activeElement` is the iframe), never on load; clicking the pill focuses the iframe and
   posts `pdt:focus`, which focuses the panel's toggle. The toggle carries `aria-expanded`
   (set by `panel.js`); it and the hide button sit in a `phx-update="ignore"` wrapper so
-  patches keep the client set state. The dock picker is a disclosure (`aria-expanded`)
-  that closes on Escape, an outside click or focus leaving it.
+  patches keep the client set state. The dock menu is a `popover="auto"` opened by
+  `popovertarget` on the picker button and placed with CSS anchor positioning (flipping
+  inline or block when it would leave the iframe, which still clips it): the browser opens
+  it and closes it on Escape and outside clicks; `panel.js` syncs `aria-expanded`, focuses
+  the pressed option on open, and closes it when focus leaves the picker or the panel
+  collapses.
   An opt-in `shortcut:` (for example `"ctrl+shift+d"`, written canonical as
   `data-pdt-shortcut`) toggles the toolbar: collapsed opens, open collapses, hidden comes
   back collapsed. It matches physical keys (`KeyboardEvent.code`) with every modifier
@@ -285,8 +294,11 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 
 ## Open limits
 
-- `light-dark()` needs Chrome 123, Firefox 120 or Safari 17.5; older browsers render the
-  panel without its colors. The shortcut does not skip ARIA `role="textbox"` elements that
+- Supported browsers: Chrome and Edge 125, Firefox 147, Safari 26 (anchor positioning; the
+  panel's `light-dark()` colors need Chrome 123, Firefox 120, Safari 17.5). Older ones
+  degrade without breaking the controls: no colors before `light-dark()`, the dock menu
+  pinned under the picker without anchor positioning, always shown while the panel is
+  open without the Popover API. The shortcut does not skip ARIA `role="textbox"` elements that
   are neither inputs nor contenteditable, and matches physical keys, so on non QWERTY
   layouts the letter is the key at that QWERTY position.
 

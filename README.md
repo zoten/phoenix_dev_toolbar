@@ -94,7 +94,7 @@ you are working on.
 - OTP 26 or later is tested in CI. Some process reads need OTP 26.2, and the message trace needs OTP 27.
 - `ecto_sql` is optional: without it the Ecto tab stays empty and nothing else changes.
 - No JSON dependency: the toolbar uses your app's (`Phoenix.json_library/0`), Jason or the built-in `JSON`.
-- A browser with WebSocket support: the panel has no long-poll fallback.
+- A current browser: Chrome or Edge 125, Firefox 147, Safari 26 or later (the panel uses CSS anchor positioning and `light-dark()`), with WebSocket support: the panel has no long-poll fallback.
 
 ## Installation
 
