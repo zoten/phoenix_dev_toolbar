@@ -28,6 +28,49 @@ Line numbers are from commit 4c5dd4d and drift as batches land: search, do not t
 - Tests: `plug_test.exs` (ETag present, 304 on match, 200 on mismatch, unknown asset
   still 404).
 
+### Batch A tasks
+
+Branch `ui-pass-batch-a`, one commit per task. Each task is implemented by one agent and
+reviewed by one reviewer; the batch ends with a feature review over its commit range.
+
+**A1: asset ETag and 304** (`lib/phoenix_dev_toolbar/plug.ex` `serve_asset/2`,
+`test/phoenix_dev_toolbar/plug_test.exs` `describe "assets"`, about line 373).
+
+- Tests first, in the `"assets"` describe: every whitelisted asset carries one weak
+  `etag` (`W/"..."`) and still `cache-control: no-cache`; the same ETag twice in a row;
+  a request with that value in `if-none-match` gets `304`, an empty body, the same
+  `etag` and `cache-control`, and halts; a stale value, a list holding the value
+  (`W/"x", <etag>`), the strong form of the value (`"..."` without `W/`), and `*` behave
+  as RFC 9110 weak comparison says (match: list member, strong form, `*`; no match:
+  stale); a 404 has no `etag`.
+- Implementation: `File.stat(path, time: :posix)` replaces `File.regular?/1` (a
+  directory or a missing file stays a 404); ETag `W/"<size>-<mtime>"`; parse
+  `if-none-match` by splitting on commas and stripping `W/` and spaces, never creating
+  atoms. A 304 goes through `Conn.send_resp(304, "")` and keeps `x-content-type-options`.
+  The request stays `untracked/1` as today.
+- ADR 04 "Assets" bullet: one sentence on revalidation (weak ETag from size and
+  mtime, 304, `no-cache` kept so a rebuilt bundle or a bumped dep shows at once).
+- CHANGELOG: `- Panel assets revalidate with an ETag: 304 instead of a full download (ADR 04)`.
+- Verify: `mix test test/phoenix_dev_toolbar/plug_test.exs`, `mix compile --warnings-as-errors`,
+  `mix credo --strict lib/phoenix_dev_toolbar/plug.ex`.
+
+**A2: panel scrolling and long lists** (`assets/css/panel.css`, `priv/static/panel.css`).
+
+- `.pdt-section`: `overscroll-behavior: contain; scrollbar-gutter: stable`.
+- Dark mode block: `scrollbar-color: var(--pdt-border) transparent` on `.pdt-section`
+  (light keeps the browser default).
+- `.pdt-row`: `content-visibility: auto; contain-intrinsic-size: auto 48px`. Paint
+  containment clips what overflows a row: grep the classes used inside rows
+  (`grep -rn 'pdt-row' lib`) for absolute or negative-margin children that leave the
+  row box (`.pdt-plan__hide` stays inside). Only `li` and `div` rows, no table rows.
+- `mix assets.build` (dev env) and commit `priv/static/panel.css`.
+- CHANGELOG: `- Panel lists: no scroll chaining into the page, off-screen rows skipped (ADR 04)`.
+- Verify: `mix test.js`, `mix test test/phoenix_dev_toolbar/layouts_test.exs`, and
+  `MIX_ENV=dev mix assets.build && git diff --exit-code priv/static` after the commit.
+  By hand (orchestrator, `mix dev`): scroll the Ecto list past its end (the page must not
+  move), EXPLAIN then Hide with the keyboard (focus comes back), find-in-page reaches an
+  off-screen row, dark mode scrollbar.
+
 ## Batch B: color, contrast and forced colors
 
 Measured ratios (AA needs 4.5:1 for text, 3:1 for focus rings and UI parts):
