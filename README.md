@@ -38,7 +38,7 @@ you are working on.
 
 ![A tour: N+1, EXPLAIN, a preload fix, event timings, the Process tab and the docks](media/toolbar-demo.gif)
 
-**Dark theme**
+**Dark theme** (follows the OS, or pin Light or Dark from the dock menu)
 
 ![Dark theme](media/hero-dark.png)
 
@@ -154,6 +154,11 @@ config :phoenix_dev_toolbar,
   # The toolbar makes room so the page scrolls clear of it; false lets it overlap
   # (the dock menu's toggle overrides this per browser)
   reserve_space: true,
+  # Where the hidden toolbar's pill sits: :bottom_right (default), :bottom_left,
+  # :top_right or :top_left
+  # pill_corner: :bottom_left,
+  # Opt-in keyboard shortcut that toggles the toolbar (physical keys, ignored while typing)
+  # shortcut: "ctrl+shift+d",
   # Values of keys containing these words are shown as [REDACTED]; added to the
   # defaults (password, token, secret), which always apply
   redact: ["api_key"],

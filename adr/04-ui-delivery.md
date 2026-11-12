@@ -45,6 +45,11 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   Forced colors (state shown by borders and outlines, not shadows) and reduced motion are supported.
   One shared `:focus-visible` ring. Explanations in `title` (badges, tags) are repeated as
   `pdt-sr-only` text, so keyboard and screen reader users get them too.
+  Theme: Auto (the OS), Light or Dark, picked in the dock menu and stored per browser as
+  `theme` in `pdt:layout` (written only when not auto). The panel sets `data-theme` on
+  its `<html>` (also at boot, from the same origin storage, so a pinned theme does not
+  flash); tokens are `light-dark()` pairs in `:root` and `color-scheme` follows
+  `data-theme`. The header, pill and handle are dark in both themes.
 - **Robustness**: `:path` must be absolute and below the root (raises in `init/1`); while
   the Store restarts every request is served untracked.
 - **Loader** (plain JS, about 9 KB minified, under 4 KB gzipped): runs only in the top window and once per
@@ -54,17 +59,28 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   cannot meet. Three states, persisted in the host origin's `localStorage` (`pdt:state`; the
   old `pdt:open` key is migrated): `collapsed` (default: the iframe is a 34px bar, the panel
   header), `open` (the panel at its size, see Docks), `hidden` (no iframe, only a small
-  "dev toolbar" pill in the bottom right corner, so the bar never permanently covers the
+  "dev toolbar" pill in a corner, bottom right unless `pill_corner:` says otherwise
+  (written as `data-pdt-pill` on the loader tag), so the bar never permanently covers the
   host page; clicking it collapses again). The iframe asks for `pdt:toggle` (toggle
   button), `pdt:open` (a tab was picked), `pdt:hide` (hide button) and `pdt:dock` (dock
-  picker, a known dock only) and `pdt:reserve` (a boolean); the loader answers with
-  `pdt:state` (`open`, `dock` and `reserve`). Focus follows hide and show: on `pdt:hide`
+  picker, a known dock only), `pdt:reserve` (a boolean) and `pdt:theme` (`auto`, `light`
+  or `dark`); the loader answers with `pdt:state` (`open`, `dock`, `reserve`, `theme` and
+  `shortcut`). Focus follows hide and show: on `pdt:hide`
   the pill takes focus only when focus was in the panel (the shadow root's
   `activeElement` is the iframe), never on load; clicking the pill focuses the iframe and
   posts `pdt:focus`, which focuses the panel's toggle. The toggle carries `aria-expanded`
   (set by `panel.js`); it and the hide button sit in a `phx-update="ignore"` wrapper so
   patches keep the client set state. The dock picker is a disclosure (`aria-expanded`)
   that closes on Escape, an outside click or focus leaving it.
+  An opt-in `shortcut:` (for example `"ctrl+shift+d"`, written canonical as
+  `data-pdt-shortcut`) toggles the toolbar: collapsed opens, open collapses, hidden comes
+  back collapsed. It matches physical keys (`KeyboardEvent.code`) with every modifier
+  exact, and skips repeats, IME composition, AltGr, events a host handler already
+  prevented and typing targets (`input`, `textarea`, `select`, contenteditable, found
+  through `composedPath()` so inputs inside host web components count). The loader adds
+  its `window` listener only when the attribute parses and calls `preventDefault` only on
+  a match; the panel has its own listener, so the combo works with focus inside the
+  toolbar. The pill and hide button titles show the combo.
   Both sides check `event.origin` and `event.source`. The loader also forwards LiveView's
   own `phx:*` window events as `pdt:client` messages (passive listeners, sanitized, rate
   limited: ADR 07). The panel LiveView is `use Phoenix.LiveView, log: false`: its
@@ -268,6 +284,11 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 - The panel cannot inspect the host DOM directly; anything DOM related goes through the loader.
 
 ## Open limits
+
+- `light-dark()` needs Chrome 123, Firefox 120 or Safari 17.5; older browsers render the
+  panel without its colors. The shortcut does not skip ARIA `role="textbox"` elements that
+  are neither inputs nor contenteditable, and matches physical keys, so on non QWERTY
+  layouts the letter is the key at that QWERTY position.
 
 - The loader and panel wiring is tested against a fake DOM (ADR 06), not a real
   browser: rendering and the host's LiveView client are checked by hand in `mix dev`.
