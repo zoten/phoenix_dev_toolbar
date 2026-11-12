@@ -45,6 +45,111 @@ defmodule PhoenixDevToolbar.Config do
   @spec reserve_space?() :: boolean()
   def reserve_space?, do: Application.get_env(:phoenix_dev_toolbar, :reserve_space, true) != false
 
+  @type pill_corner :: :bottom_right | :bottom_left | :top_right | :top_left
+
+  @corners [:bottom_right, :bottom_left, :top_right, :top_left]
+  @modifier_order ["ctrl", "alt", "shift", "meta"]
+  @modifier_aliases %{
+    "ctrl" => "ctrl",
+    "control" => "ctrl",
+    "alt" => "alt",
+    "option" => "alt",
+    "shift" => "shift",
+    "meta" => "meta",
+    "cmd" => "meta"
+  }
+  @shortcut_keys Enum.map(~w(a b c d e f g h i j k l m n o p q r s t u v w x y z), & &1) ++
+                   Enum.map(0..9, &Integer.to_string/1) ++
+                   Enum.map(1..12, &("f" <> Integer.to_string(&1)))
+
+  @doc """
+  The corner the collapsed pill sits in (ADR 04): `pill_corner:`, one of `:bottom_right`
+  (the default), `:bottom_left`, `:top_right` or `:top_left`. Unset or invalid is
+  `:bottom_right`. Never logs (`warn_ui/0` does).
+  """
+  @spec pill_corner() :: pill_corner()
+  def pill_corner do
+    case Application.get_env(:phoenix_dev_toolbar, :pill_corner) do
+      corner when corner in @corners -> corner
+      _unset_or_invalid -> :bottom_right
+    end
+  end
+
+  @doc """
+  The keyboard shortcut that toggles the toolbar (ADR 04): `shortcut:`, written like
+  `"ctrl+shift+d"`, returned in canonical form (lowercase, modifiers ordered `ctrl`,
+  `alt`, `shift`, `meta`). Accepts any case, spaces around `+`, and the aliases `cmd`
+  (`meta`), `control` (`ctrl`) and `option` (`alt`). Needs at least one modifier and
+  exactly one key (`a` to `z`, `0` to `9`, `f1` to `f12`). Unset, invalid or not a
+  string is `nil`. Never logs (`warn_ui/0` does).
+  """
+  @spec shortcut() :: String.t() | nil
+  def shortcut, do: :phoenix_dev_toolbar |> Application.get_env(:shortcut) |> canonical_shortcut()
+
+  defp canonical_shortcut(value) when is_binary(value) do
+    case String.valid?(value) do
+      true ->
+        value
+        |> String.downcase()
+        |> String.split("+")
+        |> Enum.map(&String.trim/1)
+        |> shortcut_parts()
+
+      false ->
+        nil
+    end
+  end
+
+  defp canonical_shortcut(_not_a_string), do: nil
+
+  defp shortcut_parts(parts) do
+    {mods, [key]} = Enum.split(parts, -1)
+    mods = Enum.map(mods, &Map.get(@modifier_aliases, &1))
+
+    case mods != [] and key in @shortcut_keys and not Enum.member?(mods, nil) do
+      true -> join_shortcut(mods, key)
+      false -> nil
+    end
+  end
+
+  defp join_shortcut(mods, key) do
+    ordered = Enum.filter(@modifier_order, &(&1 in mods))
+    Enum.join(ordered, "+") <> "+" <> key
+  end
+
+  @doc "Logs, at boot, an invalid `pill_corner:` or `shortcut:` and what is used instead."
+  @spec warn_ui() :: :ok
+  def warn_ui do
+    warn_pill_corner(Application.get_env(:phoenix_dev_toolbar, :pill_corner))
+    warn_shortcut(Application.get_env(:phoenix_dev_toolbar, :shortcut))
+  end
+
+  defp warn_pill_corner(nil), do: :ok
+  defp warn_pill_corner(corner) when corner in @corners, do: :ok
+
+  defp warn_pill_corner(invalid) do
+    Logger.warning(
+      "[phoenix_dev_toolbar] invalid pill_corner: #{inspect(invalid, limit: 5)}, " <>
+        "expected :bottom_right, :bottom_left, :top_right or :top_left. Using :bottom_right."
+    )
+  end
+
+  defp warn_shortcut(nil), do: :ok
+
+  defp warn_shortcut(value) do
+    case canonical_shortcut(value) do
+      nil ->
+        Logger.warning(
+          "[phoenix_dev_toolbar] invalid shortcut: #{inspect(value, limit: 5)}, " <>
+            "expected at least one modifier (ctrl, alt, shift, meta) and one key " <>
+            "(a-z, 0-9, f1-f12), like \"ctrl+shift+d\". Using no shortcut."
+        )
+
+      _valid ->
+        :ok
+    end
+  end
+
   @type mcp_mode :: :off | :local | {:list, [ClientMatch.entry()]} | :any
 
   @doc """

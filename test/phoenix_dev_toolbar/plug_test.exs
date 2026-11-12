@@ -56,6 +56,37 @@ defmodule PhoenixDevToolbar.PlugTest do
       assert tag =~ ~s( data-pdt-reserve="false")
     end
 
+    test "write no pill or shortcut attribute by default" do
+      assert [[tag]] = page_conn() |> respond() |> loader_tags()
+      refute tag =~ "data-pdt-pill"
+      refute tag =~ "data-pdt-shortcut"
+    end
+
+    test "tell the loader which corner the pill sits in" do
+      put_app_env(:pill_corner, :top_left)
+
+      assert [[tag]] = page_conn() |> respond() |> loader_tags()
+      assert tag =~ ~s( data-pdt-pill="top-left")
+    end
+
+    test "write no pill attribute for the default or an invalid corner" do
+      for corner <- [:bottom_right, :nowhere] do
+        put_app_env(:pill_corner, corner)
+        assert [[tag]] = page_conn() |> respond() |> loader_tags()
+        refute tag =~ "data-pdt-pill"
+      end
+    end
+
+    test "give the loader the canonical shortcut, and nothing when invalid" do
+      put_app_env(:shortcut, "Cmd + Shift + D")
+      assert [[tag]] = page_conn() |> respond() |> loader_tags()
+      assert tag =~ ~s( data-pdt-shortcut="shift+meta+d")
+
+      put_app_env(:shortcut, "d")
+      assert [[tag]] = page_conn() |> respond() |> loader_tags()
+      refute tag =~ "data-pdt-shortcut"
+    end
+
     test "record the response with its duration" do
       conn = respond(page_conn())
 

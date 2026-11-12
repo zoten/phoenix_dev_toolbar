@@ -502,6 +502,8 @@ defmodule PhoenixDevToolbar.Plug do
       {"data-pdt-sid", sid},
       {"data-pdt-path", path},
       {"data-pdt-reserve", reserve_attr(Config.reserve_space?())},
+      {"data-pdt-pill", pill_attr(Config.pill_corner())},
+      {"data-pdt-shortcut", Config.shortcut()},
       {"nonce", nonce(conn, nonce_assign)}
     ]
 
@@ -516,6 +518,10 @@ defmodule PhoenixDevToolbar.Plug do
   # Only the opt out is written: the loader reserves space by default.
   defp reserve_attr(true), do: nil
   defp reserve_attr(false), do: "false"
+
+  # Only a non default corner is written, as `bottom-left` and so on.
+  defp pill_attr(:bottom_right), do: nil
+  defp pill_attr(corner), do: corner |> Atom.to_string() |> String.replace("_", "-")
 
   defp nonce(conn, key) do
     case conn.assigns do
