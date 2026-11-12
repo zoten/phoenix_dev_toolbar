@@ -372,7 +372,10 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
   width: 1px;
   height: 1px;
   overflow: hidden;
-  clip: rect(0 0 0 0);
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 
@@ -481,7 +484,7 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
 
 .pdt-button:hover { background: var(--pdt-bg-alt); }
 .pdt-button:focus-visible { outline: 2px solid var(--pdt-accent); outline-offset: 1px; }
-.pdt-button--small { height: 18px; padding: 0 6px; font: 600 10px/16px var(--pdt-mono); }
+.pdt-button--small { height: 18px; padding: 0 6px; font: 600 11px/16px var(--pdt-mono); }
 .pdt-button:disabled { opacity: .6; cursor: progress; }
 
 /* An EXPLAIN result under its query row (ADR 08). */
@@ -615,3 +618,28 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
 .pdt-joined .phx-server-error .pdt-summary,
 .pdt-joined .phx-server-error .pdt-section { opacity: 0.55; }
 .pdt-stalled .pdt-button { background: transparent; color: inherit; border-color: currentColor; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pdt-tab, .pdt-toggle__icon { transition: none; }
+}
+
+/* Forced colors drop box-shadows and backgrounds: state needs borders and outlines. */
+@media (forced-colors: active) {
+  .pdt-badge--ok { border: 1px solid CanvasText; }
+  .pdt-badge--warn { border: 1px solid Mark; }
+  .pdt-badge--error { border: 1px solid Highlight; }
+  .pdt-row--error, .pdt-snapshot--changed { border-inline-start: 3px solid Highlight; }
+  .pdt-tab--active, .pdt-subtab--active, .pdt-dock-option[aria-pressed="true"]:not(.pdt-dock-reserve) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+    text-decoration: underline;
+  }
+  .pdt-dock__icon { box-shadow: none; border-width: 1.5px 1.5px 4px; }
+  .pdt-dock-top .pdt-dock__icon { border-width: 4px 1.5px 1.5px; }
+  .pdt-dock-left .pdt-dock__icon { border-width: 1.5px 1.5px 1.5px 4px; }
+  .pdt-dock-right .pdt-dock__icon { border-width: 1.5px 4px 1.5px 1.5px; }
+  .pdt-dock-option .pdt-dock__icon--bottom { border-width: 1.5px 1.5px 4px; }
+  .pdt-dock-option .pdt-dock__icon--top { border-width: 4px 1.5px 1.5px; }
+  .pdt-dock-option .pdt-dock__icon--left { border-width: 1.5px 1.5px 1.5px 4px; }
+  .pdt-dock-option .pdt-dock__icon--right { border-width: 1.5px 4px 1.5px 1.5px; }
+}

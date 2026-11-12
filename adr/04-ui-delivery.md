@@ -40,6 +40,9 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   and fails when `priv/static` differs. `panel.css` is hand written, no CSS framework.
   Assets are sent `no-cache` with a weak `ETag` (`W/"<size>-<mtime>"`) and answer `304` when
   `If-None-Match` matches (weak comparison), so a reload revalidates instead of downloading.
+- **Panel styling**: color tokens meet WCAG AA, checked by `assets/js/test/contrast.test.mjs`.
+  `--pdt-accent-text` colors accent text; `--pdt-accent` is for fills, focus rings and borders.
+  Forced colors (state shown by borders and outlines, not shadows) and reduced motion are supported.
 - **Robustness**: `:path` must be absolute and below the root (raises in `init/1`); while
   the Store restarts every request is served untracked.
 - **Loader** (plain JS, about 9 KB minified, under 4 KB gzipped): runs only in the top window and once per
