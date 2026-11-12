@@ -15,6 +15,7 @@
   --pdt-ok: #187a45;
   --pdt-warn: #8a5a12;
   --pdt-header-warn: #e3a948;
+  --pdt-header-ok: #1f9d55;
   --pdt-error: #c53030;
   --pdt-error-fill: #c53030;
   --pdt-header-error: #ff8a8a;
@@ -100,6 +101,7 @@ body.pdt {
 .pdt-row .pdt-badge { background: var(--pdt-bg-alt); }
 .pdt-badge--ok { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pdt-ok) 70%, transparent); }
 .pdt-badge--warn { color: var(--pdt-warn); box-shadow: inset 0 0 0 1px var(--pdt-warn); }
+.pdt-header .pdt-badge--ok { box-shadow: inset 0 0 0 1px var(--pdt-header-ok); }
 .pdt-header .pdt-badge--warn { color: var(--pdt-header-warn); box-shadow: inset 0 0 0 1px var(--pdt-header-warn); }
 /* Copy as Markdown (ADR 04): only in the open panel; a collapsed bar, on any dock, has no room. */
 .pdt-markdown { display: inline-flex; align-items: center; gap: 6px; flex: none; }
@@ -626,14 +628,21 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
 /* Forced colors drop box-shadows and backgrounds: state needs borders and outlines. */
 @media (forced-colors: active) {
   .pdt-badge--ok { border: 1px solid CanvasText; }
-  .pdt-badge--warn { border: 1px solid Mark; }
-  .pdt-badge--error { border: 1px solid Highlight; }
+  .pdt-badge--warn { border: 1px dashed CanvasText; }
+  .pdt-badge--error { border: 2px solid Highlight; }
   .pdt-row--error, .pdt-snapshot--changed { border-inline-start: 3px solid Highlight; }
-  .pdt-tab--active, .pdt-subtab--active, .pdt-dock-option[aria-pressed="true"]:not(.pdt-dock-reserve) {
+  .pdt-tab--active, .pdt-subtab--active {
     outline: 2px solid Highlight;
     outline-offset: -2px;
     text-decoration: underline;
   }
+  .pdt-dock-option[aria-pressed="true"]:not(.pdt-dock-reserve) { text-decoration: underline; }
+  .pdt-dock-bottom .pdt-panel { border-top: 1px solid CanvasText; }
+  .pdt-dock-top .pdt-panel { border-bottom: 1px solid CanvasText; }
+  .pdt-dock-left .pdt-panel { border-right: 1px solid CanvasText; }
+  .pdt-dock-right .pdt-panel { border-left: 1px solid CanvasText; }
+  .pdt-standalone .pdt-panel { border: 0; }
+  .pdt-dock-menu { border: 1px solid CanvasText; }
   .pdt-dock__icon { box-shadow: none; border-width: 1.5px 1.5px 4px; }
   .pdt-dock-top .pdt-dock__icon { border-width: 4px 1.5px 1.5px; }
   .pdt-dock-left .pdt-dock__icon { border-width: 1.5px 1.5px 1.5px 4px; }

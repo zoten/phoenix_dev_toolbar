@@ -9,7 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Panel colors reach WCAG AA contrast, checked by a JS test (ADR 04)
 - Panel: forced colors support, reduced motion, 11px minimum text (ADR 04)
-
 - Panel assets revalidate with an ETag: 304 instead of a full download (ADR 04)
 - Panel lists: no scroll chaining into the page, off-screen rows skipped (ADR 04)
 - README screenshots and demo GIF in `media/`: shipped with the docs, not the Hex package (ADR 01)
