@@ -69,7 +69,12 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
     assigns = assign(assigns, :sub_tabs, @sub_tabs)
 
     ~H"""
-    <.inspected_strip :if={@inspected} inspected={@inspected} editor={@editor} />
+    <.inspected_strip
+      :if={@inspected}
+      inspected={@inspected}
+      editor={@editor}
+      foreign?={foreign_root?(@tree, @inspected)}
+    />
     <nav class="pdt-subtabs" role="tablist" aria-label="LiveView">
       <button
         :for={{tab, label} <- @sub_tabs}
@@ -258,8 +263,16 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
 
   defp selected_node?(_root, _node, _inspected), do: false
 
+  # With the tree loaded, a root that is none of its views belongs to another
+  # LiveView (a sticky live_render has its own session).
+  defp foreign_root?(%{views: views}, %Inspected{root: root}) when is_binary(root),
+    do: not Enum.any?(views, &(&1.root == root))
+
+  defp foreign_root?(_tree, _inspected), do: false
+
   attr :inspected, Inspected, required: true
   attr :editor, :any, default: nil
+  attr :foreign?, :boolean, default: false
 
   # The picked element: tag, binding, the function components around it and
   # their caller, with editor links (ADR 16). Without HEEx annotations there are
@@ -269,7 +282,7 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
     <section id="pdt-inspected" class="pdt-inspected" aria-label="Inspected element">
       <p class="pdt-inspected__head">
         <strong>Inspected element</strong>
-        <code id="pdt-inspected-tag">&lt;{@inspected.tag}&gt;</code>
+        <code :if={@inspected.tag} id="pdt-inspected-tag">&lt;{@inspected.tag}&gt;</code>
         <span :if={@inspected.tag_line} id="pdt-inspected-line" class="pdt-hint">
           line {@inspected.tag_line}
         </span>
@@ -290,11 +303,34 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
           <.source file={frame.file} line={frame.line} editor={@editor} />
         </li>
       </ol>
+      <p :if={@foreign?} id="pdt-inspected-foreign" class="pdt-hint">
+        This element belongs to a LiveView outside this page (a sticky <code>live_render</code>?).
+      </p>
       <p :if={@inspected.caller} id="pdt-inspected-caller">
         <span class="pdt-hint">called from</span>
         <.source file={@inspected.caller.file} line={@inspected.caller.line} editor={@editor} />
       </p>
-      <p :if={@inspected.frames == []} id="pdt-inspected-hint" class="pdt-hint">
+      <p
+        :if={@inspected.frames == [] and @inspected.truncated}
+        id="pdt-inspected-truncated"
+        class="pdt-hint"
+      >
+        The HEEx annotations were not reached within the walk budget. Raise the
+        <code>inspect_nodes:</code>
+        option.
+      </p>
+      <p
+        :if={@inspected.frames != [] and @inspected.truncated}
+        id="pdt-inspected-truncated"
+        class="pdt-hint"
+      >
+        The walk budget ran out: outer frames may be missing (<code>inspect_nodes:</code>).
+      </p>
+      <p
+        :if={@inspected.frames == [] and not @inspected.truncated}
+        id="pdt-inspected-hint"
+        class="pdt-hint"
+      >
         No HEEx source annotations found. Set <code>debug_heex_annotations: true</code>
         and <code>debug_attributes: true</code>
         for <code>:phoenix_live_view</code>
@@ -315,12 +351,16 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
         :href,
         Inspected.editor_url(%{file: assigns.file, line: assigns.line}, assigns.editor)
       )
+      |> assign(:location, location(assigns.file, assigns.line))
 
     ~H"""
-    <a :if={@href} href={@href} class="pdt-link" rel="noopener"><code>{@file}:{@line}</code></a>
-    <code :if={@file && is_nil(@href)} class="pdt-hint">{@file}:{@line}</code>
+    <a :if={@href} href={@href} class="pdt-link" rel="noopener"><code>{@location}</code></a>
+    <code :if={@file && is_nil(@href)} class="pdt-hint">{@location}</code>
     """
   end
+
+  defp location(file, nil), do: file
+  defp location(file, line), do: "#{file}:#{line}"
 
   attr :profile, Profile, required: true
 

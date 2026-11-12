@@ -13,7 +13,14 @@ defmodule PhoenixDevToolbar.Inspected do
   @max_integer 10_000_000
   @bindings ~w(phx-click phx-submit phx-change)
 
-  defstruct root: nil, cid: nil, tag: nil, tag_line: nil, binding: nil, frames: [], caller: nil
+  defstruct root: nil,
+            cid: nil,
+            tag: nil,
+            tag_line: nil,
+            binding: nil,
+            frames: [],
+            caller: nil,
+            truncated: false
 
   @type frame :: %{name: String.t(), file: String.t() | nil, line: non_neg_integer() | nil}
   @type t :: %Inspected{
@@ -23,7 +30,8 @@ defmodule PhoenixDevToolbar.Inspected do
           tag_line: non_neg_integer() | nil,
           binding: %{event: String.t(), name: String.t(), target: String.t() | nil} | nil,
           frames: [frame()],
-          caller: %{file: String.t() | nil, line: non_neg_integer() | nil} | nil
+          caller: %{file: String.t() | nil, line: non_neg_integer() | nil} | nil,
+          truncated: boolean()
         }
 
   @doc "Validates the loader's payload; `:error` when it is not a map."
@@ -37,7 +45,8 @@ defmodule PhoenixDevToolbar.Inspected do
        tag_line: integer(payload["tag_line"]),
        binding: parse_binding(payload["binding"]),
        frames: frames(payload["frames"]),
-       caller: caller(payload["caller"])
+       caller: caller(payload["caller"]),
+       truncated: payload["truncated"] == true
      }}
   end
 

@@ -928,6 +928,15 @@ test("the pick button posts pdt:pick and shows the loader's pick state", async (
   assert.equal(page.byId("pdt-pick").getAttribute("aria-pressed"), "false", "foreign messages are ignored")
 })
 
+test("the pick button works from the collapsed bar", async (t) => {
+  const page = await load(t)
+
+  assert.ok(!page.html.contains("pdt-open"), "collapsed")
+  page.byId("pdt-pick").click()
+
+  assert.deepEqual(page.toLoader().map(({data}) => data), [{type: "pdt:pick"}])
+})
+
 test("Escape while armed disarms through the loader; otherwise it is left alone", async (t) => {
   const page = await load(t)
   const escape = () => {

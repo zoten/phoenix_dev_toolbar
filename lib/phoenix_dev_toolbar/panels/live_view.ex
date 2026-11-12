@@ -183,28 +183,36 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
   defp select_tab(socket, %Inspected{root: nil}), do: socket
 
   defp select_tab(socket, inspected) do
-    socket
-    |> assign(:lv_tab, target_tab(inspected, socket.assigns.tree))
-    |> snapshot_if_shown()
-    |> tree_if_shown()
-  end
+    case target_tab(inspected, socket.assigns.tree) do
+      nil ->
+        socket
 
-  defp target_tab(inspected, tree) do
-    case components_target?(inspected, tree) do
-      true -> "components"
-      false -> "assigns"
+      tab ->
+        socket
+        |> assign(:lv_tab, tab)
+        |> snapshot_if_shown()
+        |> tree_if_shown()
     end
   end
 
-  defp components_target?(%Inspected{cid: cid}, _tree) when is_integer(cid), do: true
-
-  defp components_target?(%Inspected{root: root}, %{views: views}),
-    do: Enum.any?(views, &(&1.nested? and &1.root == root))
+  # nil: the root is no view of the tree (a sticky live_render has its own
+  # session), so the strip shows alone and no sub-tab changes.
+  defp target_tab(inspected, %{views: views}) do
+    cond do
+      not Enum.any?(views, &(&1.root == inspected.root)) -> nil
+      components_target?(inspected, views) -> "components"
+      true -> "assigns"
+    end
+  end
 
   # The page's own root id is only known from the tree: until it is loaded, a
   # pick opens Components, where the tree loads and selects the node.
-  defp components_target?(_inspected, nil), do: true
-  defp components_target?(_inspected, _tree), do: false
+  defp target_tab(_inspected, _tree), do: "components"
+
+  defp components_target?(%Inspected{cid: cid}, _views) when is_integer(cid), do: true
+
+  defp components_target?(%Inspected{root: root}, views),
+    do: Enum.any?(views, &(&1.nested? and &1.root == root))
 
   defp scroll_to_inspected(
          %{assigns: %{scroll?: true, inspected: inspected, tree: %{views: views}}} = socket

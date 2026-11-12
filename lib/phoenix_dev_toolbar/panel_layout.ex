@@ -134,13 +134,14 @@ defmodule PhoenixDevToolbar.PanelLayout do
           :if={Enum.any?(@tabs, &(&1.id == "live_view"))}
           id="pdt-pick"
           type="button"
-          class="pdt-button pdt-button--small pdt-pick"
+          class="pdt-pick"
           data-pdt-pick
           aria-pressed="false"
+          aria-label="Pick an element (Esc cancels)"
           phx-update="ignore"
-          title="Pick an element on the page to inspect it (Esc cancels)"
+          title="Pick an element (Esc cancels)"
         >
-          Pick element
+          <span class="pdt-pick__icon" aria-hidden="true"></span>
         </button>
         <%!-- Copy as Markdown (ADR 04, 13): the PdtMarkdown hook (assets/js/panel.js)
              starts the clipboard write in the click, the server pushes the

@@ -473,6 +473,54 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       on_exit(&attach_plugins/0)
     end
 
+    test "a missing tag and line leave no empty brackets or colon", %{request: request} do
+      view = open_lv(request, "profiler")
+
+      payload =
+        inspect_payload(%{
+          "tag" => nil,
+          "tag_line" => nil,
+          "frames" => [%{"name" => "Demo.Core.button", "file" => "lib/x.ex", "line" => nil}],
+          "caller" => %{"file" => "lib/y.ex"}
+        })
+
+      render_hook(view, "pdt:inspect", payload)
+
+      refute has_element?(view, "#pdt-inspected-tag")
+      refute has_element?(view, "#pdt-inspected-line")
+      assert has_element?(view, "#pdt-inspected-frame-0 code", ~r/\Alib\/x\.ex\z/)
+      assert has_element?(view, "#pdt-inspected-caller code", ~r/\Alib\/y\.ex\z/)
+    end
+
+    test "a truncated walk without frames names inspect_nodes, not the annotations hint",
+         %{request: request} do
+      view = open_lv(request, "profiler")
+
+      render_hook(view, "pdt:inspect", inspect_payload(%{"frames" => [], "truncated" => true}))
+
+      assert has_element?(view, "#pdt-inspected-truncated", "inspect_nodes:")
+      refute has_element?(view, "#pdt-inspected-hint")
+    end
+
+    test "a truncated walk with frames notes that outer frames may be missing",
+         %{request: request} do
+      view = open_lv(request, "profiler")
+
+      render_hook(view, "pdt:inspect", inspect_payload(%{"truncated" => true}))
+
+      assert has_element?(view, "#pdt-inspected-frame-0")
+      assert has_element?(view, "#pdt-inspected-truncated", "outer frames")
+    end
+
+    test "only a literal true counts as truncated", %{request: request} do
+      view = open_lv(request, "profiler")
+
+      render_hook(view, "pdt:inspect", inspect_payload(%{"frames" => [], "truncated" => "yes"}))
+
+      refute has_element?(view, "#pdt-inspected-truncated")
+      assert has_element?(view, "#pdt-inspected-hint")
+    end
+
     test "a new page (live navigation) clears the strip" do
       {_host, sid} = visit("/demo/components")
       panel = open_lv(sid, "profiler")
@@ -496,6 +544,39 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
       render_hook(panel, "pdt:inspect", inspect_payload(%{"root" => "phx-unknown"}))
 
+      assert has_element?(panel, ~s(#pdt-lv-tab-components[aria-selected="true"]))
+    end
+
+    test "a pick of a LiveView outside the page shows the strip and a hint only" do
+      {_host, sid} = visit("/demo/components")
+      panel = open_lv(sid, "profiler")
+      _ = render_async(panel)
+      panel |> element("#pdt-lv-tab-components") |> render_click()
+      _ = render_async(panel)
+      panel |> element("#pdt-lv-tab-profiler") |> render_click()
+
+      render_hook(panel, "pdt:inspect", inspect_payload(%{"root" => "phx-unknown"}))
+      _ = render_async(panel)
+
+      assert has_element?(panel, ~s(#pdt-lv-tab-profiler[aria-selected="true"]))
+      refute has_element?(panel, ~s(#pdt-lv-tab-assigns[aria-selected="true"]))
+      assert has_element?(panel, "#pdt-inspected")
+      assert has_element?(panel, "#pdt-inspected-foreign", "sticky")
+      refute has_element?(panel, "#pdt-tree [aria-current]")
+      refute has_element?(panel, ~s(#pdt-tree-0[aria-current="true"]))
+    end
+
+    test "a pick from the collapsed bar still lands on LiveView, Components" do
+      {host, sid} = visit("/demo/components")
+      panel = open_panel(sid)
+      panel |> element("#pdt-tab-ecto") |> render_click()
+
+      render_hook(panel, "pdt:visibility", %{"open" => false, "visible" => true})
+      render_hook(panel, "pdt:inspect", inspect_payload(%{"root" => host.id, "cid" => 1}))
+      _ = render_async(panel)
+      _ = render_async(panel)
+
+      assert has_element?(panel, ~s(#pdt-tab-live_view[aria-selected="true"]))
       assert has_element?(panel, ~s(#pdt-lv-tab-components[aria-selected="true"]))
     end
 
