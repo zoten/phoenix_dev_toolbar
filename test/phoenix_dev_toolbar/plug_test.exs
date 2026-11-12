@@ -390,6 +390,50 @@ defmodule PhoenixDevToolbar.PlugTest do
       end
     end
 
+    defp asset(file, headers \\ []) do
+      Enum.reduce(headers, conn(:get, "/__pdt/assets/#{file}"), fn {k, v}, c ->
+        Plug.Conn.put_req_header(c, k, v)
+      end)
+      |> ToolbarPlug.call(@opts)
+    end
+
+    test "carry a stable weak ETag" do
+      [etag] = get_resp_header(asset("panel.css"), "etag")
+
+      assert etag =~ ~r/^W\/"\d+-\d+"$/
+      assert get_resp_header(asset("panel.css"), "etag") == [etag]
+    end
+
+    test "answer 304 when If-None-Match matches" do
+      [etag] = get_resp_header(asset("panel.css"), "etag")
+      "W/" <> strong = etag
+
+      for value <- [etag, "\"other\", " <> etag, strong, "*"] do
+        conn = asset("panel.css", [{"if-none-match", value}])
+
+        assert conn.halted
+        assert conn.status == 304
+        assert conn.resp_body == ""
+        assert get_resp_header(conn, "etag") == [etag]
+        assert get_resp_header(conn, "cache-control") == ["no-cache"]
+        assert get_resp_header(conn, "x-content-type-options") == ["nosniff"]
+      end
+    end
+
+    test "answer 200 with the body on a stale If-None-Match" do
+      conn = asset("panel.css", [{"if-none-match", ~s(W/"1-1")}])
+
+      assert conn.status == 200
+      assert conn.resp_body =~ ".pdt-header"
+    end
+
+    test "a 404 has no ETag" do
+      conn = asset("secrets.exs")
+
+      assert conn.status == 404
+      assert get_resp_header(conn, "etag") == []
+    end
+
     test "files outside the whitelist are a 404" do
       for file <- ["secrets.exs", "mix.exs"] do
         conn = :get |> conn("/__pdt/assets/#{file}") |> ToolbarPlug.call(@opts)

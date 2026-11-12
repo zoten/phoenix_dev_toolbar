@@ -548,17 +548,39 @@ defmodule PhoenixDevToolbar.Plug do
 
     with %{^file => {app, source, content_type}} <- @assets,
          path = Application.app_dir(app, ["priv", "static", source]),
-         true <- File.regular?(path) do
+         {:ok, %File.Stat{type: :regular, size: size, mtime: mtime}} <-
+           File.stat(path, time: :posix) do
+      etag = ~s(W/"#{size}-#{mtime}")
+
+      conn =
+        conn
+        |> Conn.put_resp_content_type(content_type)
+        |> Conn.put_resp_header("cache-control", "no-cache")
+        |> Conn.put_resp_header("x-content-type-options", "nosniff")
+        |> Conn.put_resp_header("etag", etag)
+
       conn
-      |> Conn.put_resp_content_type(content_type)
-      |> Conn.put_resp_header("cache-control", "no-cache")
-      |> Conn.put_resp_header("x-content-type-options", "nosniff")
-      |> Conn.send_file(200, path)
+      |> send_asset(etag_match?(conn, etag), path)
       |> Conn.halt()
     else
       _ -> conn |> Conn.send_resp(404, "not found") |> Conn.halt()
     end
   end
+
+  defp send_asset(conn, true, _path), do: Conn.send_resp(conn, 304, "")
+  defp send_asset(conn, false, path), do: Conn.send_file(conn, 200, path)
+
+  # RFC 9110 weak comparison: list of tags, `W/` prefix ignored, `*` matches.
+  defp etag_match?(conn, etag) do
+    conn
+    |> Conn.get_req_header("if-none-match")
+    |> Enum.flat_map(&String.split(&1, ","))
+    |> Enum.map(&strip_weak(String.trim(&1)))
+    |> Enum.any?(&(&1 == "*" or &1 == strip_weak(etag)))
+  end
+
+  defp strip_weak("W/" <> tag), do: tag
+  defp strip_weak(tag), do: tag
 
   defp strip_prefix(path_info, []), do: {:ok, path_info}
   defp strip_prefix([segment | rest], [segment | prefix]), do: strip_prefix(rest, prefix)

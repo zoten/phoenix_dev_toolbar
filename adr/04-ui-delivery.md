@@ -38,6 +38,8 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   (esbuild, a dev only dependency, `--bundle --minify --target=es2020 --format=iife`)
   writes our bundles, which are committed and shipped in the package. CI rebuilds them
   and fails when `priv/static` differs. `panel.css` is hand written, no CSS framework.
+  Assets are sent `no-cache` with a weak `ETag` (`W/"<size>-<mtime>"`) and answer `304` when
+  `If-None-Match` matches (weak comparison), so a reload revalidates instead of downloading.
 - **Robustness**: `:path` must be absolute and below the root (raises in `init/1`); while
   the Store restarts every request is served untracked.
 - **Loader** (plain JS, about 9 KB minified, under 4 KB gzipped): runs only in the top window and once per
