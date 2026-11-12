@@ -167,11 +167,16 @@ class Node extends Target {
     super()
     this.ownerDocument = document
     this.parentNode = null
-    this.children = []
+    this.childNodes = []
+  }
+
+  // Elements only, like the DOM; `childNodes` also holds text and comments.
+  get children() {
+    return this.childNodes.filter((node) => node.nodeType === 1)
   }
 
   get firstChild() {
-    return this.children[0] || null
+    return this.childNodes[0] || null
   }
 
   get nodeType() {
@@ -183,12 +188,12 @@ class Node extends Target {
   }
 
   get previousSibling() {
-    const siblings = this.parentNode ? this.parentNode.children : []
+    const siblings = this.parentNode ? this.parentNode.childNodes : []
     return siblings[siblings.indexOf(this) - 1] || null
   }
 
   get lastChild() {
-    return this.children[this.children.length - 1] || null
+    return this.childNodes[this.childNodes.length - 1] || null
   }
 
   insert(index, nodes) {
@@ -196,11 +201,11 @@ class Node extends Target {
     nodes.forEach((node) => {
       node.parentNode = this
     })
-    this.children.splice(index, 0, ...nodes)
+    this.childNodes.splice(index, 0, ...nodes)
   }
 
   append(...nodes) {
-    this.insert(this.children.length, nodes)
+    this.insert(this.childNodes.length, nodes)
   }
 
   appendChild(node) {
@@ -213,7 +218,7 @@ class Node extends Target {
   }
 
   *descendants() {
-    for (const child of this.children) {
+    for (const child of this.childNodes) {
       yield child
       yield* child.descendants()
     }
@@ -245,7 +250,7 @@ export class FakeComment extends Node {
 
   remove() {
     if (!this.parentNode) return
-    const siblings = this.parentNode.children
+    const siblings = this.parentNode.childNodes
     siblings.splice(siblings.indexOf(this), 1)
     this.parentNode = null
   }
@@ -324,14 +329,14 @@ export class FakeElement extends Node {
 
   remove() {
     if (!this.parentNode) return
-    const siblings = this.parentNode.children
+    const siblings = this.parentNode.childNodes
     siblings.splice(siblings.indexOf(this), 1)
     this.parentNode = null
   }
 
   after(node) {
     const parent = this.parentNode
-    parent.insert(parent.children.indexOf(this) + 1, [node])
+    parent.insert(parent.childNodes.indexOf(this) + 1, [node])
   }
 
   matches(selector) {

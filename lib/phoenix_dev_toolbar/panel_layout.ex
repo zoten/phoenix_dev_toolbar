@@ -131,6 +131,7 @@ defmodule PhoenixDevToolbar.PanelLayout do
         <%!-- Pick an element on the host page (ADR 16): panel.js posts pdt:pick to
              the loader and owns the pressed state (patches leave it alone). --%>
         <button
+          :if={Enum.any?(@tabs, &(&1.id == "live_view"))}
           id="pdt-pick"
           type="button"
           class="pdt-button pdt-button--small pdt-pick"

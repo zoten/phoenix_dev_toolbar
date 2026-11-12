@@ -125,6 +125,16 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") escapedPicker = Boolean(event.target.closest && event.target.closest("#pdt-dock-picker"))
 })
 
+// Focus sits in this iframe after clicking the pick button, so the loader never
+// sees Escape: while armed, forward it as a second pick, which disarms.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return
+  const pick = document.getElementById("pdt-pick")
+  if (!pick || pick.getAttribute("aria-pressed") !== "true") return
+  event.preventDefault()
+  toParent("pick")
+})
+
 // Popovers do not light dismiss on focus: tabbing out of the picker closes the
 // menu (no refocus: focus went elsewhere).
 document.addEventListener("focusout", (event) => {

@@ -928,6 +928,22 @@ test("the pick button posts pdt:pick and shows the loader's pick state", async (
   assert.equal(page.byId("pdt-pick").getAttribute("aria-pressed"), "false", "foreign messages are ignored")
 })
 
+test("Escape while armed disarms through the loader; otherwise it is left alone", async (t) => {
+  const page = await load(t)
+  const escape = () => {
+    const event = new FakeEvent("keydown", {key: "Escape", target: page.document.body})
+    page.document.dispatchEvent(event)
+    return event
+  }
+
+  assert.ok(!escape().defaultPrevented, "not armed")
+  assert.deepEqual(page.toLoader(), [])
+
+  page.byId("pdt-pick").setAttribute("aria-pressed", "true")
+  assert.ok(escape().defaultPrevented)
+  assert.deepEqual(page.toLoader().map(({data}) => data), [{type: "pdt:pick"}])
+})
+
 test("a picked element waits for the hook, then reaches the server once", async (t) => {
   const page = await load(t)
   const picked = {root: "phx-F1", cid: null, tag: "button"}

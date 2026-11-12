@@ -526,6 +526,8 @@ const mount = () => {
     ["mousedown", swallow],
     ["pointerup", swallow],
     ["mouseup", swallow],
+    ["auxclick", swallow],
+    ["contextmenu", swallow],
     ["pointermove", onMove],
     ["click", onPick],
     ["keydown", onKey],

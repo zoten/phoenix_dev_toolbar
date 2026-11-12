@@ -408,12 +408,13 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
     end
 
     test "the tree rows carry their root and cid" do
-      {_host, sid} = visit("/demo/components")
+      {host, sid} = visit("/demo/components")
       panel = open_lv(sid, "components")
       _ = render_async(panel)
 
       root = tree_root(panel)
       assert String.starts_with?(root, "phx-")
+      assert root == host.id
       assert has_element?(panel, ~s(#pdt-tree-0[data-pdt-root="#{root}"]))
       assert has_element?(panel, ~s(#pdt-tree-0 li[data-pdt-root="#{root}"][data-pdt-cid]))
     end
@@ -445,6 +446,24 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
       assert has_element?(panel, ~s(#pdt-lv-tab-assigns[aria-selected="true"]))
       assert has_element?(panel, "#pdt-inspected")
+      # The view's own row is the selected one; no component node is.
+      assert has_element?(panel, ~s(#pdt-tree-0[aria-current="true"]))
+      refute has_element?(panel, "#pdt-tree li[data-pdt-cid][aria-current]")
+    end
+
+    test "a pick while another top tab is selected switches to LiveView, Components" do
+      {host, sid} = visit("/demo/components")
+      panel = open_panel(sid)
+      panel |> element("#pdt-tab-ecto") |> render_click()
+      assert has_element?(panel, ~s(#pdt-tab-ecto[aria-selected="true"]))
+
+      render_hook(panel, "pdt:inspect", inspect_payload(%{"root" => host.id, "cid" => 1}))
+      _ = render_async(panel)
+      _ = render_async(panel)
+
+      assert has_element?(panel, ~s(#pdt-tab-live_view[aria-selected="true"]))
+      assert has_element?(panel, ~s(#pdt-lv-tab-components[aria-selected="true"]))
+      assert has_element?(panel, ~s(#pdt-tree [aria-current="true"][data-pdt-cid="1"]))
     end
   end
 
@@ -529,6 +548,20 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
       render_hook(panel, "pdt:inspect", [1])
 
       refute has_element?(panel, "#pdt-inspected")
+    end
+
+    test "the pick button is rendered only with the LiveView tab" do
+      request = Store.new_session(Session.new(:request, path: "/demo"))
+      assert has_element?(open_panel(request.sid), "#pdt-pick")
+
+      with_plugins(
+        PhoenixDevToolbar.Config.expand([
+          :defaults,
+          {:exclude, PhoenixDevToolbar.Plugins.LiveView}
+        ])
+      )
+
+      refute has_element?(open_panel(request.sid), "#pdt-pick")
     end
   end
 

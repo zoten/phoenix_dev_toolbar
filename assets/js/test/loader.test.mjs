@@ -593,7 +593,7 @@ test("a second pdt:pick disarms and removes the listeners", async (t) => {
   page.fromPanel({type: "pdt:pick"})
 
   assert.deepEqual(page.picking(), [true, false])
-  for (const type of ["pointermove", "click", "keydown", "pointerdown", "mousedown", "pointerup", "mouseup"]) {
+  for (const type of ["pointermove", "click", "keydown", "pointerdown", "mousedown", "pointerup", "mouseup", "auxclick", "contextmenu"]) {
     assert.equal((page.document.listeners.get(type) || []).length, 0, type)
   }
 })
@@ -772,6 +772,19 @@ test("armed, presses are swallowed so an input is not focused; the toolbar's are
     assert.ok(!own.defaultPrevented, type)
   }
   assert.deepEqual(reached, [])
+})
+
+test("armed, auxclick and contextmenu are swallowed; the toolbar's are not", async (t) => {
+  const page = await inspectorPage(t)
+  page.fromPanel({type: "pdt:pick"})
+  for (const type of ["auxclick", "contextmenu"]) {
+    const event = new FakeEvent(type, {button: 2})
+    page.target.dispatchEvent(event)
+    assert.ok(event.defaultPrevented, type)
+    const own = new FakeEvent(type, {button: 2})
+    page.host.dispatchEvent(own)
+    assert.ok(!own.defaultPrevented, type)
+  }
 })
 
 test("presses are not intercepted after a disarm", async (t) => {
