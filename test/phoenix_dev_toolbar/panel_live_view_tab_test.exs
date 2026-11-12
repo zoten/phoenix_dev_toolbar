@@ -321,6 +321,133 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
     end
   end
 
+  describe "element inspector" do
+    @frames [%{"name" => "Demo.Core.button", "file" => "lib/x.ex", "line" => 12}]
+
+    defp inspect_payload(overrides) do
+      Map.merge(
+        %{
+          "root" => nil,
+          "cid" => nil,
+          "tag" => "button",
+          "tag_line" => 7,
+          "binding" => %{"event" => "phx-click", "name" => "save", "target" => nil},
+          "frames" => @frames,
+          "caller" => %{"file" => "lib/y.ex", "line" => 34}
+        },
+        overrides
+      )
+    end
+
+    test "a dead render shows the strip only", %{request: request} do
+      view = open_lv(request, "profiler")
+
+      render_hook(view, "pdt:inspect", inspect_payload(%{}))
+
+      assert has_element?(view, "#pdt-section-live_view:not([hidden]) #pdt-inspected")
+      assert has_element?(view, "#pdt-inspected-tag", "button")
+      assert has_element?(view, "#pdt-inspected-binding", ~s(phx-click="save"))
+      assert has_element?(view, "#pdt-inspected-frame-0", "Demo.Core.button")
+      assert has_element?(view, "#pdt-inspected-frame-0", "lib/x.ex:12")
+      assert has_element?(view, "#pdt-inspected-caller", "lib/y.ex:34")
+      assert has_element?(view, ~s(#pdt-lv-tab-profiler[aria-selected="true"]))
+    end
+
+    test "without annotations the strip says how to turn them on", %{request: request} do
+      view = open_lv(request, "profiler")
+
+      render_hook(view, "pdt:inspect", inspect_payload(%{"frames" => [], "caller" => nil}))
+
+      assert has_element?(view, "#pdt-inspected-hint", "debug_heex_annotations")
+    end
+
+    test "garbage is ignored", %{request: request} do
+      view = open_lv(request, "profiler")
+
+      render_hook(view, "pdt:inspect", %{"tag" => 5, "frames" => "x", "binding" => []})
+
+      refute has_element?(view, "#pdt-inspected-binding")
+      assert has_element?(view, "#pdt-inspected")
+    end
+
+    test "links the frames to the editor when PLUG_EDITOR is set", %{request: request} do
+      view = open_lv(request, "profiler")
+      render_hook(view, "pdt:inspect", inspect_payload(%{}))
+      refute has_element?(view, "#pdt-inspected-frame-0 a")
+
+      previous = System.get_env("PLUG_EDITOR")
+      System.put_env("PLUG_EDITOR", "vscode://file/__FILE__:__LINE__")
+
+      on_exit(fn ->
+        if previous,
+          do: System.put_env("PLUG_EDITOR", previous),
+          else: System.delete_env("PLUG_EDITOR")
+      end)
+
+      render_hook(view, "pdt:inspect", inspect_payload(%{}))
+
+      assert has_element?(view, ~s(#pdt-inspected-frame-0 a[href$="/lib/x.ex:12"]))
+      assert has_element?(view, ~s(#pdt-inspected-caller a[href$="/lib/y.ex:34"]))
+    end
+  end
+
+  describe "element inspector with a real host LiveView" do
+    setup do
+      attach_plugins()
+      on_exit(&attach_plugins/0)
+    end
+
+    # The root DOM id the tree rendered for the page's LiveView.
+    defp tree_root(panel) do
+      panel
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("#pdt-tree-0")
+      |> LazyHTML.attribute("data-pdt-root")
+      |> List.first()
+    end
+
+    test "the tree rows carry their root and cid" do
+      {_host, sid} = visit("/demo/components")
+      panel = open_lv(sid, "components")
+      _ = render_async(panel)
+
+      root = tree_root(panel)
+      assert String.starts_with?(root, "phx-")
+      assert has_element?(panel, ~s(#pdt-tree-0[data-pdt-root="#{root}"]))
+      assert has_element?(panel, ~s(#pdt-tree-0 li[data-pdt-root="#{root}"][data-pdt-cid]))
+    end
+
+    test "a component pick selects its node and shows the strip" do
+      {_host, sid} = visit("/demo/components")
+      panel = open_lv(sid, "components")
+      _ = render_async(panel)
+      root = tree_root(panel)
+      panel |> element("#pdt-lv-tab-profiler") |> render_click()
+
+      render_hook(panel, "pdt:inspect", inspect_payload(%{"root" => root, "cid" => 1}))
+      _ = render_async(panel)
+
+      assert has_element?(panel, ~s(#pdt-lv-tab-components[aria-selected="true"]))
+      assert has_element?(panel, ~s(#pdt-tree [aria-current="true"][data-pdt-cid="1"]))
+      assert has_element?(panel, "#pdt-inspected")
+      assert_push_event(panel, "pdt:scroll-inspected", %{})
+    end
+
+    test "a pick of the page's own LiveView opens Assigns, selecting nothing else" do
+      {_host, sid} = visit("/demo/components")
+      panel = open_lv(sid, "components")
+      _ = render_async(panel)
+      root = tree_root(panel)
+
+      render_hook(panel, "pdt:inspect", inspect_payload(%{"root" => root}))
+      _ = render_async(panel)
+
+      assert has_element?(panel, ~s(#pdt-lv-tab-assigns[aria-selected="true"]))
+      assert has_element?(panel, "#pdt-inspected")
+    end
+  end
+
   describe "end to end with a real host LiveView" do
     setup do
       attach_plugins()

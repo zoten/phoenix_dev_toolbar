@@ -18,6 +18,7 @@ defmodule PhoenixDevToolbar.PanelLive do
   alias PhoenixDevToolbar.ClientPolicy
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.Inspected
   alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.Page
   alias PhoenixDevToolbar.PageData
@@ -127,6 +128,20 @@ defmodule PhoenixDevToolbar.PanelLive do
     end
 
     {:noreply, socket}
+  end
+
+  # From the PdtPanel hook: the element picked on the host page (untrusted
+  # input, validated by PhoenixDevToolbar.Inspected). Opens the LiveView tab,
+  # which shows the element and selects its node (ADR 16).
+  def handle_event("pdt:inspect", %{} = params, socket) do
+    with {:ok, inspected} <- Inspected.parse(params),
+         %{panel: panel} <- Enum.find(socket.assigns.tabs, &(&1.id == @client_tab)) do
+      socket = open_tab(socket, @client_tab)
+      Panel.send_now(self(), panel, panel_id(@client_tab), {:inspect, inspected})
+      {:noreply, socket}
+    else
+      _ -> {:noreply, socket}
+    end
   end
 
   # From the PdtPanel hook: the loader's open state and the browser tab's visibility.

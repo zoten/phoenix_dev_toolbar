@@ -11,6 +11,7 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
   alias PhoenixDevToolbar.ClientEvent
   alias PhoenixDevToolbar.ComponentTree
   alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.Inspected
   alias PhoenixDevToolbar.LiveViewAssigns
   alias PhoenixDevToolbar.Page
   alias PhoenixDevToolbar.Panel
@@ -35,6 +36,7 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
      |> assign(snapshot: nil, snapshot_pending?: false, snapshot_at: nil, snapshot_timer: nil)
      |> assign(tree: nil, tree_pending?: false, tree_timer: nil)
      |> assign(client_count: 0, client_dropped: 0, recent_client: [])
+     |> assign(inspected: nil, scroll?: false, editor: nil)
      |> stream_configure(:lv_events, dom_id: &dom_id/1)}
   end
 
@@ -49,7 +51,8 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
       profile: Profile.new(events),
       last_changed: Enum.reduce(events, [], &last_changed/2),
       snapshot: nil,
-      tree: nil
+      tree: nil,
+      inspected: nil
     )
     |> stream(:lv_events, events, reset: true, limit: -@dom_limit)
     |> reinsert_recent_client()
@@ -115,6 +118,17 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
     end
   end
 
+  # From the PdtPanel hook: the element picked on the host page (ADR 16), already
+  # validated. Shows the strip and selects its node; a dead render (no root)
+  # shows the strip only.
+  def handle_info({:inspect, %Inspected{} = inspected}, socket) do
+    socket
+    |> assign(inspected: inspected, scroll?: inspected.root != nil)
+    |> assign(:editor, Inspected.editor_template())
+    |> select_tab(inspected)
+    |> scroll_to_inspected()
+  end
+
   def handle_info(_message, socket), do: socket
 
   ## Events from the panel's own buttons
@@ -150,10 +164,48 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
     do: {:noreply, assign(socket, snapshot: {:missing, :gone}, snapshot_pending?: false)}
 
   def handle_async(:tree, {:ok, {_owner, tree}}, socket),
-    do: {:noreply, socket |> assign(tree: tree, tree_pending?: false) |> schedule_tree()}
+    do:
+      {:noreply,
+       socket
+       |> assign(tree: tree, tree_pending?: false)
+       |> scroll_to_inspected()
+       |> schedule_tree()}
 
   def handle_async(:tree, {:exit, _reason}, socket),
     do: {:noreply, socket |> assign(tree_pending?: false) |> schedule_tree()}
+
+  ## Inspected element
+  #
+  # Components for a component or a nested LiveView; the Assigns of the page's own
+  # LiveView otherwise. The page scrolls to the selected tree node once the tree
+  # holds it (the PdtPanel hook does the scrolling).
+
+  defp select_tab(socket, %Inspected{root: nil}), do: socket
+
+  defp select_tab(socket, inspected) do
+    tab =
+      if(components_target?(inspected, socket.assigns.tree), do: "components", else: "assigns")
+
+    socket |> assign(:lv_tab, tab) |> snapshot_if_shown() |> tree_if_shown()
+  end
+
+  defp components_target?(%Inspected{cid: cid}, _tree) when is_integer(cid), do: true
+
+  defp components_target?(%Inspected{root: root}, %{views: views}),
+    do: Enum.any?(views, &(&1.nested? and &1.root == root))
+
+  defp components_target?(_inspected, _tree), do: false
+
+  defp scroll_to_inspected(
+         %{assigns: %{scroll?: true, inspected: inspected, tree: %{views: views}}} = socket
+       ) do
+    case LiveViewSections.selected_in?(views, inspected) do
+      true -> socket |> assign(:scroll?, false) |> push_event("pdt:scroll-inspected", %{})
+      false -> socket
+    end
+  end
+
+  defp scroll_to_inspected(socket), do: socket
 
   ## Event log
 
@@ -328,6 +380,8 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
         polling?={@shown? and @lv_tab == "components" and @visible?}
         events={@streams.lv_events}
         root={@page.root}
+        inspected={@inspected}
+        editor={@editor}
         target={@myself}
       />
     </div>

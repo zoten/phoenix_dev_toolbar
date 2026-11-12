@@ -43,14 +43,30 @@ defmodule PhoenixDevToolbar.LiveViewCompat do
   """
   @spec live_view_label(pid()) :: {:ok, module()} | :error
   def live_view_label(pid) when is_pid(pid) do
+    case live_view_root(pid) do
+      {:ok, view, _root} -> {:ok, view}
+      :error -> :error
+    end
+  end
+
+  @doc """
+  The view and the DOM id of the LiveView root of a process: the label's topic
+  is `"lv:" <> socket.id`, and `socket.id` is the id of the root element. Root
+  is nil when the topic has another shape. Panel only: reads another process.
+  """
+  @spec live_view_root(pid()) :: {:ok, module(), String.t() | nil} | :error
+  def live_view_root(pid) when is_pid(pid) do
     with [dictionary: dictionary] <- Process.info(pid, [:dictionary]),
-         {_key, {Phoenix.LiveView, view, _topic}} when is_atom(view) <-
+         {_key, {Phoenix.LiveView, view, topic}} when is_atom(view) <-
            List.keyfind(dictionary, :"$process_label", 0) do
-      {:ok, view}
+      {:ok, view, root_id(topic)}
     else
       _ -> :error
     end
   end
+
+  defp root_id("lv:" <> id) when id != "", do: id
+  defp root_id(_topic), do: nil
 
   @doc "True for a LiveView rendered inside another with `live_render/3`."
   @spec nested?(Socket.t()) :: boolean()

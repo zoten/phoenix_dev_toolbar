@@ -128,6 +128,19 @@ defmodule PhoenixDevToolbar.PanelLayout do
             > (disabled after an error)</span>
           </button>
         </div>
+        <%!-- Pick an element on the host page (ADR 16): panel.js posts pdt:pick to
+             the loader and owns the pressed state (patches leave it alone). --%>
+        <button
+          id="pdt-pick"
+          type="button"
+          class="pdt-button pdt-button--small pdt-pick"
+          data-pdt-pick
+          aria-pressed="false"
+          phx-update="ignore"
+          title="Pick an element on the page to inspect it (Esc cancels)"
+        >
+          Pick element
+        </button>
         <%!-- Copy as Markdown (ADR 04, 13): the PdtMarkdown hook (assets/js/panel.js)
              starts the clipboard write in the click, the server pushes the
              report. The result line is owned by the hook. --%>

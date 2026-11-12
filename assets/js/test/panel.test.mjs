@@ -17,6 +17,7 @@ const HEADER = [
   {class: "pdt-header"},
   ["div", {id: "pdt-bridge", "phx-hook": "PdtPanel", hidden: true}],
   ["span", {class: "pdt-logo"}, "dev toolbar"],
+  ["button", {id: "pdt-pick", "data-pdt-pick": true, "aria-pressed": "false"}, "Pick element"],
   [
     "div",
     {id: "pdt-tabs", class: "pdt-tabs", role: "tablist", "aria-label": "Toolbar tabs"},
@@ -893,4 +894,100 @@ test("shortcut: a match with focus inside the panel posts a toggle, and the hide
   press()
   assert.equal(toggles(), 1, "the shortcut was dropped")
   assert.equal(page.byId("pdt-hide").title, "Hide")
+})
+
+// The element inspector (ADR 16): the pick button, the forward of the loader's
+// pick to the server and the hover highlight of component tree rows.
+const TREE = [
+  "ul",
+  {id: "pdt-tree"},
+  [
+    "li",
+    {id: "pdt-tree-0", "data-pdt-root": "phx-F1"},
+    ["code", {id: "view-code"}, "Demo.Live"],
+    ["ul", {}, ["li", {id: "pdt-tree-0-3", "data-pdt-root": "phx-F1", "data-pdt-cid": "3"}, ["code", {id: "node-code"}, "Demo.Card"]]],
+  ],
+]
+
+const withTree = (t) =>
+  load(t, {setup: (env) => env.document.body.append(env.build(["section", {id: "pdt-panel", "data-pdt-root": "page"}, TREE]))})
+
+test("the pick button posts pdt:pick and shows the loader's pick state", async (t) => {
+  const page = await load(t)
+
+  page.byId("pdt-pick").click()
+  assert.deepEqual(page.toLoader().map(({data}) => data), [{type: "pdt:pick"}])
+
+  page.fromLoader({type: "pdt:picking", armed: true})
+  assert.equal(page.byId("pdt-pick").getAttribute("aria-pressed"), "true")
+
+  page.fromLoader({type: "pdt:picking", armed: false})
+  assert.equal(page.byId("pdt-pick").getAttribute("aria-pressed"), "false")
+
+  page.fromLoader({type: "pdt:picking", armed: true}, {origin: "http://evil.test"})
+  assert.equal(page.byId("pdt-pick").getAttribute("aria-pressed"), "false", "foreign messages are ignored")
+})
+
+test("a picked element waits for the hook, then reaches the server once", async (t) => {
+  const page = await load(t)
+  const picked = {root: "phx-F1", cid: null, tag: "button"}
+  page.fromLoader({type: "pdt:inspect", inspected: {root: "old"}})
+  page.fromLoader({type: "pdt:inspect", inspected: picked})
+  page.fromLoader({type: "pdt:inspect", inspected: picked}, {origin: "http://evil.test"})
+  page.fromLoader({type: "pdt:inspect", inspected: "nope"})
+
+  const bridge = page.join()
+  assert.deepEqual(bridge.pushed.filter(({event}) => event === "pdt:inspect").map(({payload}) => payload), [picked])
+
+  page.fromLoader({type: "pdt:inspect", inspected: {root: "phx-F2"}})
+  assert.deepEqual(bridge.pushed.filter(({event}) => event === "pdt:inspect").pop().payload, {root: "phx-F2"})
+})
+
+test("hovering a tree row highlights its element, leaving clears it", async (t) => {
+  const page = await withTree(t)
+  const view = page.byId("pdt-tree-0")
+  const node = page.byId("pdt-tree-0-3")
+  const over = (target, related) => target.dispatchEvent(new FakeEvent("pointerover", {relatedTarget: related}))
+  const out = (target, related) => target.dispatchEvent(new FakeEvent("pointerout", {relatedTarget: related}))
+  const sent = () => page.toLoader().map(({data}) => data)
+
+  over(page.byId("view-code"), null)
+  over(page.byId("view-code"), null)
+  assert.deepEqual(sent(), [{type: "pdt:highlight", root: "phx-F1", cid: null}], "once per row")
+
+  out(view, node)
+  over(page.byId("node-code"), view)
+  assert.deepEqual(sent().pop(), {type: "pdt:highlight", root: "phx-F1", cid: 3})
+
+  out(node, null)
+  assert.deepEqual(sent().pop(), {type: "pdt:highlight", root: null})
+})
+
+test("only component tree rows highlight, not the panel root that shares the attribute", async (t) => {
+  const page = await withTree(t)
+
+  page.byId("pdt-panel").dispatchEvent(new FakeEvent("pointerover", {relatedTarget: null}))
+
+  assert.deepEqual(page.toLoader(), [])
+})
+
+test("the server's scroll request brings the inspected node into view", async (t) => {
+  const page = await withTree(t)
+  const scrolled = []
+  const node = page.byId("pdt-tree-0-3")
+  node.setAttribute("aria-current", "true")
+  node.scrollIntoView = (options) => scrolled.push(options)
+
+  const bridge = page.join()
+  bridge.handlers["pdt:scroll-inspected"]({})
+
+  assert.deepEqual(scrolled, [{block: "nearest"}])
+})
+
+test("standalone has no loader to pick on: nothing is posted", async (t) => {
+  const page = await load(t, {framed: false})
+
+  page.byId("pdt-pick").click()
+
+  assert.deepEqual(page.toLoader() || [], [])
 })

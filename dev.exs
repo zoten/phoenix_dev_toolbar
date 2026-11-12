@@ -29,6 +29,10 @@ Application.put_env(:phoenix_dev_toolbar, :repos, [Demo.Repo])
 Application.put_env(:demo, :ecto_repos, [Demo.Repo])
 # The harness demonstrates process actions (opt-in, ADR 10).
 Application.put_env(:phoenix_dev_toolbar, :actions, :loopback)
+# What a Phoenix 1.8 app has in dev: HEEx source annotations and data-phx-loc,
+# which the element inspector reads (ADR 16). Set before the modules compile.
+Application.put_env(:phoenix_live_view, :debug_heex_annotations, true)
+Application.put_env(:phoenix_live_view, :debug_attributes, true)
 # Opt-in: call arguments of the crashing frame in the panel (ADR 03), off by default.
 # Application.put_env(:phoenix_dev_toolbar, :stack_args, true)
 

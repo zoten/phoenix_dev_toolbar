@@ -139,6 +139,46 @@ const pushClient = (payload) => {
   else if (clientBuffer.length < CLIENT_BUFFER) clientBuffer.push(payload)
 }
 
+// The element the user picked on the host page (ADR 16): only the last pick
+// waits for the hook. The server validates the payload again.
+let inspectBuffer = null
+
+const pushInspect = (payload) => {
+  if (panelHook) panelHook.pushEvent("pdt:inspect", payload, () => {})
+  else inspectBuffer = payload
+}
+
+const setPicking = (armed) => {
+  const pick = document.getElementById("pdt-pick")
+  if (pick) pick.setAttribute("aria-pressed", String(armed))
+}
+
+// Hovering a component tree row outlines its element on the host page. The rows
+// are re-rendered by the server, so the listeners are delegated.
+const treeRow = (node) => {
+  const row = node && node.closest ? node.closest("[data-pdt-root]") : null
+  return row && row.closest("#pdt-tree") ? row : null
+}
+
+let highlighted = null
+
+const highlight = (row) => {
+  if (row === highlighted) return
+  highlighted = row
+  if (!row) return toParent("highlight", {root: null})
+  const cid = Number.parseInt(row.dataset.pdtCid, 10)
+  toParent("highlight", {root: row.dataset.pdtRoot, cid: Number.isInteger(cid) ? cid : null})
+}
+
+document.addEventListener("pointerover", (event) => {
+  const row = treeRow(event.target)
+  if (row) highlight(row)
+})
+
+document.addEventListener("pointerout", (event) => {
+  if (highlighted && !treeRow(event.relatedTarget)) highlight(null)
+})
+
 // The loader's toggle shortcut (null when off), so the combo also works with
 // focus inside this frame, where the host page's listener never sees it.
 let shortcut = null
@@ -184,6 +224,10 @@ window.addEventListener("message", (event) => {
     if (toggle) toggle.focus()
   }
   if (data && data.type === "pdt:client") pushClient({event: data.event, dropped: data.dropped})
+  if (data && data.type === "pdt:picking") setPicking(data.armed === true)
+  if (data && data.type === "pdt:inspect" && data.inspected && typeof data.inspected === "object") {
+    pushInspect(data.inspected)
+  }
 })
 
 document.addEventListener("visibilitychange", pushVisibility)
@@ -222,6 +266,15 @@ const PdtPanel = {
     const pending = clientBuffer
     clientBuffer = []
     pending.forEach(pushClient)
+    const picked = inspectBuffer
+    inspectBuffer = null
+    if (picked) pushInspect(picked)
+    // The server selected the inspected node of the component tree: bring it into view.
+    this.handleEvent("pdt:scroll-inspected", () => {
+      const tree = document.getElementById("pdt-tree")
+      const node = tree && tree.querySelector("[aria-current='true']")
+      if (node && node.scrollIntoView) node.scrollIntoView({block: "nearest"})
+    })
   },
   disconnected() {
     say("Toolbar disconnected: what it shows is frozen until it reconnects")
@@ -393,6 +446,7 @@ document.addEventListener("click", (event) => {
     toParent("dock", {dock: dockOption.dataset.pdtDock})
   } else if (event.target.closest("[data-pdt-toggle]")) toParent("toggle")
   else if (event.target.closest("[data-pdt-hide]")) toParent("hide")
+  else if (event.target.closest("[data-pdt-pick]")) toParent("pick")
   else if (event.target.closest("[data-pdt-open]")) toParent("open")
   else if (event.target.closest("[role='tab']")) toParent("open")
 })

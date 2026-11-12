@@ -47,6 +47,27 @@ defmodule PhoenixDevToolbar.LiveViewCompatTest do
     end
   end
 
+  describe "live_view_root/1" do
+    test "reads the root element id from the label's topic" do
+      {pid, _label} =
+        in_process(fn ->
+          Process.put(:"$process_label", {Phoenix.LiveView, DemoWeb.PageLive, "lv:phx-1"})
+        end)
+
+      assert LiveViewCompat.live_view_root(pid) == {:ok, DemoWeb.PageLive, "phx-1"}
+    end
+
+    test "root is nil for a topic of another shape; :error for other processes" do
+      {pid, _label} =
+        in_process(fn ->
+          Process.put(:"$process_label", {Phoenix.LiveView, DemoWeb.PageLive, "other"})
+        end)
+
+      assert LiveViewCompat.live_view_root(pid) == {:ok, DemoWeb.PageLive, nil}
+      assert LiveViewCompat.live_view_root(self()) == :error
+    end
+  end
+
   describe "push_event_names/1" do
     setup do
       LiveViewCompat.reset_warnings()

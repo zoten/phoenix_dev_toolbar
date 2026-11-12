@@ -19,7 +19,12 @@ defmodule PhoenixDevToolbar.ComponentTree do
           cid: non_neg_integer(),
           children: [component()]
         }
-  @type view :: %{view: module(), nested?: boolean(), components: [component()]}
+  @type view :: %{
+          view: module(),
+          root: String.t() | nil,
+          nested?: boolean(),
+          components: [component()]
+        }
   @type t :: %{views: [view()], truncated?: boolean()}
 
   @doc """
@@ -31,17 +36,18 @@ defmodule PhoenixDevToolbar.ComponentTree do
     {views, left} =
       [root | List.delete(pids, root)]
       |> Enum.flat_map(&labelled/1)
-      |> Enum.map_reduce(@max_nodes, fn {pid, view}, left ->
+      |> Enum.map_reduce(@max_nodes, fn {pid, view, dom_id}, left ->
         {components, used} = build(live_components(pid), left)
-        {%{view: view, nested?: pid != root, components: components}, left - used}
+
+        {%{view: view, root: dom_id, nested?: pid != root, components: components}, left - used}
       end)
 
     %{views: views, truncated?: left <= 0}
   end
 
   defp labelled(pid) do
-    case LiveViewCompat.live_view_label(pid) do
-      {:ok, view} -> [{pid, view}]
+    case LiveViewCompat.live_view_root(pid) do
+      {:ok, view, dom_id} -> [{pid, view, dom_id}]
       :error -> []
     end
   end

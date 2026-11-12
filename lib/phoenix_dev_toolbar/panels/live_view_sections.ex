@@ -10,6 +10,7 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
   import PhoenixDevToolbar.Components, only: [duration: 1, row_attrs: 3, stack_args: 1]
 
   alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.Inspected
   alias PhoenixDevToolbar.Profile
 
   @sub_tabs [
@@ -23,6 +24,32 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
   @spec sub_tabs() :: [String.t()]
   def sub_tabs, do: Enum.map(@sub_tabs, &elem(&1, 0))
 
+  @doc false
+  # True when a tree row is the inspected element: the view's own row (no cid) or
+  # a component of that view.
+  @spec selected_in?([map()], Inspected.t() | nil) :: boolean()
+  def selected_in?(views, %Inspected{root: root} = inspected) when is_binary(root),
+    do: Enum.any?(views, &(selected_view?(&1, inspected) or selected_cid?(&1, inspected)))
+
+  def selected_in?(_views, _inspected), do: false
+
+  defp selected_view?(%{root: root}, %Inspected{root: root, cid: nil}) when is_binary(root),
+    do: true
+
+  defp selected_view?(_view, _inspected), do: false
+
+  defp selected_cid?(%{root: root, components: components}, %Inspected{root: root, cid: cid})
+       when is_binary(root) and is_integer(cid),
+       do: cid_in?(components, cid)
+
+  defp selected_cid?(_view, _inspected), do: false
+
+  defp cid_in?(nodes, cid),
+    do: Enum.any?(nodes, &(&1.cid == cid or cid_in?(&1.children, cid)))
+
+  defp current(true), do: "true"
+  defp current(false), do: nil
+
   attr :tab, :string, required: true
   attr :profile, Profile, required: true
   attr :snapshot, :any, required: true, doc: "nil, a Truncate.snapshot/1 or {:missing, why}"
@@ -34,12 +61,15 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
   attr :client_dropped, :integer, required: true
   attr :events, :any, required: true, doc: "the :lv_events stream"
   attr :root, :string, required: true
+  attr :inspected, :any, required: true, doc: "nil or the Inspected element (ADR 16)"
+  attr :editor, :string, default: nil, doc: "PLUG_EDITOR template, nil when unset"
   attr :target, :any, required: true, doc: "the LiveView panel component (@myself)"
 
   def section(assigns) do
     assigns = assign(assigns, :sub_tabs, @sub_tabs)
 
     ~H"""
+    <.inspected_strip :if={@inspected} inspected={@inspected} editor={@editor} />
     <nav class="pdt-subtabs" role="tablist" aria-label="LiveView">
       <button
         :for={{tab, label} <- @sub_tabs}
@@ -104,7 +134,7 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
       data-pdt-polling={if(@polling?, do: "on", else: "off")}
       data-pdt-reading={to_string(@tree_pending?)}
     >
-      <.tree tree={@tree} />
+      <.tree tree={@tree} inspected={@inspected} />
     </div>
     """
   end
@@ -160,6 +190,7 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
   end
 
   attr :tree, :any, required: true
+  attr :inspected, :any, required: true
 
   defp tree(%{tree: {:missing, :no_live_view}} = assigns) do
     ~H"""
@@ -170,11 +201,21 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
   defp tree(%{tree: %{views: _}} = assigns) do
     ~H"""
     <ul id="pdt-tree" class="pdt-tree">
-      <li :for={{view, index} <- Enum.with_index(@tree.views)} id={"pdt-tree-#{index}"}>
+      <li
+        :for={{view, index} <- Enum.with_index(@tree.views)}
+        id={"pdt-tree-#{index}"}
+        data-pdt-root={view.root}
+        aria-current={current(selected_view?(view, @inspected))}
+      >
         <code class="pdt-tree__view">{short(view.view)}</code>
         <span :if={view.nested?} class="pdt-tag">nested</span>
         <span :if={view.components == []} class="pdt-hint">no components</span>
-        <.tree_nodes nodes={view.components} prefix={"pdt-tree-#{index}"} />
+        <.tree_nodes
+          nodes={view.components}
+          prefix={"pdt-tree-#{index}"}
+          root={view.root}
+          inspected={@inspected}
+        />
       </li>
     </ul>
     <p :if={@tree.truncated?} class="pdt-hint pdt-snapshot__more">
@@ -191,16 +232,93 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
 
   attr :nodes, :list, required: true
   attr :prefix, :string, required: true
+  attr :root, :string, default: nil
+  attr :inspected, :any, required: true
 
   defp tree_nodes(assigns) do
     ~H"""
     <ul :if={@nodes != []}>
-      <li :for={node <- @nodes} id={"#{@prefix}-#{node.cid}"}>
+      <li
+        :for={node <- @nodes}
+        id={"#{@prefix}-#{node.cid}"}
+        data-pdt-root={@root}
+        data-pdt-cid={node.cid}
+        aria-current={current(selected_node?(@root, node, @inspected))}
+      >
         <code>{short(node.module)}</code>
         <span class="pdt-hint">id {node.id} · cid {node.cid}</span>
-        <.tree_nodes nodes={node.children} prefix={@prefix} />
+        <.tree_nodes nodes={node.children} prefix={@prefix} root={@root} inspected={@inspected} />
       </li>
     </ul>
+    """
+  end
+
+  defp selected_node?(root, %{cid: cid}, %Inspected{root: root, cid: cid}) when is_binary(root),
+    do: true
+
+  defp selected_node?(_root, _node, _inspected), do: false
+
+  attr :inspected, Inspected, required: true
+  attr :editor, :string, default: nil
+
+  # The picked element: tag, binding, the function components around it and
+  # their caller, with editor links (ADR 16). Without HEEx annotations there are
+  # no frames: the strip says how to turn them on.
+  defp inspected_strip(assigns) do
+    ~H"""
+    <section id="pdt-inspected" class="pdt-inspected" aria-label="Inspected element">
+      <p class="pdt-inspected__head">
+        <strong>Inspected element</strong>
+        <code id="pdt-inspected-tag">&lt;{@inspected.tag}&gt;</code>
+        <span :if={@inspected.tag_line} id="pdt-inspected-line" class="pdt-hint">
+          line {@inspected.tag_line}
+        </span>
+        <span :if={@inspected.cid} class="pdt-hint">cid {@inspected.cid}</span>
+      </p>
+      <p :if={@inspected.binding} id="pdt-inspected-binding">
+        <code>{@inspected.binding.event}="{@inspected.binding.name}"</code>
+        <span :if={@inspected.binding.target} class="pdt-hint">
+          target {@inspected.binding.target}
+        </span>
+      </p>
+      <ol :if={@inspected.frames != []} id="pdt-inspected-frames" class="pdt-inspected__frames">
+        <li
+          :for={{frame, index} <- Enum.with_index(@inspected.frames)}
+          id={"pdt-inspected-frame-#{index}"}
+        >
+          <code>{frame.name}</code>
+          <.source file={frame.file} line={frame.line} editor={@editor} />
+        </li>
+      </ol>
+      <p :if={@inspected.caller} id="pdt-inspected-caller">
+        <span class="pdt-hint">called from</span>
+        <.source file={@inspected.caller.file} line={@inspected.caller.line} editor={@editor} />
+      </p>
+      <p :if={@inspected.frames == []} id="pdt-inspected-hint" class="pdt-hint">
+        No HEEx source annotations found. Set <code>debug_heex_annotations: true</code>
+        and <code>debug_attributes: true</code>
+        for <code>:phoenix_live_view</code>
+        in dev.
+      </p>
+    </section>
+    """
+  end
+
+  attr :file, :string, default: nil
+  attr :line, :integer, default: nil
+  attr :editor, :string, default: nil
+
+  defp source(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :href,
+        Inspected.editor_url(%{file: assigns.file, line: assigns.line}, assigns.editor)
+      )
+
+    ~H"""
+    <a :if={@href} href={@href} class="pdt-link" rel="noopener"><code>{@file}:{@line}</code></a>
+    <code :if={@file && is_nil(@href)} class="pdt-hint">{@file}:{@line}</code>
     """
   end
 
