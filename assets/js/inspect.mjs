@@ -4,7 +4,9 @@
 // `data-phx-*` attributes and never writes to the page. Host DOM text is
 // untrusted input: the walk is capped and every string truncated here, and the
 // server bounds it again.
-export const MAX_NODES = 200
+export const MAX_NODES = 500
+export const MIN_NODES = 50
+export const LIMIT_NODES = 10_000
 export const MAX_FRAMES = 20
 export const MAX_STRING_BYTES = 512
 export const MAX_INTEGER = 10_000_000
@@ -67,17 +69,17 @@ const frame = (open, node) => {
 // cancels the open annotation of the same name before it. The walk stops at the
 // LiveView root (its children are scanned, its own siblings are not), or at
 // the body of a dead render.
-const walk = (element, root) => {
+const walk = (element, root, maxNodes) => {
   const frames = []
   let caller = null
   let visited = 0
   let node = element
-  const budget = () => ++visited <= MAX_NODES
+  const budget = () => ++visited <= maxNodes
 
   while (node && node !== root && node.nodeType === ELEMENT && node.tagName !== "body" && node.tagName !== "BODY") {
     const closed = new Map()
     for (let sibling = node.previousSibling; sibling; sibling = sibling.previousSibling) {
-      if (!budget()) return {frames, caller}
+      if (!budget()) return {frames, caller, truncated: true}
       if (!comment(sibling)) continue
 
       const close = CLOSE.exec(sibling.data)
@@ -91,15 +93,15 @@ const walk = (element, root) => {
         closed.set(open[1], closed.get(open[1]) - 1)
         continue
       }
-      if (frames.length >= MAX_FRAMES) return {frames, caller}
+      if (frames.length >= MAX_FRAMES) return {frames, caller, truncated: false}
       const found = frame(open, sibling)
       if (frames.length === 0) caller = found.caller
       frames.push(found.frame)
     }
-    if (!budget()) break
+    if (!budget()) return {frames, caller, truncated: true}
     node = node.parentNode
   }
-  return {frames, caller}
+  return {frames, caller, truncated: false}
 }
 
 // The closest element, self or ancestor, inside the root, with a phx-click,
@@ -116,14 +118,23 @@ const binding = (element, root) => {
   return null
 }
 
-// The payload of the contract (ADR 16) for a picked element.
-export const resolve = (element) => {
+// A walk budget from a data attribute: an integer in MIN_NODES..LIMIT_NODES,
+// else the default.
+export const nodeBudget = (value) => {
+  const text = typeof value === "string" ? value.trim() : ""
+  const number = /^\d{1,5}$/.test(text) ? Number(text) : NaN
+  return number >= MIN_NODES && number <= LIMIT_NODES ? number : MAX_NODES
+}
+
+// The payload of the contract (ADR 16) for a picked element. `maxNodes` is the
+// walk budget; `truncated` is true when it ran out before the root.
+export const resolve = (element, {maxNodes = MAX_NODES} = {}) => {
   const root = element.closest("[data-phx-session]")
   const found = element.closest("[data-phx-component]")
   // Cids are per LiveView: a component outside this root belongs to a parent.
   const component = found && (!root || root.contains(found)) ? found : null
   const rootId = root ? attr(root, "id") : null
-  const {frames, caller} = walk(element, root)
+  const {frames, caller, truncated} = walk(element, root, maxNodes)
 
   return {
     root: rootId === null ? null : truncate(rootId),
@@ -133,6 +144,7 @@ export const resolve = (element) => {
     binding: binding(element, root),
     frames,
     caller,
+    truncated,
   }
 }
 

@@ -593,8 +593,9 @@ test("a second pdt:pick disarms and removes the listeners", async (t) => {
   page.fromPanel({type: "pdt:pick"})
 
   assert.deepEqual(page.picking(), [true, false])
-  for (const type of ["pointermove", "click", "keydown", "pointerdown", "mousedown", "pointerup", "mouseup", "auxclick", "contextmenu"]) {
+  for (const type of ["pointermove", "click", "keydown", "pointerdown", "mousedown", "pointerup", "mouseup", "auxclick", "contextmenu", "dblclick", "touchstart", "touchend"]) {
     assert.equal((page.document.listeners.get(type) || []).length, 0, type)
+    assert.equal((page.window.listeners.get(type) || []).filter(({capture}) => capture).length, 0, type)
   }
 })
 
@@ -654,6 +655,7 @@ test("armed click posts the payload, disarms, opens the panel and swallows the c
       binding: {event: "phx-click", name: "save", target: null},
       frames: [{name: "Demo.Core.button", file: "lib/x.ex", line: 12}],
       caller: null,
+      truncated: false,
     },
   ])
   assert.deepEqual(page.picking(), [true, false])
@@ -862,4 +864,83 @@ test("pdt:highlight for a cid ignores a nested LiveView's component with the sam
   page.fromPanel({type: "pdt:highlight", root: "phx-F1", cid: 3})
 
   assert.equal(page.boxes()[0].style.getPropertyValue("left"), "1px")
+})
+
+const HOST_EVENTS = ["pointerdown", "mousedown", "pointerup", "mouseup", "auxclick", "contextmenu", "dblclick", "touchstart", "touchend", "click"]
+
+// A window capture listener the host registered before the loader armed runs
+// first on the same target (registration order), so only document capture
+// listeners and window listeners added later are guaranteed to be stopped.
+test("armed, host capture listeners on document (and added later on window) never see the events; after disarm they do", async (t) => {
+  const page = await inspectorPage(t)
+  const seen = []
+  for (const type of HOST_EVENTS) page.document.addEventListener(type, () => seen.push(`document ${type}`), true)
+  page.fromPanel({type: "pdt:pick"})
+  for (const type of HOST_EVENTS) page.window.addEventListener(type, () => seen.push(`window ${type}`), true)
+
+  for (const type of HOST_EVENTS.filter((type) => type !== "click")) {
+    const event = new FakeEvent(type, {button: 0, cancelable: true})
+    page.target.dispatchEvent(event)
+    assert.ok(event.defaultPrevented, type)
+  }
+  page.click(page.target)
+  assert.deepEqual(seen, [])
+
+  // The pick click disarmed the picker.
+  page.target.dispatchEvent(new FakeEvent("mousedown", {button: 0}))
+
+  assert.deepEqual(seen, ["window mousedown", "document mousedown"])
+})
+
+test("armed, a touch that cannot be cancelled is stopped but not prevented", async (t) => {
+  const page = await inspectorPage(t)
+  const reached = []
+  page.document.addEventListener("touchstart", () => reached.push(1), true)
+  page.fromPanel({type: "pdt:pick"})
+
+  const event = new FakeEvent("touchstart", {cancelable: false})
+  page.target.dispatchEvent(event)
+
+  assert.ok(!event.defaultPrevented)
+  assert.deepEqual(reached, [])
+})
+
+test("armed, the toolbar's own touches and double clicks pass through", async (t) => {
+  const page = await inspectorPage(t)
+  page.fromPanel({type: "pdt:pick"})
+  for (const type of ["touchstart", "touchend", "dblclick"]) {
+    const event = new FakeEvent(type, {cancelable: true})
+    page.host.dispatchEvent(event)
+    assert.ok(!event.defaultPrevented, type)
+  }
+})
+
+test("inspect_nodes: the attribute sets the walk budget, an invalid one falls back to 500", async (t) => {
+  const filler = Array.from({length: 300}, () => ["#comment", " noise "])
+  const build = (env) => {
+    const view = env.build([
+      "div", {id: "phx-F1", "data-phx-session": "s"},
+      ["#comment", " <Demo.Core.row> lib/x.ex:1 (demo) "],
+      ...filler,
+      ["button", {id: "target"}],
+    ])
+    env.document.body.append(view)
+  }
+  const pickFrames = async (name, attributes) => {
+    let inspected
+    await t.test(name, async (st) => {
+      const page = await load(st, {attributes, setup: build})
+      page.fromPanel({type: "pdt:pick"})
+      page.document.getElementById("target").dispatchEvent(new FakeEvent("click", {button: 0}))
+      inspected = page.posted().filter(({data}) => data.type === "pdt:inspect").at(-1).data.inspected
+    })
+    return inspected
+  }
+
+  assert.equal((await pickFrames("default", {})).frames.length, 1)
+  assert.equal((await pickFrames("junk", {"data-pdt-inspect-nodes": "abc"})).frames.length, 1)
+  assert.equal((await pickFrames("below range", {"data-pdt-inspect-nodes": "10"})).frames.length, 1)
+  const small = await pickFrames("small", {"data-pdt-inspect-nodes": "100"})
+  assert.equal(small.frames.length, 0)
+  assert.equal(small.truncated, true)
 })

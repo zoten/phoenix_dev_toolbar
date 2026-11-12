@@ -28,6 +28,38 @@ defmodule PhoenixDevToolbar.ConfigUiTest do
     end
   end
 
+  describe "inspect_nodes/0" do
+    test "is 500 when unset" do
+      delete_app_env(:inspect_nodes)
+      assert Config.inspect_nodes() == 500
+    end
+
+    test "accepts integers from 50 to 10_000" do
+      for nodes <- [50, 500, 2_000, 10_000] do
+        put_app_env(:inspect_nodes, nodes)
+        assert Config.inspect_nodes() == nodes
+      end
+    end
+
+    test "falls back to 500 on anything else, silently" do
+      for invalid <- [49, 10_001, 0, -5, 1.5, "800", nil, :many, %{}] do
+        put_app_env(:inspect_nodes, invalid)
+        assert capture_log(fn -> assert Config.inspect_nodes() == 500 end) == ""
+      end
+    end
+
+    test "warn_ui/0 warns once about an invalid value and names the fallback" do
+      put_app_env(:inspect_nodes, 5)
+      log = capture_log(fn -> Config.warn_ui() end)
+      assert log =~ "invalid inspect_nodes: 5"
+      assert log =~ "Using 500"
+
+      put_app_env(:inspect_nodes, 800)
+      assert capture_log(fn -> Config.warn_ui() end) == ""
+      delete_app_env(:inspect_nodes)
+    end
+  end
+
   describe "shortcut/0" do
     defp shortcut(value) do
       put_app_env(:shortcut, value)

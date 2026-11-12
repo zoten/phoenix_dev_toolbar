@@ -33,7 +33,7 @@ import {
   sizeFromPointer,
   THEMES,
 } from "./layout.mjs"
-import {outlineBox, resolve} from "./inspect.mjs"
+import {nodeBudget, outlineBox, resolve} from "./inspect.mjs"
 import {label, parseShortcut, triggered} from "./shortcut.mjs"
 
 const STORAGE_KEY = "pdt:state"
@@ -215,6 +215,7 @@ const mount = () => {
   const corner = script.dataset.pdtPill
   if (CORNERS.includes(corner)) pill.classList.add(`corner-${corner}`)
   // Opt in toggle shortcut: only a canonical, parsable value counts.
+  const maxNodes = nodeBudget(script.dataset.pdtInspectNodes)
   const shortcutSource = script.dataset.pdtShortcut
   const shortcut = parseShortcut(shortcutSource)
   pill.title = shortcut ? `Show the dev toolbar (${label(shortcutSource)})` : "Show the dev toolbar"
@@ -438,7 +439,7 @@ const mount = () => {
   }
   const ours = (target) => !target || host === target || host.contains(target)
   const describe = (element) => {
-    const {tag, frames} = resolve(element)
+    const {tag, frames} = resolve(element, {maxNodes})
     return frames.length > 0 ? `${tag} in ${frames[0].name}` : tag
   }
 
@@ -489,8 +490,8 @@ const mount = () => {
     try {
       if (ours(event.target)) return
       event.preventDefault()
-      event.stopPropagation()
-      const inspected = resolve(event.target)
+      event.stopImmediatePropagation()
+      const inspected = resolve(event.target, {maxNodes})
       disarm()
       post("inspect", {inspected})
       setState("open")
@@ -503,7 +504,7 @@ const mount = () => {
     try {
       if (event.key !== "Escape") return
       event.preventDefault()
-      event.stopPropagation()
+      event.stopImmediatePropagation()
       disarm()
     } catch (_error) {
       // Same as above.
@@ -515,11 +516,27 @@ const mount = () => {
     try {
       if (ours(event.target)) return
       event.preventDefault()
-      event.stopPropagation()
+      event.stopImmediatePropagation()
     } catch (_error) {
       // Same as above.
     }
   }
+
+  // Touches: preventDefault only when the browser allows it (a scroll in
+  // flight is not cancelable).
+  const swallowTouch = (event) => {
+    try {
+      if (ours(event.target)) return
+      if (event.cancelable !== false) event.preventDefault()
+      event.stopImmediatePropagation()
+    } catch (_error) {
+      // Same as above.
+    }
+  }
+
+  // On window with capture: the first stop of the path, ahead of host capture
+  // listeners on window or document. Not passive, so touches can be cancelled.
+  const options = {capture: true, passive: false}
 
   const listeners = [
     ["pointerdown", swallow],
@@ -529,6 +546,9 @@ const mount = () => {
     ["auxclick", swallow],
     ["contextmenu", swallow],
     ["pointermove", onMove],
+    ["dblclick", swallow],
+    ["touchstart", swallowTouch],
+    ["touchend", swallowTouch],
     ["click", onPick],
     ["keydown", onKey],
   ]
@@ -537,7 +557,7 @@ const mount = () => {
     if (!armed) return
     armed = false
     hoverTarget = null
-    listeners.forEach(([type, fun]) => document.removeEventListener(type, fun, true))
+    listeners.forEach(([type, fun]) => window.removeEventListener(type, fun, options))
     clearBox()
     post("picking", {armed: false})
   }
@@ -548,7 +568,7 @@ const mount = () => {
   const arm = () => {
     clearHighlight()
     armed = true
-    listeners.forEach(([type, fun]) => document.addEventListener(type, fun, true))
+    listeners.forEach(([type, fun]) => window.addEventListener(type, fun, options))
     post("picking", {armed: true})
   }
 

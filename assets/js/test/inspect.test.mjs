@@ -2,7 +2,7 @@
 import {test} from "node:test"
 import assert from "node:assert/strict"
 
-import {MAX_FRAMES, MAX_NODES, MAX_STRING_BYTES, outlineBox, resolve, truncate} from "../inspect.mjs"
+import {MAX_FRAMES, MAX_NODES, nodeBudget, MAX_STRING_BYTES, outlineBox, resolve, truncate} from "../inspect.mjs"
 import {installDom} from "./support/fake_dom.mjs"
 
 const open = (name, loc = "lib/x.ex:12") => ["#comment", ` <${name}> ${loc} (demo) `]
@@ -247,4 +247,31 @@ test("the frame walk stops at the nested LiveView root", (t) => {
   const {frames} = resolve(env.document.getElementById("plain"))
 
   assert.deepEqual(frames.map(({name}) => name), ["Demo.Child.button"])
+})
+
+test("a picked cell in row 150 of a table keeps its frames with the default budget", (t) => {
+  const row = (i) => ["tr", {}, ["td", {}, ["#comment", " noise "]], ["td", {}]]
+  const rows = Array.from({length: 150}, (_, i) => row(i))
+  const {target} = page(t, open("Demo.Core.table"), ["table", {}, ["tbody", {}, ...rows, ["tr", {}, ["td", {id: "target"}]]]])
+
+  const inspected = resolve(target)
+
+  assert.deepEqual(inspected.frames.map(({name}) => name), ["Demo.Core.table"])
+  assert.equal(inspected.truncated, false)
+})
+
+test("truncated is true when the budget ran out before the root, false otherwise", (t) => {
+  const filler = Array.from({length: 120}, () => ["#comment", " noise "])
+  const {target} = page(t, open("Demo.Core.button"), ...filler, ["button", {id: "target"}])
+
+  const small = resolve(target, {maxNodes: 50})
+  assert.deepEqual(small.frames, [])
+  assert.equal(small.truncated, true)
+  assert.equal(resolve(target, {maxNodes: 500}).truncated, false)
+})
+
+test("nodeBudget accepts integers from 50 to 10000, else the default", () => {
+  assert.equal(nodeBudget("50"), 50)
+  assert.equal(nodeBudget("10000"), 10_000)
+  for (const bad of [undefined, "", "49", "10001", "abc", "1.5", "-5", "5e2"]) assert.equal(nodeBudget(bad), MAX_NODES, String(bad))
 })

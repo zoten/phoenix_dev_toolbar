@@ -75,6 +75,23 @@ defmodule PhoenixDevToolbar.Config do
     end
   end
 
+  @default_inspect_nodes 500
+  @inspect_nodes_range 50..10_000
+
+  @doc """
+  How many DOM nodes the element inspector may visit looking for the component frames
+  of a picked element (ADR 16): `inspect_nodes:`, an integer from 50 to 10_000, `500`
+  by default. Raise it for very long lists or tables. Unset or invalid is `500`.
+  Never logs (`warn_ui/0` does).
+  """
+  @spec inspect_nodes() :: 50..10_000
+  def inspect_nodes do
+    case Application.get_env(:phoenix_dev_toolbar, :inspect_nodes) do
+      nodes when is_integer(nodes) and nodes in @inspect_nodes_range -> nodes
+      _unset_or_invalid -> @default_inspect_nodes
+    end
+  end
+
   @doc """
   The keyboard shortcut that toggles the toolbar (ADR 04): `shortcut:`, written like
   `"ctrl+shift+d"`, returned in canonical form (lowercase, modifiers ordered `ctrl`,
@@ -117,11 +134,22 @@ defmodule PhoenixDevToolbar.Config do
     Enum.join(ordered, "+") <> "+" <> key
   end
 
-  @doc "Logs, at boot, an invalid `pill_corner:` or `shortcut:` and what is used instead."
+  @doc "Logs, at boot, an invalid `pill_corner:`, `shortcut:` or `inspect_nodes:` and what is used instead."
   @spec warn_ui() :: :ok
   def warn_ui do
     warn_pill_corner(Application.get_env(:phoenix_dev_toolbar, :pill_corner))
     warn_shortcut(Application.get_env(:phoenix_dev_toolbar, :shortcut))
+    warn_inspect_nodes(Application.get_env(:phoenix_dev_toolbar, :inspect_nodes))
+  end
+
+  defp warn_inspect_nodes(nil), do: :ok
+  defp warn_inspect_nodes(nodes) when is_integer(nodes) and nodes in @inspect_nodes_range, do: :ok
+
+  defp warn_inspect_nodes(invalid) do
+    Logger.warning(
+      "[phoenix_dev_toolbar] invalid inspect_nodes: #{inspect(invalid, limit: 5)}, " <>
+        "expected an integer from 50 to 10000. Using #{@default_inspect_nodes}."
+    )
   end
 
   defp warn_pill_corner(nil), do: :ok

@@ -496,6 +496,10 @@ defmodule PhoenixDevToolbar.Plug do
     end
   end
 
+  # The default budget is the loader's own: no attribute.
+  defp inspect_nodes_attr(500), do: nil
+  defp inspect_nodes_attr(nodes), do: Integer.to_string(nodes)
+
   defp loader_tag(conn, sid, %{path: path, nonce_assign: nonce_assign}) do
     attrs = [
       {"src", path <> "/assets/loader.js"},
@@ -504,6 +508,7 @@ defmodule PhoenixDevToolbar.Plug do
       {"data-pdt-reserve", reserve_attr(Config.reserve_space?())},
       {"data-pdt-pill", pill_attr(Config.pill_corner())},
       {"data-pdt-shortcut", Config.shortcut()},
+      {"data-pdt-inspect-nodes", inspect_nodes_attr(Config.inspect_nodes())},
       {"nonce", nonce(conn, nonce_assign)}
     ]
 

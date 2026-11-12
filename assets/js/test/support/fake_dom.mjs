@@ -9,6 +9,7 @@ export class FakeEvent {
     this.type = type
     this.defaultPrevented = false
     this.stopped = false
+    this.immediateStopped = false
   }
 
   preventDefault() {
@@ -17,6 +18,11 @@ export class FakeEvent {
 
   stopPropagation() {
     this.stopped = true
+  }
+
+  stopImmediatePropagation() {
+    this.stopped = true
+    this.immediateStopped = true
   }
 }
 
@@ -44,6 +50,7 @@ class Target {
   // one every listener runs.
   fire(event, phase) {
     for (const listener of [...(this.listeners.get(event.type) || [])]) {
+      if (event.immediateStopped) break
       if (phase && listener.capture !== (phase === "capture")) continue
       if (listener.once) this.removeEventListener(event.type, listener.fun, {capture: listener.capture})
       listener.fun.call(this, event)

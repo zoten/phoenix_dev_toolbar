@@ -88,6 +88,18 @@ defmodule PhoenixDevToolbar.PlugTest do
       refute tag =~ "data-pdt-shortcut"
     end
 
+    test "give the loader a custom inspect budget, and nothing for the default or an invalid one" do
+      put_app_env(:inspect_nodes, 2_000)
+      assert [[tag]] = page_conn() |> respond() |> loader_tags()
+      assert tag =~ ~s( data-pdt-inspect-nodes="2000")
+
+      for value <- [500, 5, "x"] do
+        put_app_env(:inspect_nodes, value)
+        assert [[tag]] = page_conn() |> respond() |> loader_tags()
+        refute tag =~ "data-pdt-inspect-nodes"
+      end
+    end
+
     test "record the response with its duration" do
       conn = respond(page_conn())
 
