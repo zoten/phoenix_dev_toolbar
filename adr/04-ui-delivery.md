@@ -332,3 +332,7 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   registered earlier than the toolbar plug, runs after the toolbar's stripping and can
   re-add them.
 - HTTP/2 requests carry no `host` header; the fallback then requires a default port.
+- Tidewave (0.9), whose plug runs before this one, rewrites every response after it: it
+  injects its toolbar into the panel, strips the panel's `frame-ancestors`, and draws its
+  widget above a bottom dock. Not worked around (it would mean reading Tidewave's private
+  conn fields); the README states it and points to `plug Tidewave, toolbar: false`.

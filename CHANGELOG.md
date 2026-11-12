@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- README: using with Tidewave, its known conflicts (ADR 04)
+
 ## [0.0.5] - 2026-11-12
 
 - Dock menu on the Popover API with CSS anchor positioning; supported browsers raised (ADR 04)

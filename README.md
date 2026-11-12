@@ -294,9 +294,19 @@ then `mix usage_rules.sync`. Adding `file:` and `usage_rules: [:phoenix_dev_tool
 
 - [Phoenix LiveDashboard](https://github.com/phoenixframework/phoenix_live_dashboard): node-wide metrics and processes on its own page, not tied to the page you are viewing. Better for metrics over time.
 - [LiveDebugger](https://github.com/software-mansion/live-debugger): deeper LiveView state debugging. This toolbar's LiveView tab overlaps with it; use LiveDebugger when LiveView state is the whole problem.
-- [Tidewave](https://tidewave.ai): gives coding agents runtime access to your app. A different job: this toolbar is for the developer looking at a page.
+- [Tidewave](https://tidewave.ai): gives coding agents runtime access to your app. A different job: this toolbar is for the developer looking at a page. Both can run together, see "Using with Tidewave".
 - [phoenix_profiler](https://hex.pm/packages/phoenix_profiler): an existing profiler and debug toolbar for Phoenix.
 - What this one adds: everything is attributed to the page in front of you (its request, its LiveView processes and their tasks), with N+1 detection per callback and one-click EXPLAIN.
+
+## Using with Tidewave
+
+Both run in the same app and their MCP servers sit side by side (`/tidewave/mcp` and `/__pdt/mcp`). Tidewave lets an agent act on the app; this toolbar reports what a page did. They chain: a query's origin gives the file and line that Tidewave's `get_source_location` opens, and after Tidewave's `browser_eval` reloads the page, `compare_pages` shows the before and after.
+
+Known conflicts with Tidewave 0.9:
+
+- Tidewave's toolbar widget covers the left end of this toolbar when it is docked at the bottom. Dock this toolbar on the right or at the top, or set `plug Tidewave, toolbar: false`.
+- Tidewave injects its toolbar script into this toolbar's panel too. `toolbar: false` avoids it.
+- Tidewave removes the `frame-ancestors` rule from every response, including the panel's, so the panel loses its clickjacking guard in dev.
 
 ## Troubleshooting
 
