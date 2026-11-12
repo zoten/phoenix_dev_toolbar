@@ -398,10 +398,26 @@ defmodule PhoenixDevToolbar.PlugTest do
     end
 
     test "carry a stable weak ETag" do
+      for file <- ~w(loader.js panel.js panel.css phoenix.js live_view.js) do
+        [etag] = get_resp_header(asset(file), "etag")
+
+        assert etag =~ ~r/^W\/"\d+-\d+"$/
+        assert get_resp_header(asset(file), "etag") == [etag]
+      end
+    end
+
+    test "match If-None-Match across several header lines" do
       [etag] = get_resp_header(asset("panel.css"), "etag")
 
-      assert etag =~ ~r/^W\/"\d+-\d+"$/
-      assert get_resp_header(asset("panel.css"), "etag") == [etag]
+      # Two header lines: put_req_header/3 would keep only the last one.
+      conn =
+        %{
+          conn(:get, "/__pdt/assets/panel.css")
+          | req_headers: [{"if-none-match", ~s(W/"1-1")}, {"if-none-match", etag}]
+        }
+        |> ToolbarPlug.call(@opts)
+
+      assert conn.status == 304
     end
 
     test "answer 304 when If-None-Match matches" do
@@ -420,11 +436,13 @@ defmodule PhoenixDevToolbar.PlugTest do
       end
     end
 
-    test "answer 200 with the body on a stale If-None-Match" do
-      conn = asset("panel.css", [{"if-none-match", ~s(W/"1-1")}])
+    test "answer 200 with the body on a stale, empty or malformed If-None-Match" do
+      for value <- [~s(W/"1-1"), "", "W/", ~s("")] do
+        conn = asset("panel.css", [{"if-none-match", value}])
 
-      assert conn.status == 200
-      assert conn.resp_body =~ ".pdt-header"
+        assert conn.status == 200
+        assert conn.resp_body =~ ".pdt-header"
+      end
     end
 
     test "a 404 has no ETag" do
