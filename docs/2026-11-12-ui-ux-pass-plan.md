@@ -283,8 +283,8 @@ or the closest panel layout test; `priv/static/panel.js`).
   `parseLayout`/`serializeLayout`, unknown values fall back to auto) and sent with
   `pdt:state`. panel.js sets `data-theme` on the iframe root; `panel.css` tokens move
   to `light-dark()` with `color-scheme` driven by `:root[data-theme]` (auto keeps
-  `light dark`). No config key. The loader's own pill and handle follow the same
-  choice (the pill colors come from tokens in `STYLE`).
+  `light dark`). No config key. The loader's pill and handle stay as they are: like the
+  panel header, they are dark in both themes.
 - **Pill corner** (`pill_corner:`, app env like `reserve_space:`): one of
   `:bottom_right` (default), `:bottom_left`, `:top_right`, `:top_left`. `Config`
   validates it (unknown value: log once, use the default); the plug writes it as
@@ -305,6 +305,97 @@ or the closest panel layout test; `priv/static/panel.js`).
 - Docs: README configuration section, `Config` `@doc`s, ADR 04 (theme, pill,
   shortcut). Media: retake `hidden.png` if the default corner render changes (it does
   not), add a dark-themed shot only if `hero-dark.png` no longer matches.
+
+### Batch D tasks
+
+D1 and D2 run in parallel (disjoint files, in their own worktrees branched from
+`ui-pass-batch-d`); D3 starts after D2 is merged, since both touch `loader.js` and
+`panel.js`. The orchestrator writes ADR 04, README and CHANGELOG after the merges. An
+Opus reviewer per task, a feature review at the end, a hand check in `mix dev`.
+
+Contract between the tasks (fixed here so they can run in parallel):
+
+- Loader tag attributes, written only when set and valid: `data-pdt-pill` with one of
+  `bottom-right`, `bottom-left`, `top-right`, `top-left` (absent means bottom right), and
+  `data-pdt-shortcut` with the canonical combo: lowercase, modifiers in the order
+  `ctrl`, `alt`, `shift`, `meta`, joined by `+`, then the key (`a`..`z`, `0`..`9` or
+  `f1`..`f12`), for example `ctrl+shift+d`.
+- `pdt:state` gains `shortcut` (the canonical string or `null`), and with D3 `theme`
+  (`"auto"`, `"light"`, `"dark"`). The panel posts `pdt:theme` with `{theme}`.
+
+**D1: config and loader tag** (`lib/phoenix_dev_toolbar/config.ex`,
+`lib/phoenix_dev_toolbar/plug.ex` `loader_tag/3` about line 498,
+`lib/phoenix_dev_toolbar/application.ex` next to `Config.warn_mcp()` about line 128,
+`test/phoenix_dev_toolbar/config_test.exs`, `test/phoenix_dev_toolbar/plug_test.exs`).
+
+- `Config.pill_corner/0 :: :bottom_right | :bottom_left | :top_right | :top_left`
+  (invalid or unset: `:bottom_right`, never logs) and `Config.shortcut/0 :: String.t() | nil`
+  (the canonical combo per the contract; accepts any case, spaces around `+`, `cmd` as
+  an alias of `meta`, `control` of `ctrl`, `option` of `alt`; needs at least one
+  modifier and exactly one key; anything else, including non binaries, is `nil`).
+  Both total functions over any term: they never raise.
+- `Config.warn_ui/0`, called at boot next to `warn_mcp/0`: one warning per invalid
+  `pill_corner:` or `shortcut:` value, saying what is expected and what is used instead.
+- `loader_tag/3`: `data-pdt-pill` only when not the default, `data-pdt-shortcut` only
+  when set. This runs inside the host's request (before_send): no logging there, one
+  `Application.get_env` per key as `reserve_space?/0` does.
+- Tests first: config_test (each corner, invalid corner, unset; shortcut canonical forms,
+  aliases, order, invalid inputs: no modifier, two keys, unknown key, `""`, an atom, a
+  list; `warn_ui` logs with `capture_log` and stays silent when valid); plug_test
+  (attributes present and escaped, absent by default; use the file's env helper to set
+  and restore app env).
+
+**D2: pill corner and shortcut in the browser** (`assets/js/loader.js`, `assets/js/panel.js`
+(only the `pdt:state` handling and a keydown listener), new `assets/js/shortcut.mjs`,
+`assets/js/test/shortcut.test.mjs`, `assets/js/test/loader.test.mjs`,
+`assets/js/test/panel.test.mjs`; `priv/static/loader.js`, `priv/static/panel.js`).
+
+- `shortcut.mjs` (pure): `parseShortcut(string) -> {ctrl, alt, shift, meta, code} | null`
+  for the canonical form, mapping the key to `KeyboardEvent.code` (`d` -> `KeyD`,
+  `1` -> `Digit1`, `f5` -> `F5`: physical keys, so Alt combos work on macOS where
+  `event.key` changes); `matches(spec, event)` checks every modifier exactly;
+  `editable(target)` true for `input`, `textarea`, `select` and `isContentEditable`.
+- Loader: reads `data-pdt-shortcut` once; when valid, one `window` `keydown` listener
+  (capture false, inside `try/catch`, never `preventDefault` unless it matches; skips
+  `event.repeat`, `event.isComposing`, editable targets). On match: hidden becomes
+  collapsed, otherwise open and collapsed swap. `pdt:state` carries `shortcut`. The
+  pill's `title` adds the combo ("Show the dev toolbar (Ctrl+Shift+D)").
+- Loader: `data-pdt-pill` sets one `corner-<name>` class on the pill (unknown values
+  ignored); `STYLE` positions each corner with the existing 12px offsets.
+- Panel: on `pdt:state` keeps the shortcut; its own `keydown` listener (same skips)
+  posts `pdt:toggle` on a match, so the combo works with focus inside the toolbar; the
+  hide button's `title` adds the combo.
+- Tests first: shortcut.test (parse, codes, modifiers exact, editable targets), loader
+  (no listener without the attribute, toggles, hidden to collapsed, skips inputs and
+  repeats, corner class, title), panel (match posts `pdt:toggle`, skip in the Eval
+  textarea, no shortcut: nothing).
+
+**D3: theme** (`assets/js/layout.mjs`, `assets/js/loader.js`, `assets/js/panel.js`,
+`lib/phoenix_dev_toolbar/panel_layout.ex` dock menu, `assets/css/panel.css`,
+`assets/js/test/contrast.test.mjs` and the layout, loader, panel tests;
+`priv/static/*`).
+
+- `layout.mjs`: `theme` in the layout (`"auto"` default, unknown values read as auto,
+  old layouts without it read as auto; serialized only when not auto).
+- Loader: `pdt:state` carries `theme`; a `pdt:theme` message (known values only) saves
+  it and answers with `pdt:state`.
+- Dock menu (`panel_layout.ex`, inside the ignored `#pdt-dock-picker`): after the
+  reserve toggle, a separated group labelled "Theme" with three `pdt-dock-option`
+  buttons `#pdt-theme-auto|light|dark` (`data-pdt-theme`, `aria-pressed`).
+  panel.js sets `data-theme` on `<html>` (none for auto) and the pressed state from
+  `pdt:state`, and posts `pdt:theme` on click. Standalone (no loader): read the theme
+  from `localStorage` `pdt:layout` (same origin) with `parseLayout`.
+- `panel.css`: each token that differs by mode becomes `light-dark(<light>, <dark>)` in
+  `:root`; `:root { color-scheme: light dark }`, `:root[data-theme="light"] {
+  color-scheme: light }`, `:root[data-theme="dark"] { color-scheme: dark }`; the
+  `prefers-color-scheme: dark` token block goes (the dark `scrollbar-color` rule becomes
+  `light-dark(...)` too). Forced colors and reduced motion blocks unchanged.
+- `contrast.test.mjs`: reads `--pdt-x: light-dark(#l, #d)` and plain `#x` tokens (both
+  modes) from `:root`, keeps every existing assertion (formats, brace balance, accent
+  as text) and fails if a checked token is missing in either mode.
+- Tests: layout (theme round trip, legacy), loader (`pdt:theme` saved and echoed,
+  unknown ignored), panel (data-theme applied, pressed state, click posts), and a
+  LiveView test for the three menu buttons.
 
 ## Risks
 
