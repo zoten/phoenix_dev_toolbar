@@ -5,6 +5,7 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
   @moduletag :capture_log
 
   import PhoenixDevToolbar.EnvHelpers
+  import PhoenixDevToolbar.JsonHelpers, only: [builtin_json_decode!: 1]
   import PhoenixDevToolbar.McpHelpers
   import PhoenixDevToolbar.PageHelpers, only: [browser_headers: 1]
   import PhoenixDevToolbar.ReportFixtures
@@ -443,6 +444,8 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
     put_env(:phoenix, :json_library, JSON)
     conn = post(rpc("ping"))
     assert conn.status == 200
-    assert %{"jsonrpc" => "2.0", "id" => 1, "result" => %{}} = JSON.decode!(conn.resp_body)
+
+    assert %{"jsonrpc" => "2.0", "id" => 1, "result" => %{}} =
+             builtin_json_decode!(conn.resp_body)
   end
 end

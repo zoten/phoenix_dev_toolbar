@@ -5,6 +5,7 @@ defmodule PhoenixDevToolbar.PlugTest do
   import Plug.Conn
   import Plug.Test
   import PhoenixDevToolbar.EnvHelpers
+  import PhoenixDevToolbar.JsonHelpers, only: [builtin_json_decode!: 1]
   import PhoenixDevToolbar.ProcessHelpers, only: [stop_store!: 0]
 
   alias PhoenixDevToolbar.Attribution
@@ -527,7 +528,7 @@ defmodule PhoenixDevToolbar.PlugTest do
       assert conn.status == 200
 
       assert %{"format" => "short", "path" => "/users", "count" => 0} =
-               JSON.decode!(conn.resp_body)
+               builtin_json_decode!(conn.resp_body)
     end
 
     test "refuses bad params, unknown pages and other methods" do
