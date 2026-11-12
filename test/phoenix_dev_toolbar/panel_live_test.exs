@@ -78,7 +78,16 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
 
     assert has_element?(view, "#pdt-badge-response", "200")
     # The lost connection notice is always rendered; CSS shows it (ADR 04).
-    assert has_element?(view, "#pdt-offline[role=status]", "Disconnected")
+    assert has_element?(view, "#pdt-offline[aria-hidden=true]", "Disconnected")
+    refute has_element?(view, "#pdt-offline[role]")
+    assert has_element?(view, "#pdt-live-status[role=status][phx-update=ignore].pdt-sr-only")
+    # Semantics (ADR 04): a tablist div, a toggle whose state panel.js owns.
+    assert has_element?(view, "div#pdt-tabs[role=tablist][aria-label='Toolbar tabs']")
+    refute has_element?(view, "nav.pdt-tabs")
+    refute has_element?(view, "#pdt-tab-request .pdt-sr-only")
+    assert has_element?(view, "#pdt-header-controls[phx-update=ignore] #pdt-hide")
+    assert has_element?(view, "#pdt-header-controls #pdt-toggle[aria-expanded=false]", "")
+    refute has_element?(view, "#pdt-dock[aria-haspopup]")
     assert has_element?(view, "#pdt-badge-ecto-queries", "2 queries")
     assert has_element?(view, "#pdt-query-#{dead.seq}", "SELECT 1")
     assert has_element?(view, "#pdt-query-#{connected.seq}", "SELECT 2")

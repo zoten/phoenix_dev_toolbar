@@ -51,6 +51,7 @@ defmodule PhoenixDevToolbar.PluginQuarantineTest do
 
     assert has_element?(panel, "#pdt-disabled-fragile", "collect boom")
     assert has_element?(panel, "#pdt-tab-fragile[data-pdt-error]")
+    assert has_element?(panel, "#pdt-tab-fragile .pdt-sr-only", "disabled after an error")
     refute has_element?(panel, "#fragile .fragile-value", "ignored while disabled")
     still_works(host, panel)
 

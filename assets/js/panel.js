@@ -39,6 +39,8 @@ const pushVisibility = () => {
 const setOpen = (next) => {
   open = next
   document.documentElement.classList.toggle("pdt-open", open)
+  const toggle = document.getElementById("pdt-toggle")
+  if (toggle) toggle.setAttribute("aria-expanded", String(open))
   if (!open) closeDockMenu(false)
   pushVisibility()
 }
@@ -99,6 +101,13 @@ document.addEventListener("keydown", (event) => {
   }
 })
 
+// Tabbing out of the picker closes the menu (no refocus: focus went elsewhere).
+document.addEventListener("focusout", (event) => {
+  const picker = event.target.closest && event.target.closest("#pdt-dock-picker")
+  if (!picker || !event.relatedTarget || picker.contains(event.relatedTarget)) return
+  closeDockMenu(false)
+})
+
 // Client events from the loader wait (at most CLIENT_BUFFER) until the hook joins.
 const CLIENT_BUFFER = 50
 let clientBuffer = []
@@ -116,6 +125,10 @@ window.addEventListener("message", (event) => {
     setReserve(data.reserve)
     setOpen(Boolean(data.open))
   }
+  if (data && data.type === "pdt:focus") {
+    const toggle = document.getElementById("pdt-toggle")
+    if (toggle) toggle.focus()
+  }
   if (data && data.type === "pdt:client") pushClient({event: data.event, dropped: data.dropped})
 })
 
@@ -128,6 +141,17 @@ if (window.parent === window) {
   document.documentElement.classList.add("pdt-standalone")
   setDock("bottom")
   setOpen(true)
+}
+
+// The live region #pdt-live-status (phx-update="ignore") announces the
+// connection; a reconnect message clears itself after `clearAfter` ms.
+let statusTimer = null
+const say = (text, clearAfter) => {
+  const status = document.getElementById("pdt-live-status")
+  if (!status) return
+  window.clearTimeout(statusTimer)
+  status.textContent = text
+  if (clearAfter) statusTimer = window.setTimeout(() => { status.textContent = "" }, clearAfter)
 }
 
 // On #pdt-bridge: reports visibility on join and after reconnects, and
@@ -145,8 +169,12 @@ const PdtPanel = {
     clientBuffer = []
     pending.forEach(pushClient)
   },
+  disconnected() {
+    say("Toolbar disconnected: what it shows is frozen until it reconnects")
+  },
   reconnected() {
     pushVisibility()
+    say("Toolbar reconnected", 3000)
   },
   destroyed() {
     if (panelHook === this) panelHook = null
@@ -335,14 +363,17 @@ document.addEventListener("focusout", (event) => {
 })
 document.addEventListener("keydown", () => { pointerTarget = null }, true)
 
-// WAI-ARIA tabs: arrow keys move between tabs and select them.
+// WAI-ARIA tabs: arrow keys, Home and End move between tabs and select them.
 document.addEventListener("keydown", (event) => {
   const tab = event.target.closest("[role='tab']")
-  if (!tab || !["ArrowLeft", "ArrowRight"].includes(event.key)) return
+  if (!tab || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return
 
   const tabs = [...tab.closest("[role='tablist']").querySelectorAll("[role='tab']")]
   const step = event.key === "ArrowRight" ? 1 : -1
-  const next = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length]
+  const next = {
+    Home: tabs[0],
+    End: tabs[tabs.length - 1],
+  }[event.key] || tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length]
   event.preventDefault()
   next.focus()
   next.click()

@@ -71,11 +71,14 @@ defmodule PhoenixDevToolbar.PanelLayout do
         <span
           id="pdt-offline"
           class="pdt-offline"
-          role="status"
+          aria-hidden="true"
           title="The connection to the server is lost: what the toolbar shows is frozen until it reconnects"
         >
-          Disconnected · reconnecting<span class="pdt-sr-only">: what the toolbar shows is frozen until it reconnects</span>
+          Disconnected · reconnecting
         </span>
+        <%!-- What screen readers hear about the connection: the PdtPanel hook
+             (assets/js/panel.js) writes it, patches leave it alone. --%>
+        <span id="pdt-live-status" class="pdt-sr-only" role="status" phx-update="ignore"></span>
         <.summary_bar badges={Shell.badges(@shell)} dropped={@gaps.dropped} trimmed={@gaps.trimmed} />
         <%!-- Counts the badges the collapsed bar has no room for (assets/js/panel.js). --%>
         <button
@@ -99,7 +102,7 @@ defmodule PhoenixDevToolbar.PanelLayout do
         >
           {name} disabled · re-enable
         </button>
-        <nav class="pdt-tabs" role="tablist">
+        <div id="pdt-tabs" class="pdt-tabs" role="tablist" aria-label="Toolbar tabs">
           <button
             :for={tab <- @tabs}
             id={"pdt-tab-" <> tab.id}
@@ -119,9 +122,12 @@ defmodule PhoenixDevToolbar.PanelLayout do
             phx-click="tab"
             phx-value-tab={tab.id}
           >
-            {tab.name}
+            {tab.name}<span
+              :if={tab_error(@quarantined, @shell, @panel_errors, tab.id)}
+              class="pdt-sr-only"
+            > (disabled after an error)</span>
           </button>
-        </nav>
+        </div>
         <%!-- Copy as Markdown (ADR 04, 13): the PdtMarkdown hook (assets/js/panel.js)
              starts the clipboard write in the click, the server pushes the
              report. The result line is owned by the hook. --%>
@@ -146,7 +152,6 @@ defmodule PhoenixDevToolbar.PanelLayout do
             type="button"
             class="pdt-dock"
             data-pdt-dock-menu
-            aria-haspopup="true"
             aria-expanded="false"
             aria-controls="pdt-dock-menu"
             aria-label="Move the toolbar"
@@ -186,25 +191,36 @@ defmodule PhoenixDevToolbar.PanelLayout do
             </button>
           </div>
         </div>
-        <button
-          id="pdt-hide"
-          type="button"
-          class="pdt-hide"
-          data-pdt-hide
-          aria-label="Hide the toolbar to a corner badge"
-          title="Hide"
+        <%!-- Ignored by patches, like the picker: panel.js sets the toggle's
+             aria-expanded and a patch would drop it. display: contents keeps
+             both buttons flex items of the header. --%>
+        <span
+          id="pdt-header-controls"
+          class="pdt-header-controls"
+          style="display: contents"
+          phx-update="ignore"
         >
-          <span aria-hidden="true">&times;</span>
-        </button>
-        <button
-          id="pdt-toggle"
-          type="button"
-          class="pdt-toggle"
-          data-pdt-toggle
-          aria-label="Expand or collapse the toolbar"
-        >
-          <span class="pdt-toggle__icon" aria-hidden="true"></span>
-        </button>
+          <button
+            id="pdt-hide"
+            type="button"
+            class="pdt-hide"
+            data-pdt-hide
+            aria-label="Hide the toolbar to a corner badge"
+            title="Hide"
+          >
+            <span aria-hidden="true">&times;</span>
+          </button>
+          <button
+            id="pdt-toggle"
+            type="button"
+            class="pdt-toggle"
+            data-pdt-toggle
+            aria-label="Toolbar panel"
+            aria-expanded="false"
+          >
+            <span class="pdt-toggle__icon" aria-hidden="true"></span>
+          </button>
+        </span>
       </header>
 
       <p :if={@missing?} id="pdt-empty" class="pdt-empty" data-pdt-lookup={elem(@lookup, 0)}>

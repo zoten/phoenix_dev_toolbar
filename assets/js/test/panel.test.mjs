@@ -18,7 +18,7 @@ const HEADER = [
   ["div", {id: "pdt-bridge", "phx-hook": "PdtPanel", hidden: true}],
   ["span", {class: "pdt-logo"}, "dev toolbar"],
   [
-    "nav",
+    "div",
     {class: "pdt-tabs", role: "tablist"},
     ["button", {id: "pdt-tab-request", role: "tab"}, "Request"],
     ["button", {id: "pdt-tab-ecto", role: "tab"}, "Ecto"],
@@ -38,7 +38,8 @@ const HEADER = [
     ],
   ],
   ["button", {id: "pdt-hide", "data-pdt-hide": true}],
-  ["button", {id: "pdt-toggle", "data-pdt-toggle": true}],
+  ["button", {id: "pdt-toggle", "data-pdt-toggle": true, "aria-expanded": "false"}],
+  ["span", {id: "pdt-live-status", role: "status"}],
 ]
 
 class FakeLiveSocket {
@@ -433,6 +434,70 @@ test("arrow keys move between the tabs, wrap around and select the one reached",
   assert.equal(page.toLoader().length, 3, "other keys are left alone")
 
   assert.equal(press(page.byId("pdt-toggle"), "ArrowRight").defaultPrevented, false, "only on tabs")
+})
+
+test("Home and End select the first and the last tab", async (t) => {
+  const page = await load(t)
+  const request = page.byId("pdt-tab-request")
+  const ecto = page.byId("pdt-tab-ecto")
+
+  request.dispatchEvent(new FakeEvent("keydown", {key: "End"}))
+  assert.equal(page.document.activeElement, ecto)
+  const home = new FakeEvent("keydown", {key: "Home"})
+  ecto.dispatchEvent(home)
+  assert.equal(home.defaultPrevented, true)
+  assert.equal(page.document.activeElement, request)
+  assert.equal(page.toLoader().length, 2, "each selects the tab")
+})
+
+test("the toggle's aria-expanded follows the loader's state", async (t) => {
+  const page = await load(t)
+  const toggle = page.byId("pdt-toggle")
+
+  page.fromLoader({type: "pdt:state", open: true, dock: "bottom", reserve: true})
+  assert.equal(toggle.getAttribute("aria-expanded"), "true")
+  page.fromLoader({type: "pdt:state", open: false, dock: "bottom", reserve: true})
+  assert.equal(toggle.getAttribute("aria-expanded"), "false")
+})
+
+test("the dock menu closes when focus leaves the picker, not when it moves inside", async (t) => {
+  const page = await load(t)
+  const menu = page.byId("pdt-dock-menu")
+  const out = (from, to) => from.dispatchEvent(new FakeEvent("focusout", {relatedTarget: to}))
+
+  page.byId("pdt-dock").click()
+  out(page.byId("pdt-dock-top"), page.byId("pdt-dock-left"))
+  assert.equal(menu.hidden, false, "inside the picker")
+  out(page.byId("pdt-dock-top"), null)
+  assert.equal(menu.hidden, false, "no related target: the window lost focus")
+  out(page.byId("pdt-dock-top"), page.byId("pdt-toggle"))
+  assert.equal(menu.hidden, true)
+  assert.equal(page.byId("pdt-dock").getAttribute("aria-expanded"), "false")
+  assert.notEqual(page.document.activeElement, page.byId("pdt-dock"), "no refocus")
+})
+
+test("pdt:focus from the parent focuses the toggle, from elsewhere it does nothing", async (t) => {
+  const page = await load(t)
+
+  page.fromLoader({type: "pdt:focus"}, {source: new FakeWindow({origin: ORIGIN})})
+  page.fromLoader({type: "pdt:focus"}, {origin: "http://evil.test"})
+  assert.notEqual(page.document.activeElement, page.byId("pdt-toggle"))
+
+  page.fromLoader({type: "pdt:focus"})
+  assert.equal(page.document.activeElement, page.byId("pdt-toggle"))
+})
+
+test("the live status announces a lost connection and clears the reconnect", async (t) => {
+  const page = await load(t)
+  const bridge = page.join()
+  const status = page.byId("pdt-live-status")
+
+  bridge.disconnected()
+  assert.match(status.textContent, /^Toolbar disconnected/)
+  bridge.reconnected()
+  assert.equal(status.textContent, "Toolbar reconnected")
+  t.mock.timers.tick(3000)
+  assert.equal(status.textContent, "")
 })
 
 // The collapsed bar's "+N" badge (ADR 04): the PdtSummaryMore hook on #pdt-summary-more.
