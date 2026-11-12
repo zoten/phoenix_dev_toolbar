@@ -103,17 +103,21 @@ const STYLE = `
     position: fixed; z-index: 2147483001; display: none; touch-action: none; outline: none;
   }
   .handle.dock-bottom, .handle.dock-top { left: 0; right: 0; height: 12px; cursor: ns-resize; }
-  .handle.dock-bottom { bottom: calc(var(--pdt-extent) - 6px); }
-  .handle.dock-top { top: calc(var(--pdt-extent) - 6px); }
+  .handle.dock-bottom { bottom: calc(var(--pdt-extent) - 2px); }
+  .handle.dock-top { top: calc(var(--pdt-extent) - 2px); }
   .handle.dock-left, .handle.dock-right { top: 0; bottom: 0; width: 12px; cursor: ew-resize; }
-  .handle.dock-left { left: calc(var(--pdt-extent) - 6px); }
-  .handle.dock-right { right: calc(var(--pdt-extent) - 6px); }
+  .handle.dock-left { left: calc(var(--pdt-extent) - 2px); }
+  .handle.dock-right { right: calc(var(--pdt-extent) - 2px); }
   .handle::after {
     content: ""; position: absolute; left: 50%; top: 50%; width: 36px; height: 4px;
     transform: translate(-50%, -50%); border-radius: 2px; background: #fd4f00; opacity: 0;
     transition: opacity 120ms ease;
   }
+  .handle.dock-bottom::after { top: auto; bottom: 0; transform: translateX(-50%); }
+  .handle.dock-top::after { top: 0; transform: translateX(-50%); }
   .handle.dock-left::after, .handle.dock-right::after { width: 4px; height: 36px; }
+  .handle.dock-left::after { left: 0; transform: translateY(-50%); }
+  .handle.dock-right::after { left: auto; right: 0; transform: translateY(-50%); }
   .handle:hover::after, .handle:focus-visible::after, .handle.dragging::after { opacity: 1; }
   .handle.visible { display: block; }
   .pill {

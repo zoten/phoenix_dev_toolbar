@@ -264,6 +264,18 @@ test("hiding leaves focus alone when it was elsewhere on the page", async (t) =>
   assert.equal(page.document.activeElement, input)
 })
 
+test("hiding after focus moved from the frame to the page keeps it there", async (t) => {
+  const page = await load(t)
+  const input = page.document.createElement("input")
+  page.document.body.append(input)
+  page.frame.focus()
+  input.focus()
+  page.fromPanel({type: "pdt:hide"})
+
+  assert.equal(page.document.activeElement, input)
+  assert.notEqual(page.root.activeElement, page.pill)
+})
+
 test("the pill focuses the frame and asks the panel to focus its toggle", async (t) => {
   const page = await load(t)
   page.fromPanel({type: "pdt:hide"})

@@ -131,8 +131,9 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
 
 .pdt-tab:hover { opacity: 1; background: rgba(255, 255, 255, .08); }
 .pdt-tab--active { opacity: 1; background: rgba(255, 255, 255, .14); }
+.pdt-header-controls { display: contents; }
 .pdt-tab--error { color: var(--pdt-header-error); opacity: 1; }
-.pdt-tab--error::after { content: " !" / ""; font-weight: 700; }
+.pdt-tab--error::after { content: " !"; content: " !" / ""; font-weight: 700; }
 
 .pdt-toggle {
   flex: none;
@@ -629,6 +630,11 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
     outline: 2px solid Highlight;
     outline-offset: -2px;
     text-decoration: underline;
+  }
+  .pdt-tab--active:focus-visible, .pdt-subtab--active:focus-visible {
+    outline-offset: 1px;
+    outline-style: double;
+    outline-width: 4px;
   }
   .pdt-dock-option[aria-pressed="true"]:not(.pdt-dock-reserve) { text-decoration: underline; }
   .pdt-dock-bottom .pdt-panel { border-top: 1px solid CanvasText; }

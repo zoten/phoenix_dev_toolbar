@@ -192,12 +192,11 @@ defmodule PhoenixDevToolbar.PanelLayout do
           </div>
         </div>
         <%!-- Ignored by patches, like the picker: panel.js sets the toggle's
-             aria-expanded and a patch would drop it. display: contents keeps
-             both buttons flex items of the header. --%>
+             aria-expanded and a patch would drop it. The class sets display: contents (no inline
+             style, a host CSP may block it) so both buttons stay flex items of the header. --%>
         <span
           id="pdt-header-controls"
           class="pdt-header-controls"
-          style="display: contents"
           phx-update="ignore"
         >
           <button

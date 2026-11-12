@@ -19,9 +19,10 @@ const HEADER = [
   ["span", {class: "pdt-logo"}, "dev toolbar"],
   [
     "div",
-    {class: "pdt-tabs", role: "tablist"},
+    {id: "pdt-tabs", class: "pdt-tabs", role: "tablist", "aria-label": "Toolbar tabs"},
     ["button", {id: "pdt-tab-request", role: "tab"}, "Request"],
     ["button", {id: "pdt-tab-ecto", role: "tab"}, "Ecto"],
+    ["button", {id: "pdt-tab-events", role: "tab"}, "Events"],
   ],
   [
     "div",
@@ -37,9 +38,13 @@ const HEADER = [
       ["button", {id: "pdt-reserve", "data-pdt-reserve": true, "aria-pressed": "true"}],
     ],
   ],
-  ["button", {id: "pdt-hide", "data-pdt-hide": true}],
-  ["button", {id: "pdt-toggle", "data-pdt-toggle": true, "aria-expanded": "false"}],
-  ["span", {id: "pdt-live-status", role: "status"}],
+  [
+    "span",
+    {id: "pdt-header-controls", class: "pdt-header-controls", "phx-update": "ignore"},
+    ["button", {id: "pdt-hide", "data-pdt-hide": true}],
+    ["button", {id: "pdt-toggle", "data-pdt-toggle": true, "aria-expanded": "false"}],
+  ],
+  ["span", {id: "pdt-live-status", class: "pdt-sr-only", role: "status", "phx-update": "ignore"}],
 ]
 
 class FakeLiveSocket {
@@ -422,16 +427,19 @@ test("arrow keys move between the tabs, wrap around and select the one reached",
   assert.equal(page.document.activeElement, ecto)
   assert.deepEqual(page.toLoader().map(({data}) => data), [{type: "pdt:open"}], "selecting a tab opens the panel")
 
+  const events = page.byId("pdt-tab-events")
   press(ecto, "ArrowRight")
+  assert.equal(page.document.activeElement, events)
+  press(events, "ArrowRight")
   assert.equal(page.document.activeElement, request, "wraps to the first")
 
   press(request, "ArrowLeft")
-  assert.equal(page.document.activeElement, ecto, "wraps to the last")
-  assert.equal(page.toLoader().length, 3)
+  assert.equal(page.document.activeElement, events, "wraps to the last")
+  assert.equal(page.toLoader().length, 4)
 
   const other = press(ecto, "ArrowDown")
   assert.equal(other.defaultPrevented, false)
-  assert.equal(page.toLoader().length, 3, "other keys are left alone")
+  assert.equal(page.toLoader().length, 4, "other keys are left alone")
 
   assert.equal(press(page.byId("pdt-toggle"), "ArrowRight").defaultPrevented, false, "only on tabs")
 })
@@ -439,12 +447,12 @@ test("arrow keys move between the tabs, wrap around and select the one reached",
 test("Home and End select the first and the last tab", async (t) => {
   const page = await load(t)
   const request = page.byId("pdt-tab-request")
-  const ecto = page.byId("pdt-tab-ecto")
+  const last = page.byId("pdt-tab-events")
 
   request.dispatchEvent(new FakeEvent("keydown", {key: "End"}))
-  assert.equal(page.document.activeElement, ecto)
+  assert.equal(page.document.activeElement, last)
   const home = new FakeEvent("keydown", {key: "Home"})
-  ecto.dispatchEvent(home)
+  last.dispatchEvent(home)
   assert.equal(home.defaultPrevented, true)
   assert.equal(page.document.activeElement, request)
   assert.equal(page.toLoader().length, 2, "each selects the tab")

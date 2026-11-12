@@ -299,6 +299,8 @@ export class FakeElement extends Node {
   focus() {
     let top = this
     while (top.parentNode) top = top.parentNode
+    const before = this.ownerDocument.activeElement
+    if (!top.host && before && before.shadowRoot) before.shadowRoot.activeElement = null
     if (top.host) top.activeElement = this
     this.ownerDocument.activeElement = top.host || this
   }
