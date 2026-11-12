@@ -43,7 +43,10 @@ const setOpen = (next) => {
   document.documentElement.classList.toggle("pdt-open", open)
   const toggle = document.getElementById("pdt-toggle")
   if (toggle) toggle.setAttribute("aria-expanded", String(open))
-  if (!open) closeDockMenu(false)
+  if (!open) {
+    closeDockMenu(false)
+    highlight(null)
+  }
   pushVisibility()
 }
 
@@ -225,7 +228,9 @@ window.addEventListener("message", (event) => {
   }
   if (data && data.type === "pdt:client") pushClient({event: data.event, dropped: data.dropped})
   if (data && data.type === "pdt:picking") setPicking(data.armed === true)
-  if (data && data.type === "pdt:inspect" && data.inspected && typeof data.inspected === "object") {
+  if (data && data.type === "pdt:inspect" && data.inspected && typeof data.inspected === "object" &&
+      !Array.isArray(data.inspected)) {
+    highlight(null)
     pushInspect(data.inspected)
   }
 })
@@ -438,6 +443,10 @@ document.addEventListener("click", (event) => {
 
   const reserveToggle = event.target.closest("[data-pdt-reserve]")
   const themeOption = event.target.closest("[data-pdt-theme]")
+
+  // Switching tabs, collapsing or hiding leaves no outline behind on the host page.
+  const leaving = ["[role='tab']", "[data-pdt-toggle]", "[data-pdt-hide]"].some((selector) => event.target.closest(selector))
+  if (leaving) highlight(null)
 
   if (reserveToggle) toParent("reserve", {reserve: reserveToggle.getAttribute("aria-pressed") !== "true"})
   else if (themeOption) toParent("theme", {theme: themeOption.dataset.pdtTheme})

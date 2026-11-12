@@ -398,11 +398,11 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
     end
 
     # The root DOM id the tree rendered for the page's LiveView.
-    defp tree_root(panel) do
+    defp tree_root(panel, index \\ 0) do
       panel
       |> render()
       |> LazyHTML.from_fragment()
-      |> LazyHTML.query("#pdt-tree-0")
+      |> LazyHTML.query("#pdt-tree-#{index}")
       |> LazyHTML.attribute("data-pdt-root")
       |> List.first()
     end
@@ -445,6 +445,90 @@ defmodule PhoenixDevToolbar.PanelLiveViewTabTest do
 
       assert has_element?(panel, ~s(#pdt-lv-tab-assigns[aria-selected="true"]))
       assert has_element?(panel, "#pdt-inspected")
+    end
+  end
+
+  describe "element inspector, more workflows" do
+    setup do
+      attach_plugins()
+      on_exit(&attach_plugins/0)
+    end
+
+    test "a new page (live navigation) clears the strip" do
+      {_host, sid} = visit("/demo/components")
+      panel = open_lv(sid, "profiler")
+      render_hook(panel, "pdt:inspect", inspect_payload(%{}))
+      assert has_element?(panel, "#pdt-inspected")
+
+      {:ok, first} = Store.session(sid_of_live(sid))
+
+      second =
+        Store.new_session(Session.new(:live_view, parent: first.sid, transport: first.transport))
+
+      Notify.session(second)
+      _ = render(panel)
+
+      refute has_element?(panel, "#pdt-inspected")
+    end
+
+    test "a pick before the tree is loaded opens Components, not Assigns" do
+      {_host, sid} = visit("/demo/components")
+      panel = open_lv(sid, "profiler")
+
+      render_hook(panel, "pdt:inspect", inspect_payload(%{"root" => "phx-unknown"}))
+
+      assert has_element?(panel, ~s(#pdt-lv-tab-components[aria-selected="true"]))
+    end
+
+    test "a nested LiveView pick selects the view's row in Components" do
+      {_host, sid} = visit("/demo/nested")
+      panel = open_lv(sid, "components")
+      _ = render_async(panel)
+      nested = tree_root(panel, 1)
+      refute tree_root(panel, 0) == nested
+
+      render_hook(panel, "pdt:inspect", inspect_payload(%{"root" => nested}))
+      _ = render_async(panel)
+
+      assert has_element?(panel, ~s(#pdt-lv-tab-components[aria-selected="true"]))
+      assert has_element?(panel, ~s(#pdt-tree-1[aria-current="true"]))
+      refute has_element?(panel, ~s(#pdt-tree-0[aria-current="true"]))
+    end
+
+    test "the page scrolls once per pick, not on every tree poll" do
+      {_host, sid} = visit("/demo/components")
+      panel = open_lv(sid, "components")
+      _ = render_async(panel)
+      visible(panel)
+      root = tree_root(panel, 0)
+
+      render_hook(panel, "pdt:inspect", inspect_payload(%{"root" => root, "cid" => 1}))
+      _ = render_async(panel)
+      assert_push_event(panel, "pdt:scroll-inspected", %{})
+
+      Panel.send_now(panel.pid, Panels.LiveView, "pdt-panel-live_view", :tree_poll)
+      _ = render_async(panel)
+
+      refute_push_event(panel, "pdt:scroll-inspected", %{})
+    end
+  end
+
+  describe "element inspector without the LiveView tab" do
+    test "a pick is ignored" do
+      with_plugins(
+        PhoenixDevToolbar.Config.expand([
+          :defaults,
+          {:exclude, PhoenixDevToolbar.Plugins.LiveView}
+        ])
+      )
+
+      request = Store.new_session(Session.new(:request, path: "/demo"))
+      panel = open_panel(request.sid)
+
+      render_hook(panel, "pdt:inspect", inspect_payload(%{}))
+      render_hook(panel, "pdt:inspect", [1])
+
+      refute has_element?(panel, "#pdt-inspected")
     end
   end
 

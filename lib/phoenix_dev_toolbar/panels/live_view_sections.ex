@@ -62,7 +62,7 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
   attr :events, :any, required: true, doc: "the :lv_events stream"
   attr :root, :string, required: true
   attr :inspected, :any, required: true, doc: "nil or the Inspected element (ADR 16)"
-  attr :editor, :string, default: nil, doc: "PLUG_EDITOR template, nil when unset"
+  attr :editor, :any, default: nil, doc: "{PLUG_EDITOR template, cwd}, nil when unset"
   attr :target, :any, required: true, doc: "the LiveView panel component (@myself)"
 
   def section(assigns) do
@@ -259,7 +259,7 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
   defp selected_node?(_root, _node, _inspected), do: false
 
   attr :inspected, Inspected, required: true
-  attr :editor, :string, default: nil
+  attr :editor, :any, default: nil
 
   # The picked element: tag, binding, the function components around it and
   # their caller, with editor links (ADR 16). Without HEEx annotations there are
@@ -306,7 +306,7 @@ defmodule PhoenixDevToolbar.Panels.LiveViewSections do
 
   attr :file, :string, default: nil
   attr :line, :integer, default: nil
-  attr :editor, :string, default: nil
+  attr :editor, :any, default: nil
 
   defp source(assigns) do
     assigns =

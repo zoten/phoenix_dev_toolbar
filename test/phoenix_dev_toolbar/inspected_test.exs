@@ -79,26 +79,59 @@ defmodule PhoenixDevToolbar.InspectedTest do
     end
   end
 
+  describe "editor/0" do
+    test "pairs the PLUG_EDITOR template with the cwd, nil without a template" do
+      previous = System.get_env("PLUG_EDITOR")
+
+      on_exit(fn ->
+        if previous,
+          do: System.put_env("PLUG_EDITOR", previous),
+          else: System.delete_env("PLUG_EDITOR")
+      end)
+
+      System.delete_env("PLUG_EDITOR")
+      assert Inspected.editor() == nil
+
+      System.put_env("PLUG_EDITOR", "vscode://file/__FILE__")
+      assert {"vscode://file/__FILE__", cwd} = Inspected.editor()
+      assert cwd == File.cwd!()
+    end
+  end
+
   describe "editor_url/2" do
-    @template "vscode://file/__FILE__:__LINE__"
+    @cwd "/work/app"
+    @template {"vscode://file/__FILE__:__LINE__", @cwd}
     @frame %{file: "lib/x.ex", line: 12}
 
     test "fills the absolute file and the line" do
       assert Inspected.editor_url(@frame, @template) ==
-               "vscode://file/#{File.cwd!()}/lib/x.ex:12"
+               "vscode://file//work/app/lib/x.ex:12"
     end
 
     test "no link without a template or with a scheme that is not letters and ://" do
       assert Inspected.editor_url(@frame, nil) == nil
-      assert Inspected.editor_url(@frame, "") == nil
-      assert Inspected.editor_url(@frame, "javascript:alert(1)//__FILE__") == nil
-      assert Inspected.editor_url(@frame, "javascript://__FILE__") =~ "javascript://"
-      assert Inspected.editor_url(@frame, "//evil/__FILE__") == nil
-      assert Inspected.editor_url(@frame, "1ab://__FILE__") == nil
+      assert Inspected.editor_url(@frame, {"", @cwd}) == nil
+      assert Inspected.editor_url(@frame, {"javascript:alert(1)//__FILE__", @cwd}) == nil
+      assert Inspected.editor_url(@frame, {"//evil/__FILE__", @cwd}) == nil
+      assert Inspected.editor_url(@frame, {"1ab://__FILE__", @cwd}) == nil
+    end
+
+    test "no link for dangerous schemes, in any case" do
+      for scheme <- ["javascript", "JavaScript", "data", "VBSCRIPT", "file"] do
+        assert Inspected.editor_url(@frame, {scheme <> "://__FILE__", @cwd}) == nil
+      end
     end
 
     test "only relative files without .. segments" do
-      for file <- ["/etc/passwd", "../x.ex", "lib/../../x.ex", "", "a\0b"] do
+      for file <- [
+            "/etc/passwd",
+            "../x.ex",
+            "lib/../../x.ex",
+            "",
+            "a\0b",
+            "..\\x.ex",
+            "lib\\x.ex"
+          ] do
         assert Inspected.editor_url(%{file: file, line: 1}, @template) == nil
       end
 
@@ -107,7 +140,7 @@ defmodule PhoenixDevToolbar.InspectedTest do
 
     test "a missing line opens line 1; spaces are escaped" do
       assert Inspected.editor_url(%{file: "lib/a b.ex", line: nil}, @template) ==
-               "vscode://file/#{File.cwd!()}/lib/a%20b.ex:1"
+               "vscode://file//work/app/lib/a%20b.ex:1"
     end
   end
 end

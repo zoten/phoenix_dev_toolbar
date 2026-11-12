@@ -91,36 +91,57 @@ defmodule PhoenixDevToolbar.Inspected do
 
   defp caller(_value), do: nil
 
-  @doc "The editor template (`PLUG_EDITOR`, Phoenix's convention), read at use time."
-  @spec editor_template() :: String.t() | nil
-  def editor_template, do: System.get_env("PLUG_EDITOR")
+  @blocked_schemes ~w(javascript data vbscript file)
 
   @doc """
-  The editor link for a frame (`%{file:, line:}`), or nil: `template` must start
-  with a URL scheme (letters, then `://`), the file must be relative without
-  `..` segments. `__FILE__` becomes the absolute path, `__LINE__` the line.
+  The editor (`PLUG_EDITOR`, Phoenix's convention) read at use time: the
+  template and the working directory, or nil without a template or a cwd.
   """
-  @spec editor_url(%{file: String.t() | nil, line: non_neg_integer() | nil}, String.t() | nil) ::
-          String.t() | nil
-  def editor_url(%{file: file} = frame, template) when is_binary(file) and is_binary(template) do
-    with true <- Regex.match?(~r/\A[a-zA-Z]+:\/\//, template),
-         true <- safe_file?(file) do
-      absolute = Path.join(File.cwd!(), file)
+  @spec editor() :: {String.t(), String.t()} | nil
+  def editor do
+    with template when is_binary(template) <- System.get_env("PLUG_EDITOR"),
+         {:ok, cwd} <- File.cwd() do
+      {template, cwd}
+    else
+      _ -> nil
+    end
+  end
 
+  @doc """
+  The editor link for a frame (`%{file:, line:}`), or nil: the template must
+  start with a URL scheme (letters, then `://`) that is not `javascript`,
+  `data`, `vbscript` or `file`, the file must be relative without `..` segments
+  or backslashes. `__FILE__` becomes the absolute path, `__LINE__` the line.
+  """
+  @spec editor_url(
+          %{file: String.t() | nil, line: non_neg_integer() | nil},
+          {String.t(), String.t()} | nil
+        ) :: String.t() | nil
+  def editor_url(%{file: file} = frame, {template, cwd})
+      when is_binary(file) and is_binary(template) and is_binary(cwd) do
+    with true <- safe_scheme?(template),
+         true <- safe_file?(file) do
       template
-      |> String.replace("__FILE__", URI.encode(absolute))
+      |> String.replace("__FILE__", URI.encode(Path.join(cwd, file)))
       |> String.replace("__LINE__", Integer.to_string(frame[:line] || 1))
     else
       _ -> nil
     end
   end
 
-  def editor_url(_frame, _template), do: nil
+  def editor_url(_frame, _editor), do: nil
+
+  defp safe_scheme?(template) do
+    case Regex.run(~r/\A([a-zA-Z]+):\/\//, template) do
+      [_, scheme] -> String.downcase(scheme) not in @blocked_schemes
+      nil -> false
+    end
+  end
 
   defp safe_file?(file) do
     segments = Path.split(file)
 
     file != "" and Path.type(file) == :relative and ".." not in segments and
-      not String.contains?(file, <<0>>)
+      not String.contains?(file, [<<0>>, "\\"])
   end
 end

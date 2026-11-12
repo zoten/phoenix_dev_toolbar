@@ -144,6 +144,8 @@ defmodule PhoenixDevToolbar.PanelLive do
     end
   end
 
+  def handle_event("pdt:inspect", _params, socket), do: {:noreply, socket}
+
   # From the PdtPanel hook: the loader's open state and the browser tab's visibility.
   def handle_event("pdt:visibility", params, socket),
     do:

@@ -124,7 +124,7 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
   def handle_info({:inspect, %Inspected{} = inspected}, socket) do
     socket
     |> assign(inspected: inspected, scroll?: inspected.root != nil)
-    |> assign(:editor, Inspected.editor_template())
+    |> assign(:editor, Inspected.editor())
     |> select_tab(inspected)
     |> scroll_to_inspected()
   end
@@ -183,10 +183,17 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
   defp select_tab(socket, %Inspected{root: nil}), do: socket
 
   defp select_tab(socket, inspected) do
-    tab =
-      if(components_target?(inspected, socket.assigns.tree), do: "components", else: "assigns")
+    socket
+    |> assign(:lv_tab, target_tab(inspected, socket.assigns.tree))
+    |> snapshot_if_shown()
+    |> tree_if_shown()
+  end
 
-    socket |> assign(:lv_tab, tab) |> snapshot_if_shown() |> tree_if_shown()
+  defp target_tab(inspected, tree) do
+    case components_target?(inspected, tree) do
+      true -> "components"
+      false -> "assigns"
+    end
   end
 
   defp components_target?(%Inspected{cid: cid}, _tree) when is_integer(cid), do: true
@@ -194,6 +201,9 @@ defmodule PhoenixDevToolbar.Panels.LiveView do
   defp components_target?(%Inspected{root: root}, %{views: views}),
     do: Enum.any?(views, &(&1.nested? and &1.root == root))
 
+  # The page's own root id is only known from the tree: until it is loaded, a
+  # pick opens Components, where the tree loads and selects the node.
+  defp components_target?(_inspected, nil), do: true
   defp components_target?(_inspected, _tree), do: false
 
   defp scroll_to_inspected(

@@ -31,6 +31,7 @@ function pairs() {
   const list = []
   for (const fg of TEXT) for (const bg of SURFACES) list.push([fg, bg])
   list.push(["#ffffff", "--pdt-error-fill"])
+  list.push(["#000000", "--pdt-accent"]) // the armed pick button
   for (const fg of HEADER_PAIRS) list.push([fg, "--pdt-header"])
   return list
 }

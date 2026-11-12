@@ -963,6 +963,43 @@ test("hovering a tree row highlights its element, leaving clears it", async (t) 
   assert.deepEqual(sent().pop(), {type: "pdt:highlight", root: null})
 })
 
+test("a stale outline is cleared by tab clicks, collapsing, hiding and a pick", async (t) => {
+  const page = await load(t, {
+    setup: (env) => {
+      env.document.body.append(env.build(["section", {id: "pdt-panel", "data-pdt-root": "page"}, TREE]))
+      env.document.body.append(env.build(["button", {id: "sub", role: "tab"}, "Assigns"]))
+      env.document.body.append(env.build(["button", {id: "collapse", "data-pdt-toggle": ""}, "x"]))
+    },
+  })
+  const sent = () => page.toLoader().map(({data}) => data).filter((data) => data.type === "pdt:highlight")
+  const hover = () => page.byId("view-code").dispatchEvent(new FakeEvent("pointerover", {relatedTarget: null}))
+  const cleared = () => sent().pop().root === null
+
+  hover()
+  page.byId("sub").click()
+  assert.ok(cleared(), "tab click")
+
+  hover()
+  page.byId("collapse").click()
+  assert.ok(cleared(), "toggle click")
+
+  hover()
+  page.fromLoader({type: "pdt:state", dock: "bottom", open: false, theme: "auto"})
+  assert.ok(cleared(), "collapsed state")
+
+  hover()
+  page.fromLoader({type: "pdt:inspect", inspected: {root: "phx-F1"}})
+  assert.ok(cleared(), "a pick arriving")
+})
+
+test("a list is not a picked element", async (t) => {
+  const page = await load(t)
+  page.fromLoader({type: "pdt:inspect", inspected: [1]})
+
+  const bridge = page.join()
+  assert.deepEqual(bridge.pushed.filter(({event}) => event === "pdt:inspect"), [])
+})
+
 test("only component tree rows highlight, not the panel root that shares the attribute", async (t) => {
   const page = await withTree(t)
 

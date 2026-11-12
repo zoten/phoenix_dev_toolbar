@@ -714,6 +714,19 @@ test("pdt:highlight with a null root clears the outline", async (t) => {
   assert.equal(page.boxes().length, 0)
 })
 
+test("collapsing or hiding the toolbar clears the highlight", async (t) => {
+  const page = await inspectorPage(t)
+
+  for (const type of ["pdt:close", "pdt:hide"]) {
+    page.fromPanel({type: "pdt:open"})
+    page.fromPanel({type: "pdt:highlight", root: "phx-F1", cid: null})
+    assert.equal(page.boxes().length, 1)
+
+    page.fromPanel({type})
+    assert.equal(page.boxes().length, 0, type)
+  }
+})
+
 test("the highlight clears after 3 seconds and on scroll", async (t) => {
   const page = await inspectorPage(t)
   page.fromPanel({type: "pdt:highlight", root: "phx-F1", cid: null})

@@ -286,6 +286,7 @@ const mount = () => {
     frame.classList.toggle("hidden", state === "hidden")
     handle.classList.toggle("visible", state === "open")
     pill.classList.toggle("visible", state === "hidden")
+    if (state !== "open") clearHighlight()
     applySize()
     writeState(state)
     postState()
