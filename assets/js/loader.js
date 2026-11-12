@@ -9,6 +9,11 @@
 // the panel, restored when the dock changes or the page opts out of reserving
 // space (data-pdt-reserve="false", or the dock menu's toggle).
 //
+// Element inspector (ADR 16): only while armed by the panel (pdt:pick) the
+// loader holds capture phase listeners on the document; the click that picks
+// an element is swallowed, never reaching host handlers. The outline lives in
+// our shadow root. Disarming removes every listener and the outline.
+//
 // Client event log (ADR 07): passive listeners on LiveView's own window events
 // forward a sanitized copy to the panel through the same origin checked
 // postMessage bridge, rate limited and buffered until the panel loads.
@@ -28,6 +33,7 @@ import {
   sizeFromPointer,
   THEMES,
 } from "./layout.mjs"
+import {outlineBox, resolve} from "./inspect.mjs"
 import {label, parseShortcut, triggered} from "./shortcut.mjs"
 
 const STORAGE_KEY = "pdt:state"
@@ -123,6 +129,16 @@ const STYLE = `
   .handle.dock-right::after { left: auto; right: 0; transform: translateY(-50%); }
   .handle:hover::after, .handle:focus-visible::after, .handle.dragging::after { opacity: 1; }
   .handle.visible { display: block; }
+  .pick-box {
+    position: fixed; z-index: 2147482999; pointer-events: none; box-sizing: border-box;
+    border: 2px solid #fd4f00; background: rgba(253, 79, 0, .12); border-radius: 2px;
+  }
+  .pick-label {
+    position: fixed; z-index: 2147482999; pointer-events: none; max-width: 60vw;
+    padding: 2px 6px; border-radius: 3px; background: #1f2330; color: #fff;
+    font: 600 11px/16px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   .pill {
     position: fixed; right: 12px; bottom: 12px; z-index: 2147483000;
     display: none; align-items: center; gap: 6px;
@@ -393,6 +409,124 @@ const mount = () => {
     queue.ready()
   })
 
+  // Element inspector: one outline box and label in the shadow root.
+  const HIGHLIGHT_MS = 3000
+  let box = null
+  let tip = null
+  let armed = false
+  let hoverTarget = null
+  let hoverFrame = false
+  let highlightTimer = null
+  const place = (element, text) => {
+    const rect = outlineBox(element)
+    if (!box) {
+      box = document.createElement("div")
+      box.className = "pick-box"
+      tip = document.createElement("div")
+      tip.className = "pick-label"
+      root.append(box, tip)
+    }
+    box.style.cssText = `left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px`
+    tip.textContent = text
+    tip.style.cssText = `left:${Math.max(0, rect.left)}px;top:${rect.top >= 20 ? rect.top - 20 : rect.top + rect.height + 2}px`
+  }
+  const clearBox = () => {
+    if (box) box.remove()
+    if (tip) tip.remove()
+    box = tip = null
+  }
+  const ours = (target) => !target || host === target || host.contains(target)
+  const describe = (element) => {
+    const {tag, frames} = resolve(element)
+    return frames.length > 0 ? `${tag} in ${frames[0].name}` : tag
+  }
+
+  const clearHighlight = () => {
+    if (highlightTimer !== null) window.clearTimeout(highlightTimer)
+    highlightTimer = null
+    window.removeEventListener("scroll", clearHighlight, true)
+    if (!armed) clearBox()
+  }
+
+  const highlight = (data) => {
+    clearHighlight()
+    if (armed || typeof data.root !== "string") return
+    const view = document.getElementById(data.root)
+    if (!view || ours(view)) return
+    const element = Number.isInteger(data.cid) ? view.querySelector(`[data-phx-component="${data.cid}"]`) : view
+    if (!element) return
+    place(element, Number.isInteger(data.cid) ? `component ${data.cid}` : `#${data.root}`)
+    window.addEventListener("scroll", clearHighlight, true)
+    highlightTimer = window.setTimeout(clearHighlight, HIGHLIGHT_MS)
+  }
+
+  const onMove = (event) => {
+    try {
+      hoverTarget = event.target
+      if (hoverFrame) return
+      hoverFrame = true
+      requestAnimationFrame(() => {
+        hoverFrame = false
+        try {
+          if (!armed) return
+          if (ours(hoverTarget)) clearBox()
+          else place(hoverTarget, describe(hoverTarget))
+        } catch (_error) {
+          // Dropped silently: the toolbar must not show up in host error tracking.
+        }
+      })
+    } catch (_error) {
+      // Same: never throw into the host's event dispatch.
+    }
+  }
+
+  const onPick = (event) => {
+    try {
+      if (ours(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+      const inspected = resolve(event.target)
+      disarm()
+      post("inspect", {inspected})
+      setState("open")
+    } catch (_error) {
+      // Dropped silently: the toolbar must not show up in host error tracking.
+    }
+  }
+
+  const onKey = (event) => {
+    try {
+      if (event.key !== "Escape") return
+      event.preventDefault()
+      event.stopPropagation()
+      disarm()
+    } catch (_error) {
+      // Same as above.
+    }
+  }
+
+  const listeners = [
+    ["pointermove", onMove],
+    ["click", onPick],
+    ["keydown", onKey],
+  ]
+
+  function disarm() {
+    if (!armed) return
+    armed = false
+    hoverTarget = null
+    listeners.forEach(([type, fun]) => document.removeEventListener(type, fun, true))
+    clearBox()
+    post("picking", {armed: false})
+  }
+
+  const arm = () => {
+    clearHighlight()
+    armed = true
+    listeners.forEach(([type, fun]) => document.addEventListener(type, fun, true))
+    post("picking", {armed: true})
+  }
+
   // Only our own iframe, on our own origin, may drive the container.
   window.addEventListener("message", (event) => {
     if (event.origin !== window.location.origin || event.source !== frame.contentWindow) return
@@ -407,6 +541,11 @@ const mount = () => {
       setState("hidden")
       if (framed) pill.focus()
     }
+    if (type === "pdt:pick") {
+      if (armed) disarm()
+      else arm()
+    }
+    if (type === "pdt:highlight") highlight(event.data)
     if (type === "pdt:dock" && DOCKS.includes(event.data.dock)) {
       setDock(event.data.dock)
       saveLayout()

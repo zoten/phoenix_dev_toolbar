@@ -27,26 +27,44 @@ class Target {
 
   addEventListener(type, fun, options = {}) {
     const list = this.listeners.get(type) || []
-    list.push({fun, once: typeof options === "object" && options.once})
+    const object = typeof options === "object" && options !== null
+    const capture = object ? Boolean(options.capture) : options === true
+    list.push({fun, capture, once: object && options.once})
     this.listeners.set(type, list)
   }
 
-  removeEventListener(type, fun) {
+  removeEventListener(type, fun, options = {}) {
+    const object = typeof options === "object" && options !== null
+    const capture = object ? Boolean(options.capture) : options === true
     const list = this.listeners.get(type) || []
-    this.listeners.set(type, list.filter((listener) => listener.fun !== fun))
+    this.listeners.set(type, list.filter((listener) => listener.fun !== fun || listener.capture !== capture))
   }
 
-  fire(event) {
+  // `phase` limits the call to the capture or the bubble listeners; without
+  // one every listener runs.
+  fire(event, phase) {
     for (const listener of [...(this.listeners.get(event.type) || [])]) {
-      if (listener.once) this.removeEventListener(event.type, listener.fun)
+      if (phase && listener.capture !== (phase === "capture")) continue
+      if (listener.once) this.removeEventListener(event.type, listener.fun, {capture: listener.capture})
       listener.fun.call(this, event)
     }
   }
 
-  // Bubbles through parentNode up to the document (never out of a shadow root).
+  // Capture listeners run from the outermost node down to the target, then
+  // bubble listeners from the target up to the document (never out of a
+  // shadow root). stopPropagation ends the walk.
   dispatchEvent(event) {
     if (!event.target) event.target = this
-    for (let node = this; node && !event.stopped; node = node.parentNode) node.fire(event)
+    const path = []
+    for (let node = this; node; node = node.parentNode) path.push(node)
+    for (const node of [...path].reverse()) {
+      if (event.stopped) break
+      node.fire(event, "capture")
+    }
+    for (const node of path) {
+      if (event.stopped) break
+      node.fire(event, "bubble")
+    }
     return !event.defaultPrevented
   }
 }
@@ -154,6 +172,19 @@ class Node extends Target {
     return this.children[0] || null
   }
 
+  get nodeType() {
+    return 9
+  }
+
+  get parentElement() {
+    return this.parentNode instanceof FakeElement ? this.parentNode : null
+  }
+
+  get previousSibling() {
+    const siblings = this.parentNode ? this.parentNode.children : []
+    return siblings[siblings.indexOf(this) - 1] || null
+  }
+
   get lastChild() {
     return this.children[this.children.length - 1] || null
   }
@@ -195,6 +226,29 @@ class Node extends Target {
   }
 }
 
+// A comment node (HEEx debug annotations): nodeType 8, `data` is the text.
+export class FakeComment extends Node {
+  constructor(document, data) {
+    super(document)
+    this.data = data
+  }
+
+  get nodeType() {
+    return 8
+  }
+
+  matches() {
+    return false
+  }
+
+  remove() {
+    if (!this.parentNode) return
+    const siblings = this.parentNode.children
+    siblings.splice(siblings.indexOf(this), 1)
+    this.parentNode = null
+  }
+}
+
 export class FakeElement extends Node {
   constructor(document, tagName) {
     super(document)
@@ -207,6 +261,10 @@ export class FakeElement extends Node {
     this.textContent = ""
     this.popoverOpen = false
     this.popoverInvoker = null
+  }
+
+  get nodeType() {
+    return 1
   }
 
   get id() {
@@ -374,8 +432,9 @@ export class FakeElement extends Node {
 
   select() {}
 
+  // Tests set `rect` to place an element.
   getBoundingClientRect() {
-    return {left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0}
+    return this.rect || {left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0}
   }
 }
 
@@ -472,6 +531,10 @@ class FakeDocument extends Node {
     return el
   }
 
+  createComment(data) {
+    return new FakeComment(this, data)
+  }
+
   openPopovers() {
     return [...this.descendants()].filter((el) => el.popoverOpen)
   }
@@ -522,7 +585,9 @@ export const installDom = ({origin = "http://localhost:4000", search = "", body 
   }
 
   // Builds an element tree: [tag, attributes, ...children], children may be text.
+  // `["#comment", " text "]` is a comment node.
   const build = ([tag, attributes = {}, ...children]) => {
+    if (tag === "#comment") return document.createComment(attributes)
     const el = document.createElement(tag)
     Object.entries(attributes).forEach(([name, value]) => {
       if (name === "hidden") el.hidden = value

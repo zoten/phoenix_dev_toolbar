@@ -539,3 +539,194 @@ test("shortcut: a throwing listener never reaches the host", async (t) => {
 
   page.window.dispatchEvent(event)
 })
+
+// Element inspector (ADR 16)
+
+// A LiveView with a component annotation around a button, plus a host handler
+// on the button that must not run while the picker is armed.
+const withView = (env) => {
+  const view = env.build([
+    "div",
+    {id: "phx-F1", "data-phx-session": "s"},
+    ["#comment", " <Demo.Core.button> lib/x.ex:12 (demo) "],
+    ["button", {id: "target", "phx-click": "save", "data-phx-loc": "7"}],
+    ["div", {"data-phx-component": "3", id: "comp"}],
+  ])
+  env.document.body.append(view)
+  const target = env.document.getElementById("target")
+  target.rect = {left: 10, top: 40, width: 100, height: 30}
+  const hostClicks = []
+  target.addEventListener("click", (event) => hostClicks.push(event))
+  return {view, target, hostClicks}
+}
+
+const inspectorPage = async (t) => {
+  let view
+  const page = await load(t, {setup: (env) => (view = withView(env))})
+  const picking = () => page.posted().filter(({data}) => data.type === "pdt:picking").map(({data}) => data.armed)
+  const inspected = () => page.posted().filter(({data}) => data.type === "pdt:inspect")
+  const boxes = () => page.root.querySelectorAll(".pick-box")
+  const hover = (target) => {
+    page.document.dispatchEvent(new FakeEvent("pointermove", {target}))
+    page.flushFrames()
+  }
+  const click = (target) => {
+    const event = new FakeEvent("click", {button: 0})
+    target.dispatchEvent(event)
+    return event
+  }
+  return {...page, ...view, picking, inspected, boxes, hover, click}
+}
+
+test("pdt:pick arms the picker and reports it", async (t) => {
+  const page = await inspectorPage(t)
+
+  page.fromPanel({type: "pdt:pick"})
+
+  assert.deepEqual(page.picking(), [true])
+})
+
+test("a second pdt:pick disarms and removes the listeners", async (t) => {
+  const page = await inspectorPage(t)
+
+  page.fromPanel({type: "pdt:pick"})
+  page.fromPanel({type: "pdt:pick"})
+
+  assert.deepEqual(page.picking(), [true, false])
+  for (const type of ["pointermove", "click", "keydown"]) {
+    assert.equal((page.document.listeners.get(type) || []).length, 0, type)
+  }
+})
+
+test("nothing is intercepted until armed", async (t) => {
+  const page = await inspectorPage(t)
+
+  const event = page.click(page.target)
+
+  assert.ok(!event.defaultPrevented)
+  assert.equal(page.hostClicks.length, 1)
+  assert.equal((page.document.listeners.get("click") || []).length, 0)
+})
+
+test("hovering outlines the element, once per animation frame", async (t) => {
+  const page = await inspectorPage(t)
+  page.fromPanel({type: "pdt:pick"})
+
+  page.document.dispatchEvent(new FakeEvent("pointermove", {target: page.target}))
+  page.document.dispatchEvent(new FakeEvent("pointermove", {target: page.target}))
+
+  assert.equal(page.pendingFrames(), 1)
+  page.flushFrames()
+  const [box] = page.boxes()
+  assert.equal(box.style.getPropertyValue("left"), "10px")
+  assert.equal(box.style.getPropertyValue("width"), "100px")
+  assert.equal(page.root.querySelector(".pick-label").textContent, "button in Demo.Core.button")
+})
+
+test("hovering the toolbar itself draws no outline", async (t) => {
+  const page = await inspectorPage(t)
+  page.fromPanel({type: "pdt:pick"})
+  page.hover(page.target)
+
+  page.hover(page.host)
+
+  assert.equal(page.boxes().length, 0)
+})
+
+test("armed click posts the payload, disarms, opens the panel and swallows the click", async (t) => {
+  const page = await inspectorPage(t)
+  page.fromPanel({type: "pdt:pick"})
+
+  const event = page.click(page.target)
+
+  assert.ok(event.defaultPrevented)
+  assert.equal(page.hostClicks.length, 0)
+  assert.deepEqual(page.inspected().map(({data}) => data.inspected), [
+    {
+      root: "phx-F1",
+      cid: null,
+      tag: "button",
+      tag_line: 7,
+      binding: {event: "phx-click", name: "save", target: null},
+      frames: [{name: "Demo.Core.button", file: "lib/x.ex", line: 12}],
+      caller: null,
+    },
+  ])
+  assert.deepEqual(page.picking(), [true, false])
+  assert.equal(page.lastState().open, true)
+  assert.equal(page.boxes().length, 0)
+  assert.equal(page.click(page.target).defaultPrevented, false)
+})
+
+test("a click on the toolbar while armed is ignored", async (t) => {
+  const page = await inspectorPage(t)
+  page.fromPanel({type: "pdt:pick"})
+
+  const event = page.click(page.host)
+
+  assert.ok(!event.defaultPrevented)
+  assert.deepEqual(page.picking(), [true])
+  assert.equal(page.inspected().length, 0)
+})
+
+test("Escape disarms without posting an inspection", async (t) => {
+  const page = await inspectorPage(t)
+  page.fromPanel({type: "pdt:pick"})
+  page.hover(page.target)
+
+  page.document.body.dispatchEvent(new FakeEvent("keydown", {key: "Escape"}))
+
+  assert.deepEqual(page.picking(), [true, false])
+  assert.equal(page.inspected().length, 0)
+  assert.equal(page.boxes().length, 0)
+})
+
+test("pick messages from another origin are ignored", async (t) => {
+  const page = await inspectorPage(t)
+
+  page.fromPanel({type: "pdt:pick"}, {origin: "http://evil.test"})
+
+  assert.deepEqual(page.picking(), [])
+})
+
+test("pdt:highlight outlines a LiveView root and a component, in the shadow root", async (t) => {
+  const page = await inspectorPage(t)
+  page.document.getElementById("comp").rect = {left: 1, top: 2, width: 3, height: 4}
+
+  page.fromPanel({type: "pdt:highlight", root: "phx-F1", cid: 3})
+
+  assert.equal(page.boxes().length, 1)
+  assert.equal(page.boxes()[0].style.getPropertyValue("height"), "4px")
+  assert.equal(page.document.querySelectorAll(".pick-box").length, 0)
+  assert.equal((page.document.listeners.get("click") || []).length, 0)
+})
+
+test("pdt:highlight with a null root clears the outline", async (t) => {
+  const page = await inspectorPage(t)
+  page.fromPanel({type: "pdt:highlight", root: "phx-F1", cid: null})
+
+  page.fromPanel({type: "pdt:highlight", root: null, cid: null})
+
+  assert.equal(page.boxes().length, 0)
+})
+
+test("the highlight clears after 3 seconds and on scroll", async (t) => {
+  const page = await inspectorPage(t)
+  page.fromPanel({type: "pdt:highlight", root: "phx-F1", cid: null})
+  t.mock.timers.tick(3000)
+  assert.equal(page.boxes().length, 0)
+
+  page.fromPanel({type: "pdt:highlight", root: "phx-F1", cid: null})
+  page.window.dispatchEvent(new FakeEvent("scroll"))
+  assert.equal(page.boxes().length, 0)
+})
+
+test("pdt:highlight for an unknown root or component draws nothing", async (t) => {
+  const page = await inspectorPage(t)
+
+  page.fromPanel({type: "pdt:highlight", root: "nope", cid: null})
+  page.fromPanel({type: "pdt:highlight", root: "phx-F1", cid: 99})
+  page.fromPanel({type: "pdt:highlight", root: 5, cid: null})
+
+  assert.equal(page.boxes().length, 0)
+})
