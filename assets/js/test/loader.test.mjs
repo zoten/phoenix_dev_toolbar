@@ -593,7 +593,7 @@ test("a second pdt:pick disarms and removes the listeners", async (t) => {
   page.fromPanel({type: "pdt:pick"})
 
   assert.deepEqual(page.picking(), [true, false])
-  for (const type of ["pointermove", "click", "keydown"]) {
+  for (const type of ["pointermove", "click", "keydown", "pointerdown", "mousedown", "pointerup", "mouseup"]) {
     assert.equal((page.document.listeners.get(type) || []).length, 0, type)
   }
 })
@@ -637,10 +637,14 @@ test("armed click posts the payload, disarms, opens the panel and swallows the c
   const page = await inspectorPage(t)
   page.fromPanel({type: "pdt:pick"})
 
+  const windowClicks = []
+  page.window.addEventListener("click", (event) => windowClicks.push(event))
+
   const event = page.click(page.target)
 
   assert.ok(event.defaultPrevented)
   assert.equal(page.hostClicks.length, 0)
+  assert.equal(windowClicks.length, 0)
   assert.deepEqual(page.inspected().map(({data}) => data.inspected), [
     {
       root: "phx-F1",
@@ -729,4 +733,107 @@ test("pdt:highlight for an unknown root or component draws nothing", async (t) =
   page.fromPanel({type: "pdt:highlight", root: 5, cid: null})
 
   assert.equal(page.boxes().length, 0)
+})
+
+test("a window bubble listener is reached by a click when not armed", async (t) => {
+  const page = await inspectorPage(t)
+  const windowClicks = []
+  page.window.addEventListener("click", (event) => windowClicks.push(event))
+
+  page.click(page.target)
+
+  assert.equal(windowClicks.length, 1)
+})
+
+test("armed, presses are swallowed so an input is not focused; the toolbar's are not", async (t) => {
+  const page = await inspectorPage(t)
+  page.fromPanel({type: "pdt:pick"})
+  const reached = []
+  for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+    page.target.addEventListener(type, () => reached.push(type))
+    const event = new FakeEvent(type, {button: 0})
+    page.target.dispatchEvent(event)
+    assert.ok(event.defaultPrevented, type)
+    const own = new FakeEvent(type, {button: 0})
+    page.host.dispatchEvent(own)
+    assert.ok(!own.defaultPrevented, type)
+  }
+  assert.deepEqual(reached, [])
+})
+
+test("presses are not intercepted after a disarm", async (t) => {
+  const page = await inspectorPage(t)
+  page.fromPanel({type: "pdt:pick"})
+  page.fromPanel({type: "pdt:pick"})
+
+  const event = new FakeEvent("mousedown", {button: 0})
+  page.target.dispatchEvent(event)
+
+  assert.ok(!event.defaultPrevented)
+})
+
+test("a panel reload disarms the picker and reports it", async (t) => {
+  const page = await inspectorPage(t)
+  page.fromPanel({type: "pdt:pick"})
+
+  page.frame.dispatchEvent(new FakeEvent("load"))
+
+  assert.deepEqual(page.picking(), [true, false])
+  assert.equal((page.document.listeners.get("click") || []).length, 0)
+})
+
+test("a panel load while not armed posts nothing about picking", async (t) => {
+  const page = await inspectorPage(t)
+
+  page.frame.dispatchEvent(new FakeEvent("load"))
+
+  assert.deepEqual(page.picking(), [])
+})
+
+test("Escape while not armed is left to the host", async (t) => {
+  const page = await inspectorPage(t)
+  const event = new FakeEvent("keydown", {key: "Escape"})
+
+  page.document.body.dispatchEvent(event)
+
+  assert.ok(!event.defaultPrevented)
+  assert.deepEqual(page.picking(), [])
+})
+
+test("pointermove while not armed leaves a highlight box alone", async (t) => {
+  const page = await inspectorPage(t)
+  page.fromPanel({type: "pdt:highlight", root: "phx-F1", cid: null})
+
+  page.hover(page.host)
+  page.hover(page.target)
+
+  assert.equal(page.boxes().length, 1)
+  assert.equal(page.pendingFrames(), 0)
+})
+
+test("pointermove over the toolbar while armed clears a drawn box", async (t) => {
+  const page = await inspectorPage(t)
+  page.fromPanel({type: "pdt:pick"})
+  page.hover(page.target)
+  assert.equal(page.boxes().length, 1)
+
+  page.hover(page.host)
+
+  assert.equal(page.boxes().length, 0)
+})
+
+test("pdt:highlight for a cid ignores a nested LiveView's component with the same cid", async (t) => {
+  const page = await inspectorPage(t)
+  const nested = page.build([
+    "div",
+    {id: "phx-F2", "data-phx-session": "n"},
+    ["div", {id: "inner", "data-phx-component": "3"}],
+  ])
+  page.view.insert(0, [nested])
+  page.document.getElementById("inner").rect = {left: 90, top: 90, width: 9, height: 9}
+  page.document.getElementById("comp").rect = {left: 1, top: 2, width: 3, height: 4}
+
+  page.fromPanel({type: "pdt:highlight", root: "phx-F1", cid: 3})
+
+  assert.equal(page.boxes()[0].style.getPropertyValue("left"), "1px")
 })

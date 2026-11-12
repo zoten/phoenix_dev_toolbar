@@ -448,12 +448,16 @@ const mount = () => {
     if (!armed) clearBox()
   }
 
+  // Cids are per LiveView: skip matches that belong to a nested LiveView.
+  const component = (view, cid) =>
+    Array.from(view.querySelectorAll(`[data-phx-component="${cid}"]`)).find((el) => el.closest("[data-phx-session]") === view)
+
   const highlight = (data) => {
     clearHighlight()
     if (armed || typeof data.root !== "string") return
     const view = document.getElementById(data.root)
     if (!view || ours(view)) return
-    const element = Number.isInteger(data.cid) ? view.querySelector(`[data-phx-component="${data.cid}"]`) : view
+    const element = Number.isInteger(data.cid) ? component(view, data.cid) : view
     if (!element) return
     place(element, Number.isInteger(data.cid) ? `component ${data.cid}` : `#${data.root}`)
     window.addEventListener("scroll", clearHighlight, true)
@@ -505,7 +509,22 @@ const mount = () => {
     }
   }
 
+  // Pointer and mouse presses would focus an input or start host drag logic.
+  const swallow = (event) => {
+    try {
+      if (ours(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+    } catch (_error) {
+      // Same as above.
+    }
+  }
+
   const listeners = [
+    ["pointerdown", swallow],
+    ["mousedown", swallow],
+    ["pointerup", swallow],
+    ["mouseup", swallow],
     ["pointermove", onMove],
     ["click", onPick],
     ["keydown", onKey],
@@ -519,6 +538,9 @@ const mount = () => {
     clearBox()
     post("picking", {armed: false})
   }
+
+  // A reloaded panel starts not picking: keep the loader in sync.
+  frame.addEventListener("load", disarm)
 
   const arm = () => {
     clearHighlight()

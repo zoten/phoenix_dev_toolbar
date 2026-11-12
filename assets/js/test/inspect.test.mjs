@@ -2,7 +2,7 @@
 import {test} from "node:test"
 import assert from "node:assert/strict"
 
-import {MAX_FRAMES, MAX_NODES, MAX_STRING_BYTES, outlineBox, resolve} from "../inspect.mjs"
+import {MAX_FRAMES, MAX_NODES, MAX_STRING_BYTES, outlineBox, resolve, truncate} from "../inspect.mjs"
 import {installDom} from "./support/fake_dom.mjs"
 
 const open = (name, loc = "lib/x.ex:12") => ["#comment", ` <${name}> ${loc} (demo) `]
@@ -180,4 +180,71 @@ test("outlineBox is the element's viewport rect", (t) => {
   target.rect = {left: 10, top: 20, width: 30, height: 40, right: 40, bottom: 60}
 
   assert.deepEqual(outlineBox(target), {left: 10, top: 20, width: 30, height: 40})
+})
+
+test("truncating emoji never leaves a lone surrogate", () => {
+  const out = truncate("😀".repeat(300))
+
+  assert.ok(!/[\uD800-\uDBFF]$/.test(out))
+  assert.ok(new TextEncoder().encode(out).length <= MAX_STRING_BYTES)
+  const odd = truncate("a" + "😀".repeat(300))
+  assert.ok(!/[\uD800-\uDBFF]$/.test(odd))
+})
+
+test("whitespace text nodes between the comments and the element are skipped", (t) => {
+  const {target} = page(
+    t,
+    caller(),
+    "\n  ",
+    open("Demo.Core.button"),
+    "\n  ",
+    ["button", {id: "target"}],
+    "\n",
+    close("Demo.Core.button"),
+  )
+
+  const inspected = resolve(target)
+
+  assert.deepEqual(inspected.frames.map(({name}) => name), ["Demo.Core.button"])
+  assert.deepEqual(inspected.caller, {file: "lib/y.ex", line: 34})
+})
+
+// A parent LiveView whose component holds a nested live_render.
+const nested = (t) => {
+  const env = installDom()
+  t.after(env.restore)
+  const parent = env.build([
+    "div",
+    {id: "phx-P", "data-phx-session": "p"},
+    open("Demo.Parent.card", "lib/parent.ex:1"),
+    [
+      "section",
+      {"data-phx-component": "1"},
+      [
+        "div",
+        {id: "phx-C", "data-phx-session": "c"},
+        open("Demo.Child.button", "lib/child.ex:2"),
+        ["button", {id: "target", "data-phx-component": "9"}],
+        ["input", {id: "plain"}],
+      ],
+    ],
+  ])
+  env.document.body.append(parent)
+  return env
+}
+
+test("a component outside the LiveView root is not the element's cid", (t) => {
+  const env = nested(t)
+
+  assert.equal(resolve(env.document.getElementById("plain")).cid, null)
+  assert.equal(resolve(env.document.getElementById("plain")).root, "phx-C")
+  assert.equal(resolve(env.document.getElementById("target")).cid, 9)
+})
+
+test("the frame walk stops at the nested LiveView root", (t) => {
+  const env = nested(t)
+
+  const {frames} = resolve(env.document.getElementById("plain"))
+
+  assert.deepEqual(frames.map(({name}) => name), ["Demo.Child.button"])
 })

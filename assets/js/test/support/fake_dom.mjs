@@ -57,6 +57,8 @@ class Target {
     if (!event.target) event.target = this
     const path = []
     for (let node = this; node; node = node.parentNode) path.push(node)
+    // Events on the document continue to the window, as in a browser.
+    if (path[path.length - 1] === this.ownerDocument && globalThis.window) path.push(globalThis.window)
     for (const node of [...path].reverse()) {
       if (event.stopped) break
       node.fire(event, "capture")
@@ -246,6 +248,13 @@ export class FakeComment extends Node {
     const siblings = this.parentNode.children
     siblings.splice(siblings.indexOf(this), 1)
     this.parentNode = null
+  }
+}
+
+// A text node: nodeType 3, `data` is the text.
+export class FakeText extends FakeComment {
+  get nodeType() {
+    return 3
   }
 }
 
@@ -531,6 +540,10 @@ class FakeDocument extends Node {
     return el
   }
 
+  createTextNode(data) {
+    return new FakeText(this, data)
+  }
+
   createComment(data) {
     return new FakeComment(this, data)
   }
@@ -595,7 +608,10 @@ export const installDom = ({origin = "http://localhost:4000", search = "", body 
       else el.setAttribute(name, value === true ? "" : value)
     })
     children.forEach((child) => {
-      if (typeof child === "string") el.textContent += child
+      if (typeof child === "string") {
+        el.textContent += child
+        el.append(document.createTextNode(child))
+      }
       else el.append(build(child))
     })
     return el

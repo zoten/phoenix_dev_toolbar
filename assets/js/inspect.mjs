@@ -25,7 +25,8 @@ export const truncate = (value) => {
   let string = String(value)
   if (string.length > MAX_STRING_BYTES) string = string.slice(0, MAX_STRING_BYTES)
   while (encoder.encode(string).length > MAX_STRING_BYTES) string = string.slice(0, -1)
-  return string
+  // A cut between the halves of a surrogate pair leaves a lone high surrogate.
+  return string.replace(/[\uD800-\uDBFF]$/, "")
 }
 
 // An integer in 0..MAX_INTEGER from digits, else null.
@@ -63,15 +64,17 @@ const frame = (open, node) => {
 // Open function component frames around `element`, innermost first, and the
 // @caller of the innermost one. Per level: the previous siblings of the
 // element or of the ancestor, nearest first; a close annotation seen first
-// cancels the open annotation of the same name before it.
-const walk = (element) => {
+// cancels the open annotation of the same name before it. The walk stops at the
+// LiveView root (its children are scanned, its own siblings are not), or at
+// the body of a dead render.
+const walk = (element, root) => {
   const frames = []
   let caller = null
   let visited = 0
   let node = element
   const budget = () => ++visited <= MAX_NODES
 
-  while (node && node.nodeType === ELEMENT && node.tagName !== "body" && node.tagName !== "BODY") {
+  while (node && node !== root && node.nodeType === ELEMENT && node.tagName !== "body" && node.tagName !== "BODY") {
     const closed = new Map()
     for (let sibling = node.previousSibling; sibling; sibling = sibling.previousSibling) {
       if (!budget()) return {frames, caller}
@@ -116,9 +119,11 @@ const binding = (element, root) => {
 // The payload of the contract (ADR 16) for a picked element.
 export const resolve = (element) => {
   const root = element.closest("[data-phx-session]")
-  const component = element.closest("[data-phx-component]")
+  const found = element.closest("[data-phx-component]")
+  // Cids are per LiveView: a component outside this root belongs to a parent.
+  const component = found && (!root || root.contains(found)) ? found : null
   const rootId = root ? attr(root, "id") : null
-  const {frames, caller} = walk(element)
+  const {frames, caller} = walk(element, root)
 
   return {
     root: rootId === null ? null : truncate(rootId),
