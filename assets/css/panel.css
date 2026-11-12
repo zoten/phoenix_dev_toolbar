@@ -3,46 +3,31 @@
    as tall as the collapsed iframe (34px, see assets/js/loader.js). */
 
 :root {
-  --pdt-bg: #ffffff;
-  --pdt-bg-alt: #f6f7f9;
-  --pdt-header: #1f2330;
+  --pdt-bg: light-dark(#ffffff, #161922);
+  --pdt-bg-alt: light-dark(#f6f7f9, #1c202b);
+  --pdt-header: light-dark(#1f2330, #0f1117);
   --pdt-header-fg: #e8eaf0;
-  --pdt-fg: #1d2129;
-  --pdt-muted: #626977;
-  --pdt-border: #e3e6eb;
+  --pdt-fg: light-dark(#1d2129, #e3e6ee);
+  --pdt-muted: light-dark(#626977, #949bab);
+  --pdt-border: light-dark(#e3e6eb, #2a2f3c);
   --pdt-accent: #fd4f00;
-  --pdt-accent-text: #c43c00;
-  --pdt-ok: #187a45;
-  --pdt-warn: #8a5a12;
+  --pdt-accent-text: light-dark(#c43c00, #fd4f00);
+  --pdt-ok: light-dark(#187a45, #1f9d55);
+  --pdt-warn: light-dark(#8a5a12, #d69e2e);
   --pdt-header-warn: #e3a948;
   --pdt-header-ok: #1f9d55;
-  --pdt-error: #c53030;
+  --pdt-error: light-dark(#c53030, #f07171);
   --pdt-error-fill: #c53030;
   --pdt-header-error: #ff8a8a;
-  --pdt-error-bg: #fdf1f1;
-  --pdt-code: #334155;
+  --pdt-error-bg: light-dark(#fdf1f1, #2a1a1d);
+  --pdt-code: light-dark(#334155, #c9d3e3);
   --pdt-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   --pdt-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  color-scheme: light;
+  color-scheme: light dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --pdt-bg: #161922;
-    --pdt-bg-alt: #1c202b;
-    --pdt-header: #0f1117;
-    --pdt-fg: #e3e6ee;
-    --pdt-muted: #949bab;
-    --pdt-border: #2a2f3c;
-    --pdt-error-bg: #2a1a1d;
-    --pdt-accent-text: #fd4f00;
-    --pdt-ok: #1f9d55;
-    --pdt-error: #f07171;
-    --pdt-warn: #d69e2e;
-    --pdt-code: #c9d3e3;
-    color-scheme: dark;
-  }
-}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 * { box-sizing: border-box; }
 
@@ -275,6 +260,10 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
 .pdt-dock-reserve { margin-block-start: 2px; border-block-start: 1px solid rgba(255, 255, 255, .12); border-radius: 0 0 4px 4px; }
 .pdt-dock-reserve[aria-pressed="true"] { background: transparent; }
 .pdt-dock-reserve:hover { background: rgba(255, 255, 255, .08); }
+
+/* The theme group: a label, then three options like the docks. */
+.pdt-dock-theme { display: grid; gap: 2px; margin-block-start: 2px; padding-block-start: 2px; border-block-start: 1px solid rgba(255, 255, 255, .12); }
+.pdt-dock-theme__label { padding: 2px 8px 0; font-size: 11px; color: color-mix(in srgb, var(--pdt-header-fg) 75%, transparent); }
 .pdt-reserve__check { width: 14px; text-align: center; }
 .pdt-dock-reserve[aria-pressed="true"] .pdt-reserve__check::before { content: "\2713"; }
 
@@ -297,8 +286,10 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 .pdt-empty { margin: 16px; color: var(--pdt-muted); }
 
 .pdt-section { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+/* Dark only: light keeps the browser's own scrollbar, which light-dark() cannot express (no `auto`). */
+:root[data-theme="dark"] .pdt-section { scrollbar-color: color-mix(in srgb, var(--pdt-muted) 45%, var(--pdt-bg)) transparent; }
 @media (prefers-color-scheme: dark) {
-  .pdt-section { scrollbar-color: color-mix(in srgb, var(--pdt-muted) 45%, var(--pdt-bg)) transparent; }
+  :root:not([data-theme]) .pdt-section { scrollbar-color: color-mix(in srgb, var(--pdt-muted) 45%, var(--pdt-bg)) transparent; }
 }
 .pdt-section[hidden] { display: none; }
 

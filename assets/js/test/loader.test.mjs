@@ -101,7 +101,7 @@ test("posts to the panel on the page's own origin only, never '*'", async (t) =>
 
   assert.equal(page.posted().length, 3, "the mount state, the load, the toggle")
   page.posted().forEach(({targetOrigin}) => assert.equal(targetOrigin, ORIGIN))
-  assert.deepEqual(page.lastState(), {type: "pdt:state", open: true, dock: "bottom", reserve: true, shortcut: null})
+  assert.deepEqual(page.lastState(), {type: "pdt:state", open: true, dock: "bottom", reserve: true, shortcut: null, theme: "auto"})
 })
 
 test("toggle, hide and the corner pill move between the three states", async (t) => {
@@ -172,6 +172,39 @@ test("a reserve message takes booleans only and stops reserving page space", asy
   page.fromPanel({type: "pdt:reserve", reserve: false})
   assert.equal(page.host.style.height, "0px")
   assert.equal(JSON.parse(page.window.localStorage.getItem("pdt:layout")).reserve, false)
+})
+
+test("a theme message is saved and echoed in the state; unknown values are ignored", async (t) => {
+  const page = await load(t)
+  const stored = () => page.window.localStorage.getItem("pdt:layout")
+
+  page.fromPanel({type: "pdt:theme", theme: "dark"})
+  assert.equal(page.lastState().theme, "dark")
+  assert.equal(JSON.parse(stored()).theme, "dark")
+
+  page.fromPanel({type: "pdt:theme", theme: "neon"})
+  page.fromPanel({type: "pdt:theme", theme: 7})
+  assert.equal(page.lastState().theme, "dark")
+
+  page.fromPanel({type: "pdt:theme", theme: "auto"})
+  assert.equal(page.lastState().theme, "auto")
+  assert.equal(JSON.parse(stored()).theme, undefined)
+})
+
+test("a theme message from a foreign origin or source is ignored", async (t) => {
+  const page = await load(t)
+
+  page.fromPanel({type: "pdt:theme", theme: "light"}, {origin: "http://evil.test"})
+  page.fromPanel({type: "pdt:theme", theme: "light"}, {source: page.window})
+  assert.equal(page.lastState().theme, "auto")
+  assert.equal(page.window.localStorage.getItem("pdt:layout"), null)
+})
+
+test("the stored theme is sent with the first state", async (t) => {
+  const page = await load(t, {
+    setup: (env) => env.window.localStorage.setItem("pdt:layout", '{"dock":"bottom","sizes":{},"theme":"light"}'),
+  })
+  assert.equal(page.lastState().theme, "light")
 })
 
 test("the server's data-pdt-reserve=false default yields to the stored choice", async (t) => {

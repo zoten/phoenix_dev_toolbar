@@ -8,16 +8,19 @@ import {luminance, mix, parseHex, ratio} from "../contrast.mjs"
 
 const CSS = readFileSync(new URL("../../css/panel.css", import.meta.url), "utf8")
 
-function tokens(block) {
+const HEX = "#[0-9a-fA-F]{6}"
+
+// `--pdt-x: light-dark(#l, #d);` gives a value per mode, a plain `#x` both modes.
+function tokens(block, mode) {
   const out = {}
-  for (const [, name, value] of block.matchAll(/(--pdt-[a-z-]+):\s*(#[0-9a-fA-F]{6})\s*;/g)) out[name] = value
+  const re = new RegExp(`(--pdt-[a-z-]+):\\s*(?:(${HEX})|light-dark\\(\\s*(${HEX})\\s*,\\s*(${HEX})\\s*\\))\\s*;`, "g")
+  for (const [, name, plain, light, dark] of block.matchAll(re)) out[name] = plain ?? (mode === "light" ? light : dark)
   return out
 }
 
 const rootBlock = /:root\s*\{([^}]*)\}/.exec(CSS)?.[1] ?? ""
-const darkBlock = /@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root\s*\{([^}]*)\}/.exec(CSS)?.[1] ?? ""
-const LIGHT = tokens(rootBlock)
-const DARK = {...LIGHT, ...tokens(darkBlock)}
+const LIGHT = tokens(rootBlock, "light")
+const DARK = tokens(rootBlock, "dark")
 
 const HEADER_PAIRS = ["--pdt-header-fg", "--pdt-header-warn", "--pdt-header-error", "--pdt-accent"]
 const HEADER_UI = ["--pdt-header-ok"]
@@ -32,13 +35,15 @@ function pairs() {
   return list
 }
 
-// Every checked token declared in a block must be #rrggbb, or the contrast math would skip it.
+// Every checked token declared in a block must be #rrggbb or light-dark(#rrggbb, #rrggbb),
+// or the contrast math would skip it.
 function formatFailures(block) {
   const checked = new Set([...TEXT, ...SURFACES, ...HEADER_PAIRS, ...HEADER_UI, "--pdt-header", "--pdt-error-fill"])
+  const ok = new RegExp(`^(${HEX}|light-dark\\(\\s*${HEX}\\s*,\\s*${HEX}\\s*\\))$`)
   const bad = []
   for (const [, name, value] of block.matchAll(/(--pdt-[a-z-]+):\s*([^;]+);/g))
-    if (checked.has(name) && !/^#[0-9a-fA-F]{6}$/.test(value.trim()))
-      bad.push(`${name}: ${value.trim()} must be #rrggbb`)
+    if (checked.has(name) && !ok.test(value.trim()))
+      bad.push(`${name}: ${value.trim()} must be #rrggbb or light-dark(#rrggbb, #rrggbb)`)
   return bad
 }
 
@@ -46,13 +51,25 @@ function stripCss(css) {
   return css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, '""')
 }
 
-test("the dark block is found and has dark values", () => {
-  assert.ok(Object.keys(tokens(darkBlock)).length > 0, "dark block not found or empty")
-  assert.ok("--pdt-bg" in tokens(darkBlock), "dark block must declare --pdt-bg")
+test("the :root block is found and declares the surfaces for both modes", () => {
+  assert.ok(Object.keys(LIGHT).length > 0, ":root block not found or empty")
+  assert.ok(/--pdt-bg:\s*light-dark\(/.test(rootBlock), "--pdt-bg must be a light-dark() pair")
 })
 
-test("checked tokens are declared as #rrggbb in every block", () => {
-  assert.deepEqual([...formatFailures(rootBlock), ...formatFailures(darkBlock)], [])
+test("the prefers-color-scheme dark token block is gone: light-dark() carries both modes", () => {
+  assert.ok(!/@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root\s*\{/.test(CSS))
+})
+
+test("checked tokens are declared as #rrggbb or light-dark() of two in :root", () => {
+  assert.deepEqual(formatFailures(rootBlock), [])
+})
+
+test("every checked token resolves in both modes", () => {
+  const checked = [...TEXT, ...SURFACES, ...HEADER_PAIRS, ...HEADER_UI, "--pdt-header", "--pdt-error-fill"]
+  const missing = []
+  for (const [mode, t] of [["light", LIGHT], ["dark", DARK]])
+    for (const name of checked) if (!t[name]) missing.push(`${name} missing in ${mode}`)
+  assert.deepEqual(missing, [])
 })
 
 test("accent is never used as text color outside .pdt-logo", () => {

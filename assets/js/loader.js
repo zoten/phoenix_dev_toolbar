@@ -26,6 +26,7 @@ import {
   serializeLayout,
   sideDock,
   sizeFromPointer,
+  THEMES,
 } from "./layout.mjs"
 import {label, parseShortcut, triggered} from "./shortcut.mjs"
 
@@ -224,8 +225,8 @@ const mount = () => {
   const post = (type, payload = {}) =>
     frame.contentWindow &&
     frame.contentWindow.postMessage({type: MESSAGE_PREFIX + type, ...payload}, window.location.origin)
-  const postState = () => post("state", {open: state === "open", dock, reserve: reserving(layout, reserveDefault), shortcut: shortcut ? shortcutSource : null})
-  const saveLayout = () => writeLayout({dock, sizes: layout.sizes, reserve: layout.reserve})
+  const postState = () => post("state", {open: state === "open", dock, reserve: reserving(layout, reserveDefault), shortcut: shortcut ? shortcutSource : null, theme: layout.theme})
+  const saveLayout = () => writeLayout({dock, sizes: layout.sizes, reserve: layout.reserve, theme: layout.theme})
 
   // Docked at the top, the host div leads <body> so its height pushes the page
   // down; otherwise it closes <body>, so the page scrolls its end above the bar.
@@ -408,6 +409,11 @@ const mount = () => {
     }
     if (type === "pdt:dock" && DOCKS.includes(event.data.dock)) {
       setDock(event.data.dock)
+      saveLayout()
+      postState()
+    }
+    if (type === "pdt:theme" && THEMES.includes(event.data.theme)) {
+      layout.theme = event.data.theme
       saveLayout()
       postState()
     }

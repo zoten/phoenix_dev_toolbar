@@ -189,6 +189,25 @@ defmodule PhoenixDevToolbar.PanelLayout do
             >
               <span class="pdt-reserve__check" aria-hidden="true"></span> Reserve page space
             </button>
+            <%!-- Light, dark or follow the system: stored per browser by the loader. --%>
+            <div
+              id="pdt-theme"
+              class="pdt-dock-theme"
+              role="group"
+              aria-labelledby="pdt-theme-label"
+            >
+              <span id="pdt-theme-label" class="pdt-hint pdt-dock-theme__label">Theme</span>
+              <button
+                :for={{theme, text} <- [{"auto", "Auto"}, {"light", "Light"}, {"dark", "Dark"}]}
+                id={"pdt-theme-" <> theme}
+                type="button"
+                class="pdt-dock-option"
+                data-pdt-theme={theme}
+                aria-pressed="false"
+              >
+                {text}
+              </button>
+            </div>
           </div>
         </div>
         <%!-- Ignored by patches, like the picker: panel.js sets the toggle's

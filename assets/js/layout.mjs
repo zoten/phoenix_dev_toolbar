@@ -50,13 +50,18 @@ const validSize = (size) => Number.isFinite(size) && size > 0
 const pickSizes = (sizes) =>
   Object.fromEntries(DOCKS.filter((dock) => validSize(sizes[dock])).map((dock) => [dock, sizes[dock]]))
 
-const defaultLayout = () => ({dock: DEFAULT_DOCK, sizes: {}, reserve: null})
+export const THEMES = ["auto", "light", "dark"]
+
+// Unknown or missing themes read as auto (follow the system).
+export const pickTheme = (theme) => (THEMES.includes(theme) ? theme : "auto")
+
+const defaultLayout = () => ({dock: DEFAULT_DOCK, sizes: {}, reserve: null, theme: "auto"})
 
 // The user's page space choice: a boolean overrides the server's default, null
 // follows it.
 const pickReserve = (reserve) => (typeof reserve === "boolean" ? reserve : null)
 
-// Reads `{dock, sizes, reserve}`, and the older `{dock: "bottom", size}` shape.
+// Reads `{dock, sizes, reserve, theme}`, and the older `{dock: "bottom", size}` shape.
 // Anything unknown falls back to the default.
 export const parseLayout = (raw) => {
   try {
@@ -64,15 +69,22 @@ export const parseLayout = (raw) => {
     if (!parsed || typeof parsed !== "object") return defaultLayout()
     const dock = DOCKS.includes(parsed.dock) ? parsed.dock : DEFAULT_DOCK
     const reserve = pickReserve(parsed.reserve)
-    if (parsed.sizes && typeof parsed.sizes === "object") return {dock, sizes: pickSizes(parsed.sizes), reserve}
-    return {dock, sizes: validSize(parsed.size) ? {[dock]: parsed.size} : {}, reserve}
+    const theme = pickTheme(parsed.theme)
+    if (parsed.sizes && typeof parsed.sizes === "object") return {dock, sizes: pickSizes(parsed.sizes), reserve, theme}
+    return {dock, sizes: validSize(parsed.size) ? {[dock]: parsed.size} : {}, reserve, theme}
   } catch (_error) {
     return defaultLayout()
   }
 }
 
-export const serializeLayout = ({dock, sizes, reserve}) =>
-  JSON.stringify(typeof reserve === "boolean" ? {dock, sizes, reserve} : {dock, sizes})
+// `reserve` and `theme` are written only when the user chose one.
+export const serializeLayout = ({dock, sizes, reserve, theme}) =>
+  JSON.stringify({
+    dock,
+    sizes,
+    ...(typeof reserve === "boolean" ? {reserve} : {}),
+    ...(THEMES.includes(theme) && theme !== "auto" ? {theme} : {}),
+  })
 
 // Whether the page makes room: the user's choice, else the server's default
 // (the loader tag's data-pdt-reserve, only ever written as "false").

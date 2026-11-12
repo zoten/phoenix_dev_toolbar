@@ -10,6 +10,7 @@
 import {parse, record, stale, tripped} from "./reloads.mjs"
 import {createExportCopy} from "./export_copy.mjs"
 import {countWrapped} from "./summary.mjs"
+import {THEMES, parseLayout} from "./layout.mjs"
 import {label, parseShortcut, triggered} from "./shortcut.mjs"
 
 const {Socket} = window.Phoenix
@@ -65,6 +66,18 @@ const setReserve = (reserve) => {
   if (typeof reserve !== "boolean") return
   const toggle = document.getElementById("pdt-reserve")
   if (toggle) toggle.setAttribute("aria-pressed", String(reserve))
+}
+
+// The theme choice (ADR 04): the loader owns it. `auto` follows the system
+// (no data-theme), light and dark pin color-scheme in the CSS.
+const setTheme = (theme) => {
+  if (!THEMES.includes(theme)) return
+  const root = document.documentElement
+  if (theme === "auto") root.removeAttribute("data-theme")
+  else root.setAttribute("data-theme", theme)
+  document.querySelectorAll("[data-pdt-theme]").forEach((option) => {
+    option.setAttribute("aria-pressed", String(option.dataset.pdtTheme === theme))
+  })
 }
 
 const dockMenu = () => document.getElementById("pdt-dock-menu")
@@ -141,6 +154,7 @@ window.addEventListener("message", (event) => {
   if (data && data.type === "pdt:state") {
     setDock(data.dock)
     setReserve(data.reserve)
+    setTheme(data.theme)
     setOpen(Boolean(data.open))
     setShortcut(data.shortcut)
   }
@@ -153,6 +167,15 @@ window.addEventListener("message", (event) => {
 
 document.addEventListener("visibilitychange", pushVisibility)
 
+// No loader to ask: the panel's own origin shares the loader's stored layout.
+const storedTheme = () => {
+  try {
+    return parseLayout(window.localStorage.getItem("pdt:layout")).theme
+  } catch (_error) {
+    return "auto"
+  }
+}
+
 // Opened in a browser tab of its own (ADR 14), not in the loader's iframe: no
 // loader sends pdt:state, so the panel is open at the bottom dock, and CSS
 // hides the controls that would talk to a loader (pdt-standalone).
@@ -160,6 +183,7 @@ if (window.parent === window) {
   document.documentElement.classList.add("pdt-standalone")
   setDock("bottom")
   setOpen(true)
+  setTheme(storedTheme())
 }
 
 // The live region #pdt-live-status (phx-update="ignore") announces the
@@ -350,9 +374,11 @@ document.addEventListener("click", (event) => {
   if (!event.target.closest("#pdt-dock-picker")) closeDockMenu(false)
 
   const reserveToggle = event.target.closest("[data-pdt-reserve]")
+  const themeOption = event.target.closest("[data-pdt-theme]")
 
   if (event.target.closest("[data-pdt-dock-menu]")) toggleDockMenu()
   else if (reserveToggle) toParent("reserve", {reserve: reserveToggle.getAttribute("aria-pressed") !== "true"})
+  else if (themeOption) toParent("theme", {theme: themeOption.dataset.pdtTheme})
   else if (dockOption) {
     closeDockMenu(true)
     toParent("dock", {dock: dockOption.dataset.pdtDock})

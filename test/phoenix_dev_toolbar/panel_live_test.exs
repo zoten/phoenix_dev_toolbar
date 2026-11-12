@@ -196,6 +196,13 @@ defmodule PhoenixDevToolbar.PanelLiveTest do
     end
 
     assert has_element?(view, ~s(#pdt-dock-menu #pdt-reserve[data-pdt-reserve][aria-pressed]))
+
+    for theme <- ~w(auto light dark) do
+      assert has_element?(
+               view,
+               ~s(#pdt-dock-picker #pdt-dock-menu #pdt-theme-#{theme}[data-pdt-theme="#{theme}"][aria-pressed="false"])
+             )
+    end
   end
 
   test "switches between the Ecto and Request tabs", %{conn: conn, request: request} do

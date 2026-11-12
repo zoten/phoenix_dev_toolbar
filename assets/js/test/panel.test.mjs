@@ -36,6 +36,10 @@ const HEADER = [
         {id: `pdt-dock-${dock}`, "data-pdt-dock": dock, "aria-pressed": "false"},
       ]),
       ["button", {id: "pdt-reserve", "data-pdt-reserve": true, "aria-pressed": "true"}],
+      ...["auto", "light", "dark"].map((theme) => [
+        "button",
+        {id: `pdt-theme-${theme}`, "data-pdt-theme": theme, "aria-pressed": "false"},
+      ]),
     ],
   ],
   [
@@ -132,6 +136,41 @@ test("a state with an unknown dock or a non boolean reserve keeps the current on
 
   assert.ok(page.html.contains("pdt-dock-top"))
   assert.equal(page.byId("pdt-reserve").getAttribute("aria-pressed"), "true")
+})
+
+test("the theme sets data-theme on <html> (none for auto) and the pressed option", async (t) => {
+  const page = await load(t)
+  const root = page.document.documentElement
+  const pressed = () => ["auto", "light", "dark"].filter((n) => page.byId(`pdt-theme-${n}`).getAttribute("aria-pressed") === "true")
+
+  page.fromLoader({type: "pdt:state", open: true, dock: "bottom", reserve: true, theme: "dark"})
+  assert.equal(root.getAttribute("data-theme"), "dark")
+  assert.deepEqual(pressed(), ["dark"])
+
+  page.fromLoader({type: "pdt:state", open: true, dock: "bottom", reserve: true, theme: "neon"})
+  assert.equal(root.getAttribute("data-theme"), "dark", "an unknown theme keeps the current one")
+
+  page.fromLoader({type: "pdt:state", open: true, dock: "bottom", reserve: true, theme: "auto"})
+  assert.equal(root.getAttribute("data-theme"), null)
+  assert.deepEqual(pressed(), ["auto"])
+})
+
+test("a theme option posts pdt:theme to the parent page", async (t) => {
+  const page = await load(t)
+
+  page.byId("pdt-theme-light").click()
+
+  assert.deepEqual(page.toLoader().map(({data}) => data), [{type: "pdt:theme", theme: "light"}])
+})
+
+test("standalone, the theme comes from the stored layout", async (t) => {
+  const page = await load(t, {
+    framed: false,
+    setup: (env) => env.window.localStorage.setItem("pdt:layout", '{"dock":"bottom","sizes":{},"theme":"dark"}'),
+  })
+
+  assert.equal(page.document.documentElement.getAttribute("data-theme"), "dark")
+  assert.equal(page.byId("pdt-theme-dark").getAttribute("aria-pressed"), "true")
 })
 
 test("header clicks post to the parent page on the panel's origin only", async (t) => {

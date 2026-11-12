@@ -72,14 +72,14 @@ test("the user's choice overrides the server default, which defaults to reservin
 })
 
 test("the choice round trips; without one, the server default is followed", () => {
-  const layout = {dock: "top", sizes: {}, reserve: false}
+  const layout = {dock: "top", sizes: {}, reserve: false, theme: "auto"}
   assert.deepEqual(parseLayout(serializeLayout(layout)), layout)
   assert.equal(serializeLayout({dock: "top", sizes: {}, reserve: null}), '{"dock":"top","sizes":{}}')
   assert.equal(parseLayout('{"dock":"top","sizes":{},"reserve":"no"}').reserve, null)
 })
 
 test("layout round trips, one size per dock", () => {
-  const layout = {dock: "right", sizes: {bottom: 280, right: 420}, reserve: null}
+  const layout = {dock: "right", sizes: {bottom: 280, right: 420}, reserve: null, theme: "auto"}
   assert.deepEqual(parseLayout(serializeLayout(layout)), layout)
 })
 
@@ -88,11 +88,12 @@ test("the single-size layout is read back as that dock's size", () => {
     dock: "bottom",
     sizes: {bottom: 280},
     reserve: null,
+    theme: "auto",
   })
 })
 
 test("missing, garbled or unknown layouts fall back to the default", () => {
-  const fallback = {dock: "bottom", sizes: {}, reserve: null}
+  const fallback = {dock: "bottom", sizes: {}, reserve: null, theme: "auto"}
   assert.deepEqual(parseLayout(null), fallback)
   assert.deepEqual(parseLayout("{nope"), fallback)
   assert.deepEqual(parseLayout('{"dock":"bottom","size":"big"}'), fallback)
@@ -100,5 +101,22 @@ test("missing, garbled or unknown layouts fall back to the default", () => {
     dock: "bottom",
     sizes: {bottom: 200},
     reserve: null,
+    theme: "auto",
   })
+})
+
+test("the theme round trips; auto is never serialized", () => {
+  for (const theme of ["light", "dark"]) {
+    const layout = {dock: "top", sizes: {}, reserve: null, theme}
+    assert.deepEqual(parseLayout(serializeLayout(layout)), layout)
+  }
+  assert.equal(serializeLayout({dock: "top", sizes: {}, reserve: null, theme: "auto"}), '{"dock":"top","sizes":{}}')
+  assert.equal(serializeLayout({dock: "top", sizes: {}, reserve: null, theme: "neon"}), '{"dock":"top","sizes":{}}')
+})
+
+test("a legacy layout or an unknown theme reads as auto", () => {
+  assert.equal(parseLayout('{"dock":"bottom","size":280}').theme, "auto")
+  assert.equal(parseLayout('{"dock":"bottom","sizes":{}}').theme, "auto")
+  assert.equal(parseLayout('{"dock":"bottom","sizes":{},"theme":"neon"}').theme, "auto")
+  assert.equal(parseLayout('{"dock":"bottom","sizes":{},"theme":"dark"}').theme, "dark")
 })
