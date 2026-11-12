@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-11-12
+
 - Element inspector: pick an element, see its component, HEEx source, binding, editor links (ADR 16)
 - Component tree rows highlight their element on the host page (ADR 16)
 - `inspect_nodes:` config for the inspector's walk budget; pick icon in the collapsed bar (ADR 16)
