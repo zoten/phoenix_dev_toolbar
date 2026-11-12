@@ -101,6 +101,85 @@ Measured ratios (AA needs 4.5:1 for text, 3:1 for focus rings and UI parts):
 - Media: retake `hero.png`, `hero-dark.png`, `query-error.png`, `explain.png`,
   `liveview-*.png`, `process.png` (accent text and error colors change).
 
+### Batch B tasks
+
+Branch `ui-pass-batch-b`, one commit per task, an Opus reviewer per task, a feature
+review at the end. Colors below are measured (scratchpad script, WCAG relative
+luminance) against `--pdt-bg`, `--pdt-bg-alt` and `--pdt-error-bg` of each mode.
+
+**B1: contrast tokens and a contrast guard** (`assets/css/panel.css` `:root` and the
+dark block at the top, the rules listed below; new `assets/js/contrast.mjs`,
+`assets/js/test/contrast.test.mjs`).
+
+- Guard first: `contrast.mjs` exports pure helpers (`parseHex`, `luminance`,
+  `ratio`, `mix(a, b, weight)` for the `color-mix(in srgb, ...)` and opacity cases).
+  `contrast.test.mjs` reads `assets/css/panel.css` with `node:fs`, extracts the custom
+  properties of `:root` and of the `prefers-color-scheme: dark` block (a small regex
+  over `--pdt-*: #xxxxxx;`, dark overrides light), and asserts each text pair below
+  reaches 4.5:1 in both modes. The module is not imported by `loader.js` or
+  `panel.js`, so it never reaches a bundle. Write it against today's CSS and see it fail.
+- Pairs (text on background): `--pdt-muted`, `--pdt-accent-text`, `--pdt-ok`,
+  `--pdt-warn`, `--pdt-error`, `--pdt-code` on each of `--pdt-bg`, `--pdt-bg-alt`,
+  `--pdt-error-bg`; `#fff` on `--pdt-error-fill`; `--pdt-header-fg`,
+  `--pdt-header-warn`, `--pdt-header-error`, `--pdt-accent` (the logo) on `--pdt-header`.
+- Token values:
+
+  | Token | Light | Dark |
+  |---|---|---|
+  | `--pdt-accent-text` (new) | `#c43c00` | `#fd4f00` |
+  | `--pdt-ok` | `#187a45` | `#1f9d55` |
+  | `--pdt-error` (text, stripes) | `#c53030` | `#f07171` |
+  | `--pdt-error-fill` (new, badge background) | `#c53030` | `#c53030` |
+  | `--pdt-header-error` (new) | `#ff8a8a` | `#ff8a8a` |
+  | `--pdt-muted` | darkest needed for 4.5:1 on `--pdt-error-bg` (about `#626977`) | unchanged |
+
+- Rules: accent as text (`.pdt-method`, `.pdt-pid-link code`, `.pdt-pushed`,
+  `.pdt-tag--client`) uses `--pdt-accent-text`; borders, focus rings, the sparkline,
+  `.pdt-snapshot--changed` and the resize handle keep `--pdt-accent`. `.pdt-logo` keeps
+  `--pdt-accent` (on the header). `.pdt-badge--error` background uses
+  `--pdt-error-fill`; `.pdt-tab--error` uses `--pdt-header-error`. Noise rows:
+  `.pdt-row--noise` drops `opacity` for `color: var(--pdt-muted)` on the row and its
+  `.pdt-sql` (and the hover/focus-within rule goes). Grep `var(--pdt-accent)` and
+  `var(--pdt-error)` to catch any other text use.
+- The loader's pill (`assets/js/loader.js` `STYLE`, `#fd4f00` on `#1f2330`, 4.69:1)
+  already passes: no change.
+- CHANGELOG: `- Panel colors reach WCAG AA contrast, checked by a JS test (ADR 04)`.
+- Verify: `mix test.js`, `MIX_ENV=dev mix assets.build`, commit `priv/static/panel.css`.
+
+**B2: forced colors, motion, small text, screen reader class** (`assets/css/panel.css`).
+
+- `@media (forced-colors: active)` block at the end of the file: `.pdt-badge--ok`,
+  `.pdt-badge--warn`, `.pdt-badge--error` get `border: 1px solid` (CanvasText or
+  Highlight; error keeps a distinct `Mark`/`Highlight` choice) since inset shadows and
+  backgrounds are dropped; `.pdt-row--error` and `.pdt-snapshot--changed` get
+  `border-inline-start: 3px solid`; `.pdt-tab--active`, `.pdt-subtab--active`,
+  `.pdt-dock-option[aria-pressed="true"]` get an underline or outline in `Highlight`
+  (today only a background tells them apart); the dock icons draw their filled edge as
+  a `border-*-width: 4px` instead of an inset shadow (one rule per edge, light and
+  normal modes unchanged).
+- `@media (prefers-reduced-motion: reduce)`: no transitions on `.pdt-tab` and
+  `.pdt-toggle__icon` (the only two in the file; grep `transition`).
+- `.pdt-button--small`: 10px to 11px (line height stays 16px, height 18px).
+- `.pdt-sr-only`: `clip-path: inset(50%)` instead of `clip`, plus `margin: -1px;
+  padding: 0; border: 0`.
+- CHANGELOG: `- Panel: forced colors support, reduced motion, 11px minimum text (ADR 04)`.
+- ADR 04: one bullet (in the panel UI part) stating the decision: tokens checked for AA
+  by `contrast.test.mjs`, accent text vs accent fill, forced colors and reduced motion
+  supported.
+- Verify: `mix test.js`, `MIX_ENV=dev mix assets.build`, commit `priv/static/panel.css`.
+  By hand (orchestrator, Chrome emulation): forced colors active, light and dark;
+  reduced motion.
+
+**B3: media** (orchestrator, `mix dev` in a browser at 1440x900, bottom dock unless the
+shot is about docks, harness fixture data, PNG under ~300 KB).
+
+- Retake the stills whose colors change: `hero.png`, `hero-dark.png`, `explain.png`,
+  `query-error.png`, `liveview-profiler.png`, `liveview-assigns.png`,
+  `liveview-events.png`, `liveview-components.png`, `process.png`, `system.png`,
+  `dock-right.png`. Match the framing and state of the current file (open it first).
+  `collapsed.png` and `hidden.png` show no changed color: keep them.
+- `toolbar-demo.gif` stays (subtle shifts); retake it with the next visible feature.
+
 ## Batch C: accessibility semantics and focus
 
 All in `lib/phoenix_dev_toolbar/panel_layout.ex`, `components.ex`,
