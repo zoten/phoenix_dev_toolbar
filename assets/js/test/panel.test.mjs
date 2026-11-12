@@ -27,10 +27,10 @@ const HEADER = [
   [
     "div",
     {id: "pdt-dock-picker"},
-    ["button", {id: "pdt-dock", "data-pdt-dock-menu": true, "aria-expanded": "false"}],
+    ["button", {id: "pdt-dock", popovertarget: "pdt-dock-menu", "aria-expanded": "false"}],
     [
       "div",
-      {id: "pdt-dock-menu", hidden: true},
+      {id: "pdt-dock-menu", popover: "auto"},
       ...["bottom", "top", "left", "right"].map((dock) => [
         "button",
         {id: `pdt-dock-${dock}`, "data-pdt-dock": dock, "aria-pressed": "false"},
@@ -243,17 +243,85 @@ test("in the loader's iframe, it waits for the loader's state", async (t) => {
   assert.ok(!page.html.contains("pdt-open"))
 })
 
-test("the dock menu opens on its button and closes on Escape", async (t) => {
+test("the dock menu opens on its button, focuses the pressed option and closes on Escape", async (t) => {
+  const page = await load(t)
+  const menu = page.byId("pdt-dock-menu")
+  page.byId("pdt-dock-left").setAttribute("aria-pressed", "true")
+
+  assert.equal(menu.matches(":popover-open"), false)
+  page.byId("pdt-dock").click()
+  assert.equal(menu.matches(":popover-open"), true)
+  assert.equal(page.byId("pdt-dock").getAttribute("aria-expanded"), "true")
+  assert.equal(page.document.activeElement, page.byId("pdt-dock-left"))
+
+  page.byId("pdt-dock-top").dispatchEvent(new FakeEvent("keydown", {key: "Escape"}))
+  assert.equal(menu.matches(":popover-open"), false)
+  assert.equal(page.byId("pdt-dock").getAttribute("aria-expanded"), "false")
+  assert.equal(page.document.activeElement, page.byId("pdt-dock"))
+})
+
+test("Escape refocuses the dock button when the browser left focus on the body", async (t) => {
+  const page = await load(t)
+  page.document.popoverReturnsFocus = false
+
+  page.byId("pdt-dock").click()
+  page.byId("pdt-dock-top").dispatchEvent(new FakeEvent("keydown", {key: "Escape"}))
+  assert.equal(page.document.activeElement, page.byId("pdt-dock"))
+})
+
+test("the dock menu opens on the first option when none is pressed", async (t) => {
+  const page = await load(t)
+
+  page.byId("pdt-dock").click()
+  assert.equal(page.document.activeElement, page.byId("pdt-dock-bottom"))
+})
+
+test("a second click on the button closes the dock menu", async (t) => {
+  const page = await load(t)
+
+  page.byId("pdt-dock").click()
+  page.byId("pdt-dock").click()
+  assert.equal(page.byId("pdt-dock-menu").matches(":popover-open"), false)
+  assert.equal(page.byId("pdt-dock").getAttribute("aria-expanded"), "false")
+})
+
+test("an outside click light dismisses the dock menu, a click inside does not", async (t) => {
   const page = await load(t)
   const menu = page.byId("pdt-dock-menu")
 
   page.byId("pdt-dock").click()
-  assert.equal(menu.hidden, false)
-  assert.equal(page.byId("pdt-dock").getAttribute("aria-expanded"), "true")
+  page.byId("pdt-reserve").click()
+  assert.equal(menu.matches(":popover-open"), true)
+  page.byId("pdt-tab-ecto").click()
+  assert.equal(menu.matches(":popover-open"), false)
+})
 
-  page.byId("pdt-dock-top").dispatchEvent(new FakeEvent("keydown", {key: "Escape"}))
-  assert.equal(menu.hidden, true)
+test("picking a dock closes the menu and refocuses the button", async (t) => {
+  const page = await load(t)
+
+  page.byId("pdt-dock").click()
+  page.byId("pdt-dock-right").click()
+  assert.equal(page.byId("pdt-dock-menu").matches(":popover-open"), false)
   assert.equal(page.document.activeElement, page.byId("pdt-dock"))
+})
+
+test("collapsing the panel closes the dock menu", async (t) => {
+  const page = await load(t)
+
+  page.fromLoader({type: "pdt:state", open: true, dock: "bottom", reserve: true})
+  page.byId("pdt-dock").click()
+  page.fromLoader({type: "pdt:state", open: false, dock: "bottom", reserve: true})
+  assert.equal(page.byId("pdt-dock-menu").matches(":popover-open"), false)
+})
+
+test("without the Popover API the panel still loads and nothing throws", async (t) => {
+  const page = await load(t)
+  const menu = page.byId("pdt-dock-menu")
+  menu.showPopover = undefined
+  menu.hidePopover = undefined
+
+  page.fromLoader({type: "pdt:state", open: false, dock: "bottom", reserve: true})
+  page.byId("pdt-dock-top").dispatchEvent(new FakeEvent("focusout", {relatedTarget: page.byId("pdt-toggle")}))
 })
 
 test("client events wait for the hook, then go out in order", async (t) => {
@@ -538,13 +606,14 @@ test("the dock menu closes when focus leaves the picker, not when it moves insid
 
   page.byId("pdt-dock").click()
   out(page.byId("pdt-dock-top"), page.byId("pdt-dock-left"))
-  assert.equal(menu.hidden, false, "inside the picker")
+  assert.equal(menu.matches(":popover-open"), true, "inside the picker")
   out(page.byId("pdt-dock-top"), null)
-  assert.equal(menu.hidden, false, "no related target: the window lost focus")
+  assert.equal(menu.matches(":popover-open"), true, "no related target: the window lost focus")
+  page.byId("pdt-toggle").focus()
   out(page.byId("pdt-dock-top"), page.byId("pdt-toggle"))
-  assert.equal(menu.hidden, true)
+  assert.equal(menu.matches(":popover-open"), false)
   assert.equal(page.byId("pdt-dock").getAttribute("aria-expanded"), "false")
-  assert.notEqual(page.document.activeElement, page.byId("pdt-dock"), "no refocus")
+  assert.equal(page.document.activeElement, page.byId("pdt-toggle"), "no refocus")
 })
 
 test("pdt:focus from the parent focuses the toggle, from elsewhere it does nothing", async (t) => {

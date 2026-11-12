@@ -194,6 +194,7 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
 .pdt-standalone .pdt-summary-more { display: none; }
 
 .pdt-dock {
+  anchor-name: --pdt-dock;
   display: grid;
   place-items: center;
   width: 26px;
@@ -226,11 +227,17 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
 .pdt-dock-option .pdt-dock__icon--left { box-shadow: inset 4px 0 0 currentColor; }
 .pdt-dock-option .pdt-dock__icon--right { box-shadow: inset -4px 0 0 currentColor; }
 
+/* A popover in the top layer, hung from the picker button: the header does not
+   clip it, and it flips to the other side when it would leave the viewport. */
 .pdt-dock-menu {
-  position: absolute;
-  inset-block-start: calc(100% + 4px);
-  inset-inline-end: 0;
-  z-index: 10;
+  position: fixed;
+  position-anchor: --pdt-dock;
+  position-area: block-end span-inline-start;
+  position-try-fallbacks: flip-inline, flip-block;
+  inset: auto;
+  margin: 4px 0 0;
+  border: 0;
+  color: inherit;
   display: grid;
   gap: 2px;
   min-width: 120px;
@@ -242,8 +249,7 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
   overflow-y: auto;
 }
 
-.pdt-dock-menu[hidden] { display: none; }
-.pdt-dock-menu--start { inset-inline-start: 0; inset-inline-end: auto; }
+.pdt-dock-menu:not(:popover-open) { display: none; }
 
 .pdt-dock-option {
   display: flex;

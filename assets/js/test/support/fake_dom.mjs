@@ -205,6 +205,8 @@ export class FakeElement extends Node {
     this.shadowRoot = null
     this.hidden = false
     this.textContent = ""
+    this.popoverOpen = false
+    this.popoverInvoker = null
   }
 
   get id() {
@@ -266,6 +268,7 @@ export class FakeElement extends Node {
   }
 
   matches(selector) {
+    if (selector === ":popover-open") return this.popoverOpen
     const {tag, ids, classes, attrs} = parseSelector(selector)
     return (
       (!tag || tag === this.tagName) &&
@@ -305,8 +308,66 @@ export class FakeElement extends Node {
     this.ownerDocument.activeElement = top.host || this
   }
 
+  // The Popover API, as far as the panel uses it: popover="auto" elements open
+  // in a document-wide list, toggle events fire synchronously with
+  // oldState/newState (they do not bubble in a browser: panel.js listens in the
+  // capture phase), light dismiss closes on an outside click and on Escape, and
+  // closing returns focus to the invoker (`document.popoverReturnsFocus = false`
+  // models a browser that does not).
+  showPopover(invoker = null) {
+    if (!this.hasAttribute("popover")) throw new Error("NotSupportedError")
+    if (this.popoverOpen) throw new Error("InvalidStateError")
+    this.popoverOpen = true
+    this.popoverInvoker = invoker
+    this.fireToggle("closed", "open")
+  }
+
+  hidePopover() {
+    if (!this.hasAttribute("popover")) throw new Error("NotSupportedError")
+    if (!this.popoverOpen) return
+    const hadFocus = this.contains(this.ownerDocument.activeElement)
+    this.popoverOpen = false
+    if (hadFocus && this.ownerDocument.popoverReturnsFocus && this.popoverInvoker) this.popoverInvoker.focus()
+    else if (hadFocus) this.ownerDocument.activeElement = this.ownerDocument.body
+    this.fireToggle("open", "closed")
+  }
+
+  togglePopover() {
+    if (this.popoverOpen) this.hidePopover()
+    else this.showPopover()
+    return this.popoverOpen
+  }
+
+  fireToggle(oldState, newState) {
+    this.fire(Object.assign(new FakeEvent("toggle", {oldState, newState}), {target: this}))
+    for (let node = this.parentNode; node; node = node.parentNode) {
+      node.fire(Object.assign(new FakeEvent("toggle", {oldState, newState}), {target: this}))
+    }
+  }
+
+  dispatchEvent(event) {
+    const result = super.dispatchEvent(event)
+    if (event.type === "keydown" && event.key === "Escape" && !event.defaultPrevented) {
+      const open = this.ownerDocument.openPopovers()
+      if (open.length > 0) open[open.length - 1].hidePopover()
+    }
+    return result
+  }
+
   click() {
-    return this.dispatchEvent(new FakeEvent("click", {button: 0}))
+    const doc = this.ownerDocument
+    const invoker = this.closest("[popovertarget]")
+    doc.openPopovers().forEach((popover) => {
+      const own = invoker && invoker.getAttribute("popovertarget") === popover.id
+      if (!popover.contains(this) && !own) popover.hidePopover()
+    })
+    const result = this.dispatchEvent(new FakeEvent("click", {button: 0}))
+    const target = invoker && !this.hasAttribute("disabled") && doc.getElementById(invoker.getAttribute("popovertarget"))
+    if (target && result && target.hasAttribute("popover")) {
+      if (target.popoverOpen) target.hidePopover()
+      else target.showPopover(invoker)
+    }
+    return result
   }
 
   setPointerCapture() {}
@@ -396,6 +457,7 @@ class FakeDocument extends Node {
     this.currentScript = null
     this.visibilityState = "visible"
     this.activeElement = null
+    this.popoverReturnsFocus = true
     this.documentElement = this.createElement("html")
     this.append(this.documentElement)
   }
@@ -408,6 +470,10 @@ class FakeDocument extends Node {
     const el = new FakeElement(this, tagName)
     if (el.tagName === "iframe") el.contentWindow = new FakeWindow({origin: null})
     return el
+  }
+
+  openPopovers() {
+    return [...this.descendants()].filter((el) => el.popoverOpen)
   }
 
   getElementById(id) {
@@ -460,6 +526,7 @@ export const installDom = ({origin = "http://localhost:4000", search = "", body 
     const el = document.createElement(tag)
     Object.entries(attributes).forEach(([name, value]) => {
       if (name === "hidden") el.hidden = value
+      else if (name === "popover" && value === true) el.setAttribute(name, "auto")
       else el.setAttribute(name, value === true ? "" : value)
     })
     children.forEach((child) => {
