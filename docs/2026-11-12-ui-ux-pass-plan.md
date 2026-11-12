@@ -426,8 +426,6 @@ Contract between the tasks (fixed here so they can run in parallel):
 
 ## Deferred
 
-- Dock menu on the Popover API with CSS anchor positioning, replacing
-  `placeDockMenu`: wait for anchor positioning in every browser the toolbar supports.
-- Base font in `rem` so the user's browser font size applies.
-- Animating the frame with `clip-path` instead of `height`/`width` (120ms, minor).
-- One convention for physical vs logical CSS properties.
+Planned in [UI polish](./2026-11-12-ui-polish-plan.md): the dock menu on the Popover API
+with anchor positioning, font sizes in `rem`, one convention for physical and logical CSS
+properties, and the frame animation (measured first).
