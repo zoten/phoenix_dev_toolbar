@@ -83,39 +83,47 @@ const setTheme = (theme) => {
 const dockMenu = () => document.getElementById("pdt-dock-menu")
 const dockButton = () => document.getElementById("pdt-dock")
 
+const popoverSupported = (el) => Boolean(el) && typeof el.showPopover === "function" && typeof el.hidePopover === "function"
+
+// The menu is a popover="auto" opened by the button's popovertarget: the
+// browser handles open, toggle, Escape and outside click (light dismiss).
+// What stays here: aria-expanded, focus, and closing on focus leaving.
 function closeDockMenu(refocus) {
   const menu = dockMenu()
-  if (!menu || menu.hidden) return
-  menu.hidden = true
-  dockButton().setAttribute("aria-expanded", "false")
+  if (!popoverSupported(menu)) return
+  if (menu.matches(":popover-open")) menu.hidePopover()
   if (refocus) dockButton().focus()
 }
 
-// The menu hangs from the picker's end edge. A narrow panel (side docks) can
-// wrap the picker to the start of a row, where that would cross the iframe's
-// left edge: hang it from the start edge instead.
-const placeDockMenu = (menu) => {
-  menu.classList.remove("pdt-dock-menu--start")
-  if (menu.getBoundingClientRect().left < 0) menu.classList.add("pdt-dock-menu--start")
-}
+// toggle does not bubble: listen in the capture phase.
+let escapedPicker = false
 
-const toggleDockMenu = () => {
-  const menu = dockMenu()
-  if (!menu.hidden) return closeDockMenu(false)
-  menu.hidden = false
-  placeDockMenu(menu)
-  dockButton().setAttribute("aria-expanded", "true")
-  const current = menu.querySelector("[data-pdt-dock][aria-pressed='true']") || menu.querySelector("[data-pdt-dock]")
-  current.focus()
-}
+document.addEventListener(
+  "toggle",
+  (event) => {
+    const menu = dockMenu()
+    if (!menu || event.target !== menu) return
+    const opened = event.newState === "open"
+    dockButton().setAttribute("aria-expanded", String(opened))
+    if (opened) {
+      const current = menu.querySelector("[data-pdt-dock][aria-pressed='true']") || menu.querySelector("[data-pdt-dock]")
+      if (current) current.focus()
+    } else {
+      // Browsers return focus to the invoker on Escape; if one did not, do it.
+      const active = document.activeElement
+      if (escapedPicker && (!active || active === document.body || active === document.documentElement)) dockButton().focus()
+    }
+    escapedPicker = false
+  },
+  true,
+)
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && event.target.closest && event.target.closest("#pdt-dock-picker")) {
-    closeDockMenu(true)
-  }
+  if (event.key === "Escape") escapedPicker = Boolean(event.target.closest && event.target.closest("#pdt-dock-picker"))
 })
 
-// Tabbing out of the picker closes the menu (no refocus: focus went elsewhere).
+// Popovers do not light dismiss on focus: tabbing out of the picker closes the
+// menu (no refocus: focus went elsewhere).
 document.addEventListener("focusout", (event) => {
   const picker = event.target.closest && event.target.closest("#pdt-dock-picker")
   if (!picker || !event.relatedTarget || picker.contains(event.relatedTarget)) return
@@ -374,13 +382,11 @@ const PdtMarkdown = {
 // pill, and picking a tab always expands.
 document.addEventListener("click", (event) => {
   const dockOption = event.target.closest("[data-pdt-dock]")
-  if (!event.target.closest("#pdt-dock-picker")) closeDockMenu(false)
 
   const reserveToggle = event.target.closest("[data-pdt-reserve]")
   const themeOption = event.target.closest("[data-pdt-theme]")
 
-  if (event.target.closest("[data-pdt-dock-menu]")) toggleDockMenu()
-  else if (reserveToggle) toParent("reserve", {reserve: reserveToggle.getAttribute("aria-pressed") !== "true"})
+  if (reserveToggle) toParent("reserve", {reserve: reserveToggle.getAttribute("aria-pressed") !== "true"})
   else if (themeOption) toParent("theme", {theme: themeOption.dataset.pdtTheme})
   else if (dockOption) {
     closeDockMenu(true)

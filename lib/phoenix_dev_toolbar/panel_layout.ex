@@ -144,14 +144,14 @@ defmodule PhoenixDevToolbar.PanelLayout do
           <span id="pdt-markdown-result" class="pdt-hint" phx-update="ignore" aria-live="polite"></span>
         </span>
         <%!-- Where the toolbar docks: client side only, the loader moves it
-             (assets/js/panel.js, ADR 04). Ignored by patches: panel.js owns
-             the menu's hidden and pressed state. --%>
+             (assets/js/panel.js, ADR 04). Ignored by patches: the browser owns
+             the menu's popover state, panel.js its pressed state and focus. --%>
         <div id="pdt-dock-picker" class="pdt-dock-picker" phx-update="ignore">
           <button
             id="pdt-dock"
             type="button"
             class="pdt-dock"
-            data-pdt-dock-menu
+            popovertarget="pdt-dock-menu"
             aria-expanded="false"
             aria-controls="pdt-dock-menu"
             aria-label="Move the toolbar"
@@ -164,7 +164,7 @@ defmodule PhoenixDevToolbar.PanelLayout do
             class="pdt-dock-menu"
             role="group"
             aria-label="Toolbar layout"
-            hidden
+            popover="auto"
           >
             <button
               :for={dock <- ~w(bottom top left right)}
