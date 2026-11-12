@@ -22,3 +22,24 @@ test("font sizes are in rem, a px size only inside min() or clamp()", () => {
   }
   assert.deepEqual(offenders, [])
 })
+
+// Physical declarations (ADR 04): flow relative properties are the rule; a rule whose meaning is
+// a screen edge opts out with a `/* physical: <why> */` comment right before its selector.
+const RAW = readFileSync(new URL("../../css/panel.css", import.meta.url), "utf8")
+const PHYSICAL = [
+  /(?:^|[;\s])(?:margin|padding|border)-(?:left|right)(?:-(?:width|color|style))?\s*:[^;]*/g,
+  /(?:^|[;\s])text-align\s*:\s*(?:left|right)\b[^;]*/g,
+  /(?:^|[;\s])(?:left|right|top|bottom)\s*:[^;]*/g
+]
+
+test("physical margin, padding, border, text-align and offsets need a `physical:` comment", () => {
+  const offenders = []
+  const rule = /(?<![^}{])\s*((?:\/\*[\s\S]*?\*\/\s*)*)([^{}]*)\{([^{}]*)\}/g
+  for (const [, comments, selector, body] of RAW.matchAll(rule)) {
+    if (/\/\*\s*physical:/.test(comments)) continue
+    for (const re of PHYSICAL) {
+      for (const [decl] of body.matchAll(re)) offenders.push(`${selector.trim()} { ${decl.trim()} }`)
+    }
+  }
+  assert.deepEqual(offenders, [])
+})

@@ -1,6 +1,9 @@
 /* phoenix_dev_toolbar panel styles (ADR 04). Loaded only inside the panel
    iframe, so nothing here can leak into the host page. The header is exactly
-   as tall as the collapsed iframe (34px, see assets/js/loader.js). */
+   as tall as the collapsed iframe (34px, see assets/js/loader.js).
+
+   Convention: flow relative properties (margin-inline-start, inset-block-start,
+   text-align: start). Physical ones only for screen edges, under a `physical:` comment. */
 
 :root {
   --pdt-bg: light-dark(#ffffff, #161922);
@@ -153,6 +156,7 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
 
 .pdt-hide:hover { opacity: 1; }
 
+/* physical: the chevron is drawn from two screen edge borders, then rotated per dock */
 .pdt-toggle__icon {
   width: 8px;
   height: 8px;
@@ -335,7 +339,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 
 .pdt-time {
   flex: none;
-  margin-left: auto;
+  margin-inline-start: auto;
   font: 600 0.6875rem var(--pdt-mono);
   color: var(--pdt-muted);
 }
@@ -424,7 +428,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 
 .pdt-subtabs {
   position: sticky;
-  top: 0;
+  inset-block-start: 0;
   z-index: 1;
   display: flex;
   gap: 2px;
@@ -452,14 +456,14 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 .pdt-table th, .pdt-table td {
   padding: 4px 12px;
   border-bottom: 1px solid var(--pdt-border);
-  text-align: left;
+  text-align: start;
   white-space: nowrap;
 }
 
 .pdt-table th { font-weight: 600; color: var(--pdt-muted); background: var(--pdt-bg); }
 .pdt-table tbody tr:nth-child(even) { background: var(--pdt-bg-alt); }
 .pdt-table td code { font: 0.71875rem var(--pdt-mono); color: var(--pdt-code); white-space: normal; overflow-wrap: anywhere; }
-.pdt-table .pdt-num { text-align: right; font: 0.6875rem var(--pdt-mono); }
+.pdt-table .pdt-num { text-align: end; font: 0.6875rem var(--pdt-mono); }
 
 .pdt-changed { font-family: var(--pdt-mono); color: var(--pdt-code); }
 .pdt-pushed { color: var(--pdt-accent-text); border-color: color-mix(in srgb, var(--pdt-accent) 40%, transparent); }
@@ -490,7 +494,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
   background: var(--pdt-bg-alt);
 }
 .pdt-plan pre { margin: 0; font: 0.6875rem/1.5 var(--pdt-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.pdt-plan__hide { position: absolute; top: 4px; right: 4px; }
+.pdt-plan__hide { position: absolute; inset-block-start: 4px; inset-inline-end: 4px; }
 
 /* A plugin disabled after an error (ADR 05). */
 .pdt-badge--button { border: 0; cursor: pointer; }
@@ -524,11 +528,11 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 
 .pdt-tree, .pdt-tree ul { list-style: none; margin: 0; padding: 0; }
 .pdt-tree { padding: 6px 12px; }
-.pdt-tree ul { margin-left: 8px; padding-left: 12px; border-left: 1px solid var(--pdt-border); }
+.pdt-tree ul { margin-inline-start: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--pdt-border); }
 .pdt-tree li { padding: 2px 0; }
 .pdt-tree code { font: 0.71875rem var(--pdt-mono); color: var(--pdt-code); }
 .pdt-tree__view { font-weight: 600; }
-.pdt-tree .pdt-hint { margin-left: 6px; font-size: 0.6875rem; }
+.pdt-tree .pdt-hint { margin-inline-start: 6px; font-size: 0.6875rem; }
 .pdt-tag--client { color: var(--pdt-accent-text); border-color: color-mix(in srgb, var(--pdt-accent) 40%, transparent); }
 
 /* Process tab (ADR 09) */
@@ -536,7 +540,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 .pdt-process__vitals { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; padding: 8px 12px; }
 .pdt-vital { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 6px 8px; border: 1px solid var(--pdt-border); border-radius: 4px; }
 .pdt-vital__label { color: var(--pdt-muted); }
-.pdt-vital__value { font: 600 0.75rem var(--pdt-mono); text-align: right; }
+.pdt-vital__value { font: 600 0.75rem var(--pdt-mono); text-align: end; }
 .pdt-vital--warn .pdt-vital__value { color: var(--pdt-warn); }
 .pdt-sparkline { grid-column: 1 / -1; width: 100%; height: 24px; }
 .pdt-vital__peak { grid-column: 1 / -1; color: var(--pdt-muted); font-size: 0.6875rem; }
@@ -555,7 +559,7 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 .pdt-process__relation span { min-width: 0; overflow-wrap: anywhere; }
 .pdt-process__paused { padding: 0 12px; }
 #pdt-process-select { display: flex; gap: 6px; align-items: center; }
-.pdt-pid-link { padding: 0; border: 0; background: none; cursor: pointer; text-align: left; }
+.pdt-pid-link { padding: 0; border: 0; background: none; cursor: pointer; text-align: start; }
 .pdt-pid-link code { color: var(--pdt-accent-text); }
 .pdt-pid-link:hover code { text-decoration: underline; }
 .pdt-system__search { display: flex; flex: 1; gap: 6px; align-items: center; min-width: 0; }
@@ -563,13 +567,13 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 .pdt-system__search input:focus-visible { outline: 2px solid var(--pdt-accent); outline-offset: 0; }
 .pdt-crumbs { display: flex; flex-wrap: wrap; gap: 2px 4px; padding: 0 12px 6px; }
 .pdt-crumb { padding: 0 4px; border: 0; border-radius: 3px; background: none; color: var(--pdt-muted); font: 0.6875rem var(--pdt-mono); cursor: pointer; }
-.pdt-crumb + .pdt-crumb::before { content: "\203A"; margin-right: 4px; color: var(--pdt-muted); }
+.pdt-crumb + .pdt-crumb::before { content: "\203A"; margin-inline-end: 4px; color: var(--pdt-muted); }
 .pdt-crumb[aria-current="true"] { color: inherit; font-weight: 600; }
 .pdt-crumb:hover { background: var(--pdt-bg-alt); }
 .pdt-system__frames code { font: 0.6875rem var(--pdt-mono); color: var(--pdt-code); overflow-wrap: anywhere; }
 .pdt-system__state { padding: 0 12px 8px; border-top: 1px solid var(--pdt-border); }
 .pdt-system__state pre { margin: 0; font: 0.6875rem/1.5 var(--pdt-mono); color: var(--pdt-code); white-space: pre-wrap; overflow-wrap: anywhere; }
-.pdt-system__state .pdt-button { margin-left: 8px; vertical-align: middle; }
+.pdt-system__state .pdt-button { margin-inline-start: 8px; vertical-align: middle; }
 .pdt-actions-bar { flex-wrap: wrap; padding-top: 0; }
 .pdt-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .pdt-actions__kill { display: flex; gap: 4px; align-items: center; }
@@ -633,7 +637,9 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
   .pdt-dock-option[aria-pressed="true"]:not(.pdt-dock-reserve) { text-decoration: underline; }
   .pdt-dock-bottom .pdt-panel { border-top: 1px solid CanvasText; }
   .pdt-dock-top .pdt-panel { border-bottom: 1px solid CanvasText; }
+  /* physical: the border faces the page, which sits on a screen edge per dock */
   .pdt-dock-left .pdt-panel { border-right: 1px solid CanvasText; }
+  /* physical: same, the right dock faces the page on its left */
   .pdt-dock-right .pdt-panel { border-left: 1px solid CanvasText; }
   .pdt-standalone .pdt-panel { border: 0; }
   .pdt-dock-menu { border: 1px solid CanvasText; }
