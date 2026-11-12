@@ -5,7 +5,7 @@ How to write and maintain ADRs: see the ADR rules in [AGENTS.md](../AGENTS.md) a
 [TEMPLATE.md](./TEMPLATE.md). Status and area come from each ADR's header: keep
 this table in sync when you add an ADR or change its status.
 
-Next free number: **16**.
+Next free number: **17**.
 
 ## Product
 
@@ -49,6 +49,7 @@ Next free number: **16**.
 | 08 | [Query Diagnostics: N+1 Detector and EXPLAIN](./08-query-diagnostics.md) | Implemented (2026-11-06) |
 | 09 | [Process Panel](./09-process-panel.md) | Implemented (2026-11-06) |
 | 11 | [System Tab](./11-system-tab.md) | Implemented (2026-11-09) |
+| 16 | [Element Inspector](./16-element-inspector.md) | Implemented (2026-11-12) |
 
 ## Plugins
 

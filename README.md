@@ -23,6 +23,7 @@ you are working on.
 - **EXPLAIN**: one click on a SELECT, run in a transaction that is rolled back, never `EXPLAIN ANALYZE`.
 - **JSON export** of the page's queries, short or with EXPLAIN plans, and **Copy as Markdown** of the whole page report, ready to paste into an issue or an agent chat.
 - **LiveView tab**: lifecycle timings (`mount`, `handle_params`, `handle_event`, `render`), assigns with a diff per event, an event log that includes client `phx:` events, and the component tree.
+- **Element inspector**: press *Pick element*, click anything on the page, and the LiveView tab shows the component that owns it (selected in the tree), its `phx-*` binding and the HEEx source that rendered it, from LiveView's `debug_heex_annotations` and `debug_attributes` (on by default in a Phoenix 1.8 app's dev config). With `PLUG_EDITOR` set, the files open in your editor. Hovering a tree row outlines its element on the page.
 - **Process tab**: memory, message queue, reductions and garbage collection of the page's LiveView, with links, monitors and nested LiveViews.
 - **System tab**: open any process by pid or name, read its info and stacktrace, walk its supervision and application trees, and list the top processes by memory, reductions or queue. Opt-in actions (`actions:` option): state read, kill, suspend, message peek and a message trace (OTP 27+).
 - **Cluster and Eval plugins** (experimental, opt-in): connected nodes, and read queries or code evaluated on the node.
@@ -65,6 +66,10 @@ you are working on.
 **Component tree**
 
 ![Component tree](media/liveview-components.png)
+
+**Element inspector: a picked button, its component and source**
+
+![Element inspector](media/element-inspector.png)
 
 **Process tab under load**
 

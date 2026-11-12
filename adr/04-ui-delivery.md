@@ -2,7 +2,7 @@
 
 **Status:** Implemented (2026-11-05)  
 **Area:** ui  
-**Related:** [ADR 01](./01-zero-prod-footprint-and-installation.md) (install), [ADR 03](./03-event-storage.md) (data source)
+**Related:** [ADR 01](./01-zero-prod-footprint-and-installation.md) (install), [ADR 03](./03-event-storage.md) (data source), [ADR 16](./16-element-inspector.md) (pick mode listeners in the host page)
 
 ## Context
 

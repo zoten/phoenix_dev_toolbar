@@ -2,7 +2,7 @@
 
 **Status:** Implemented (2026-11-05)  
 **Area:** ui  
-**Related:** [ADR 02](./02-telemetry-collection-and-correlation.md) (the `:live_view` events), [ADR 03](./03-event-storage.md) (bounds), [ADR 04](./04-ui-delivery.md) (panel, loader, bridge)
+**Related:** [ADR 02](./02-telemetry-collection-and-correlation.md) (the `:live_view` events), [ADR 03](./03-event-storage.md) (bounds), [ADR 04](./04-ui-delivery.md) (panel, loader, bridge), [ADR 16](./16-element-inspector.md) (picking an element selects its tree row)
 
 ## Context
 
