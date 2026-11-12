@@ -102,12 +102,12 @@ const STYLE = `
   .handle {
     position: fixed; z-index: 2147483001; display: none; touch-action: none; outline: none;
   }
-  .handle.dock-bottom, .handle.dock-top { left: 0; right: 0; height: 6px; cursor: ns-resize; }
-  .handle.dock-bottom { bottom: calc(var(--pdt-extent) - 3px); }
-  .handle.dock-top { top: calc(var(--pdt-extent) - 3px); }
-  .handle.dock-left, .handle.dock-right { top: 0; bottom: 0; width: 6px; cursor: ew-resize; }
-  .handle.dock-left { left: calc(var(--pdt-extent) - 3px); }
-  .handle.dock-right { right: calc(var(--pdt-extent) - 3px); }
+  .handle.dock-bottom, .handle.dock-top { left: 0; right: 0; height: 12px; cursor: ns-resize; }
+  .handle.dock-bottom { bottom: calc(var(--pdt-extent) - 6px); }
+  .handle.dock-top { top: calc(var(--pdt-extent) - 6px); }
+  .handle.dock-left, .handle.dock-right { top: 0; bottom: 0; width: 12px; cursor: ew-resize; }
+  .handle.dock-left { left: calc(var(--pdt-extent) - 6px); }
+  .handle.dock-right { right: calc(var(--pdt-extent) - 6px); }
   .handle::after {
     content: ""; position: absolute; left: 50%; top: 50%; width: 36px; height: 4px;
     transform: translate(-50%, -50%); border-radius: 2px; background: #fd4f00; opacity: 0;
@@ -227,6 +227,7 @@ const mount = () => {
     handle.setAttribute("aria-valuemin", String(minSize(dock)))
     handle.setAttribute("aria-valuemax", String(maxSize(viewport(), dock)))
     handle.setAttribute("aria-valuenow", String(size))
+    handle.setAttribute("aria-valuetext", `${size} pixels`)
   }
 
   const resize = (next, persist) => {
@@ -350,7 +351,12 @@ const mount = () => {
     {passive: true},
   )
 
-  pill.addEventListener("click", () => setState("collapsed"))
+  pill.addEventListener("click", () => {
+    setState("collapsed")
+    // The frame is shown again: the panel moves focus on to its toggle.
+    frame.focus()
+    post("focus")
+  })
   frame.addEventListener("load", () => {
     postState()
     queue.ready()
@@ -364,7 +370,12 @@ const mount = () => {
     if (type === "pdt:toggle") setState(state === "open" ? "collapsed" : "open")
     if (type === "pdt:open") setState("open")
     if (type === "pdt:close") setState("collapsed")
-    if (type === "pdt:hide") setState("hidden")
+    if (type === "pdt:hide") {
+      // Focus in the frame would be lost with it: hand it to the pill.
+      const framed = root.activeElement === frame
+      setState("hidden")
+      if (framed) pill.focus()
+    }
     if (type === "pdt:dock" && DOCKS.includes(event.data.dock)) {
       setDock(event.data.dock)
       saveLayout()

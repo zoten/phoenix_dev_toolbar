@@ -240,6 +240,50 @@ test("the keyboard resizes the open panel and stores its size", async (t) => {
   assert.equal(JSON.parse(page.window.localStorage.getItem("pdt:layout")).sizes.bottom, before + 16)
 })
 
+test("hiding moves focus to the pill only when the frame had it", async (t) => {
+  const page = await load(t)
+  page.frame.focus()
+  page.fromPanel({type: "pdt:hide"})
+  assert.equal(page.root.activeElement, page.pill)
+})
+
+test("neither loading nor hiding takes focus when the frame had none", async (t) => {
+  const page = await load(t)
+  assert.equal(page.root.activeElement, null)
+  page.fromPanel({type: "pdt:hide"})
+  assert.equal(page.root.activeElement, null)
+})
+
+test("hiding leaves focus alone when it was elsewhere on the page", async (t) => {
+  const page = await load(t)
+  const input = page.document.createElement("input")
+  page.document.body.append(input)
+  input.focus()
+  page.fromPanel({type: "pdt:hide"})
+
+  assert.equal(page.document.activeElement, input)
+})
+
+test("the pill focuses the frame and asks the panel to focus its toggle", async (t) => {
+  const page = await load(t)
+  page.fromPanel({type: "pdt:hide"})
+  page.pill.click()
+
+  assert.equal(page.root.activeElement, page.frame)
+  const last = page.posted().at(-1)
+  assert.deepEqual(last.data, {type: "pdt:focus"})
+  assert.equal(last.targetOrigin, ORIGIN)
+})
+
+test("the handle's aria-valuetext follows keyboard resizes", async (t) => {
+  const page = await load(t)
+  const handle = openHandle(page)
+  assert.equal(handle.getAttribute("aria-valuetext"), "360 pixels")
+
+  handle.dispatchEvent(new FakeEvent("keydown", {key: "ArrowUp", shiftKey: false}))
+  assert.equal(handle.getAttribute("aria-valuetext"), "376 pixels")
+})
+
 // Pointer events on the resize handle, as the browser fires them.
 const pointer = (type, {x = 0, y = 0, button = 0} = {}) =>
   new FakeEvent(type, {button, pointerId: 1, clientX: x, clientY: y})

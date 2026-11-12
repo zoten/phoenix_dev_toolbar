@@ -289,11 +289,18 @@ export class FakeElement extends Node {
 
   attachShadow() {
     this.shadowRoot = new Node(this.ownerDocument)
+    this.shadowRoot.host = this
+    this.shadowRoot.activeElement = null
     return this.shadowRoot
   }
 
+  // Inside a shadow root the root tracks the focused element and the document
+  // sees the shadow host, as in a browser.
   focus() {
-    this.ownerDocument.activeElement = this
+    let top = this
+    while (top.parentNode) top = top.parentNode
+    if (top.host) top.activeElement = this
+    this.ownerDocument.activeElement = top.host || this
   }
 
   click() {
