@@ -288,7 +288,10 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
 
 .pdt-empty { margin: 16px; color: var(--pdt-muted); }
 
-.pdt-section { flex: 1; min-height: 0; overflow: auto; }
+.pdt-section { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+@media (prefers-color-scheme: dark) {
+  .pdt-section { scrollbar-color: var(--pdt-border) transparent; }
+}
 .pdt-section[hidden] { display: none; }
 
 .pdt-list { list-style: none; margin: 0; padding: 0; }
@@ -297,6 +300,8 @@ html:not(.pdt-open) .pdt-tabs::-webkit-scrollbar { display: none; }
 .pdt-list__empty:only-child { display: block; }
 
 .pdt-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 48px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--pdt-border);
 }

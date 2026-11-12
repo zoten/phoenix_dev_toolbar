@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Panel assets revalidate with an ETag: 304 instead of a full download (ADR 04)
+- Panel lists: no scroll chaining into the page, off-screen rows skipped (ADR 04)
 - README screenshots and demo GIF in `media/`: shipped with the docs, not the Hex package (ADR 01)
 - N+1 groups name their callbacks (`ran_in`), queries their `callback` and `event` (ADR 08, 13, 15)
 - Query `caller` and N+1 `callers`, Ecto plugin option `caller_modules:` (ADR 08, 13)
