@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Panel keyboard and screen reader pass: toggle state, Home/End, live status, sr-only titles (ADR 04)
+- Focus follows hide and show; larger resize handle with `aria-valuetext` (ADR 04)
 - Panel colors reach WCAG AA contrast, checked by a JS test (ADR 04)
 - Panel: forced colors support, reduced motion, 11px minimum text (ADR 04)
 - Panel assets revalidate with an ETag: 304 instead of a full download (ADR 04)

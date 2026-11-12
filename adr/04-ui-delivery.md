@@ -43,6 +43,8 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 - **Panel styling**: color tokens meet WCAG AA, checked by `assets/js/test/contrast.test.mjs`.
   `--pdt-accent-text` colors accent text; `--pdt-accent` is for fills, focus rings and borders.
   Forced colors (state shown by borders and outlines, not shadows) and reduced motion are supported.
+  One shared `:focus-visible` ring. Explanations in `title` (badges, tags) are repeated as
+  `pdt-sr-only` text, so keyboard and screen reader users get them too.
 - **Robustness**: `:path` must be absolute and below the root (raises in `init/1`); while
   the Store restarts every request is served untracked.
 - **Loader** (plain JS, about 9 KB minified, under 4 KB gzipped): runs only in the top window and once per
@@ -56,7 +58,13 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   host page; clicking it collapses again). The iframe asks for `pdt:toggle` (toggle
   button), `pdt:open` (a tab was picked), `pdt:hide` (hide button) and `pdt:dock` (dock
   picker, a known dock only) and `pdt:reserve` (a boolean); the loader answers with
-  `pdt:state` (`open`, `dock` and `reserve`).
+  `pdt:state` (`open`, `dock` and `reserve`). Focus follows hide and show: on `pdt:hide`
+  the pill takes focus only when focus was in the panel (the shadow root's
+  `activeElement` is the iframe), never on load; clicking the pill focuses the iframe and
+  posts `pdt:focus`, which focuses the panel's toggle. The toggle carries `aria-expanded`
+  (set by `panel.js`); it and the hide button sit in a `phx-update="ignore"` wrapper so
+  patches keep the client set state. The dock picker is a disclosure (`aria-expanded`)
+  that closes on Escape, an outside click or focus leaving it.
   Both sides check `event.origin` and `event.source`. The loader also forwards LiveView's
   own `phx:*` window events as `pdt:client` messages (passive listeners, sanitized, rate
   limited: ADR 07). The panel LiveView is `use Phoenix.LiveView, log: false`: its
@@ -88,7 +96,9 @@ interfere with the host's LiveSocket, DOM patching or CSP.
     reserving, the bar overlaps the page and `<html>` is never written.
 
   The open size is draggable from a handle on the panel's inner edge
-  (`role="separator"`; arrows step 16px, Shift 64px, Home or double click reset), clamped
+  (`role="separator"` with `aria-valuetext`, a 12px hit area of which 2px overlap the
+  panel, so its own scrollbar stays usable; arrows step 16px, Shift 64px, Home or double
+  click reset), clamped
   between a minimum (120px top/bottom, 280px left/right) and the viewport minus a 48px
   strip of page, re-clamped on window resize. Defaults: `min(45vh, 520px)` top/bottom,
   `min(40vw, 480px)` left/right. The iframe ignores pointer events while dragging. The
@@ -184,7 +194,9 @@ interfere with the host's LiveSocket, DOM patching or CSP.
 - **Lost connection**: once joined, a panel whose socket drops (LiveView's
   `phx-client-error` or `phx-server-error` on its root) shows "Disconnected ·
   reconnecting" in the header and dims its data, which is frozen until LiveView
-  rejoins on its own. Pure CSS on a server rendered element (`#pdt-offline`).
+  rejoins on its own. Pure CSS on a server rendered element (`#pdt-offline`, hidden from
+  assistive tech); screen readers hear it once per outage through the `#pdt-live-status`
+  live region, written by the `PdtPanel` hook's `disconnected`/`reconnected` callbacks.
 - **Panel**: `PhoenixDevToolbar.PanelLive` (`<path>/panel?sid=<request sid>`) shows one
   page: the request and its LiveView, or only the newest LiveView after live navigation.
   `PhoenixDevToolbar.Page` derives the page once at mount (catching up with navigation
@@ -207,7 +219,8 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   chip (`PdtSummaryMore` hook in `panel.js`) counts them; it opens the panel, whose
   header grows to show every badge. Tabs follow the configuration: Ecto, Request, LiveView (ADR 07) and any
   third party plugin, as WAI-ARIA tabs
-  (`aria-controls`, `tabpanel`, roving `tabindex`, arrow keys in `panel.js`). Each query
+  (a labelled `div role="tablist"`, `aria-controls`, `tabpanel`, roving `tabindex`, arrow
+  keys, Home and End in `panel.js`; a disabled tab says so in sr-only text). Each query
   row says where it ran (`HTTP` for the dead render, `live` for the connected LiveView)
   and its details show params, repo, the queue/query/decode/idle timings and the origin
   stacktrace, or a hint to enable `stacktrace: true` in the repo config. An invalid or
