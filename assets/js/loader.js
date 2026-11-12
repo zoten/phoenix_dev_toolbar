@@ -27,6 +27,7 @@ import {
   sideDock,
   sizeFromPointer,
 } from "./layout.mjs"
+import {label, parseShortcut, triggered} from "./shortcut.mjs"
 
 const STORAGE_KEY = "pdt:state"
 const LEGACY_KEY = "pdt:open"
@@ -38,6 +39,7 @@ const KEY_STEP_LARGE = 64
 const GROW_KEYS = {bottom: "ArrowUp", top: "ArrowDown", left: "ArrowRight", right: "ArrowLeft"}
 const SHRINK_KEYS = {bottom: "ArrowDown", top: "ArrowUp", left: "ArrowLeft", right: "ArrowRight"}
 const MESSAGE_PREFIX = "pdt:"
+const CORNERS = ["bottom-left", "top-right", "top-left"]
 
 const script =
   document.currentScript || document.querySelector("script[data-pdt-sid]")
@@ -129,6 +131,9 @@ const STYLE = `
     box-shadow: 0 2px 10px rgba(0, 0, 0, .3);
     transition: transform 120ms ease;
   }
+  .pill.corner-bottom-left { right: auto; left: 12px; }
+  .pill.corner-top-right { bottom: auto; top: 12px; }
+  .pill.corner-top-left { right: auto; bottom: auto; left: 12px; top: 12px; }
   .pill:hover { transform: translateY(-1px); }
   .pill:focus-visible { outline: 2px solid #fd4f00; outline-offset: 2px; }
   .pill.visible { display: inline-flex; }
@@ -189,7 +194,13 @@ const mount = () => {
   pill.className = "pill"
   pill.type = "button"
   pill.textContent = "dev toolbar"
-  pill.title = "Show the dev toolbar"
+  // Bottom right is the default (no class); unknown values are ignored.
+  const corner = script.dataset.pdtPill
+  if (CORNERS.includes(corner)) pill.classList.add(`corner-${corner}`)
+  // Opt in toggle shortcut: only a canonical, parsable value counts.
+  const shortcutSource = script.dataset.pdtShortcut
+  const shortcut = parseShortcut(shortcutSource)
+  pill.title = shortcut ? `Show the dev toolbar (${label(shortcutSource)})` : "Show the dev toolbar"
 
   const handle = document.createElement("div")
   handle.className = "handle"
@@ -213,7 +224,7 @@ const mount = () => {
   const post = (type, payload = {}) =>
     frame.contentWindow &&
     frame.contentWindow.postMessage({type: MESSAGE_PREFIX + type, ...payload}, window.location.origin)
-  const postState = () => post("state", {open: state === "open", dock, reserve: reserving(layout, reserveDefault)})
+  const postState = () => post("state", {open: state === "open", dock, reserve: reserving(layout, reserveDefault), shortcut: shortcut ? shortcutSource : null})
   const saveLayout = () => writeLayout({dock, sizes: layout.sizes, reserve: layout.reserve})
 
   // Docked at the top, the host div leads <body> so its height pushes the page
@@ -354,6 +365,21 @@ const mount = () => {
     },
     {passive: true},
   )
+
+  // Runs inside the host's keydown dispatch: never throws, and only a match
+  // (not typing, not a repeat) is claimed with preventDefault. Hidden comes
+  // back collapsed; otherwise open and collapsed swap.
+  if (shortcut) {
+    window.addEventListener("keydown", (event) => {
+      try {
+        if (!triggered(shortcut, event)) return
+        event.preventDefault()
+        setState(state === "collapsed" ? "open" : "collapsed")
+      } catch (_error) {
+        // Dropped silently: the toolbar must not show up in host error tracking.
+      }
+    })
+  }
 
   pill.addEventListener("click", () => {
     setState("collapsed")

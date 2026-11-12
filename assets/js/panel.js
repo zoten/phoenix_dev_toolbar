@@ -10,6 +10,7 @@
 import {parse, record, stale, tripped} from "./reloads.mjs"
 import {createExportCopy} from "./export_copy.mjs"
 import {countWrapped} from "./summary.mjs"
+import {label, parseShortcut, triggered} from "./shortcut.mjs"
 
 const {Socket} = window.Phoenix
 const {LiveSocket} = window.LiveView
@@ -117,6 +118,23 @@ const pushClient = (payload) => {
   else if (clientBuffer.length < CLIENT_BUFFER) clientBuffer.push(payload)
 }
 
+// The loader's toggle shortcut (null when off), so the combo also works with
+// focus inside this frame, where the host page's listener never sees it.
+let shortcut = null
+
+const setShortcut = (source) => {
+  shortcut = parseShortcut(source)
+  const hide = document.getElementById("pdt-hide")
+  // #pdt-hide sits in a phx-update="ignore" wrapper: the title survives patches.
+  if (hide) hide.title = shortcut ? `Hide (${label(source)})` : "Hide"
+}
+
+document.addEventListener("keydown", (event) => {
+  if (!shortcut || !triggered(shortcut, event)) return
+  event.preventDefault()
+  toParent("toggle")
+})
+
 window.addEventListener("message", (event) => {
   if (event.origin !== window.location.origin || event.source !== window.parent) return
   const data = event.data
@@ -124,6 +142,7 @@ window.addEventListener("message", (event) => {
     setDock(data.dock)
     setReserve(data.reserve)
     setOpen(Boolean(data.open))
+    setShortcut(data.shortcut)
   }
   if (data && data.type === "pdt:focus") {
     const toggle = document.getElementById("pdt-toggle")

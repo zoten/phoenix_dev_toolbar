@@ -101,7 +101,7 @@ test("posts to the panel on the page's own origin only, never '*'", async (t) =>
 
   assert.equal(page.posted().length, 3, "the mount state, the load, the toggle")
   page.posted().forEach(({targetOrigin}) => assert.equal(targetOrigin, ORIGIN))
-  assert.deepEqual(page.lastState(), {type: "pdt:state", open: true, dock: "bottom", reserve: true})
+  assert.deepEqual(page.lastState(), {type: "pdt:state", open: true, dock: "bottom", reserve: true, shortcut: null})
 })
 
 test("toggle, hide and the corner pill move between the three states", async (t) => {
@@ -420,4 +420,89 @@ test("a window resize re-clamps the panel once per frame, and growing back resto
   page.window.dispatchEvent(new FakeEvent("resize"))
   page.flushFrames()
   assert.equal(handle.getAttribute("aria-valuenow"), "700")
+})
+
+for (const [value, expected] of [
+  [undefined, null],
+  ["bottom-right", null],
+  ["middle", null],
+  ["bottom-left", "corner-bottom-left"],
+  ["top-right", "corner-top-right"],
+  ["top-left", "corner-top-left"],
+]) {
+  test(`pill corner ${value}: ${expected || "the default bottom right"}`, async (t) => {
+    const page = await load(t, {attributes: value ? {"data-pdt-pill": value} : {}})
+    const classes = page.pill.className.split(" ")
+
+    assert.equal(classes.filter((name) => name.startsWith("corner-")).join(), expected || "")
+  })
+}
+
+test("shortcut: without the attribute, no keydown listener and null in the state", async (t) => {
+  const page = await load(t)
+
+  assert.equal(page.window.listeners.get("keydown"), undefined)
+  assert.equal(page.lastState().shortcut, null)
+  assert.equal(page.pill.title, "Show the dev toolbar")
+})
+
+test("shortcut: an invalid attribute attaches nothing", async (t) => {
+  const page = await load(t, {attributes: {"data-pdt-shortcut": "d"}})
+
+  assert.equal(page.window.listeners.get("keydown"), undefined)
+  assert.equal(page.lastState().shortcut, null)
+})
+
+test("shortcut: toggles open and collapsed, brings a hidden toolbar back collapsed", async (t) => {
+  const page = await load(t, {attributes: {"data-pdt-shortcut": "ctrl+shift+d"}})
+  const state = () => page.window.localStorage.getItem("pdt:state")
+  const press = (init = {}) => {
+    const event = new FakeEvent("keydown", {code: "KeyD", ctrlKey: true, shiftKey: true, target: page.document.body, ...init})
+    page.window.dispatchEvent(event)
+    return event
+  }
+
+  assert.ok(press().defaultPrevented)
+  assert.equal(state(), "open")
+  press()
+  assert.equal(state(), "collapsed")
+
+  page.fromPanel({type: "pdt:hide"})
+  press()
+  assert.equal(state(), "collapsed")
+  assert.ok(!page.pill.classList.contains("visible"))
+  assert.equal(page.lastState().shortcut, "ctrl+shift+d")
+  assert.equal(page.pill.title, "Show the dev toolbar (Ctrl+Shift+D)")
+})
+
+test("shortcut: other keys, repeats, composition and typing are left alone", async (t) => {
+  const page = await load(t, {attributes: {"data-pdt-shortcut": "alt+f5"}})
+  const state = () => page.window.localStorage.getItem("pdt:state")
+  const press = (init) => {
+    const event = new FakeEvent("keydown", {code: "F5", altKey: true, target: page.document.body, ...init})
+    page.window.dispatchEvent(event)
+    return event
+  }
+
+  for (const init of [
+    {code: "F6"},
+    {ctrlKey: true},
+    {repeat: true},
+    {isComposing: true},
+    {target: {tagName: "TEXTAREA"}},
+    {target: {tagName: "DIV", isContentEditable: true}},
+  ]) {
+    assert.ok(!press(init).defaultPrevented, JSON.stringify(init))
+    assert.equal(state(), "collapsed")
+  }
+  press({})
+  assert.equal(state(), "open")
+})
+
+test("shortcut: a throwing listener never reaches the host", async (t) => {
+  const page = await load(t, {attributes: {"data-pdt-shortcut": "alt+f5"}})
+  const event = new FakeEvent("keydown", {code: "F5", altKey: true})
+  Object.defineProperty(event, "code", {get() { throw new Error("boom") }})
+
+  page.window.dispatchEvent(event)
 })

@@ -734,3 +734,31 @@ test("the live status announces a lost connection and clears the reconnect", asy
     assert.equal(result(), "")
   })
 }
+
+test("shortcut: a match with focus inside the panel posts a toggle, and the hide button shows the combo", async (t) => {
+  const page = await load(t)
+  const press = (init = {}) => {
+    const event = new FakeEvent("keydown", {code: "KeyD", ctrlKey: true, shiftKey: true, target: page.document.body, ...init})
+    page.document.dispatchEvent(event)
+    return event
+  }
+  const toggles = () => page.toLoader().filter(({data}) => data.type === "pdt:toggle").length
+
+  press()
+  assert.equal(toggles(), 0, "no shortcut known yet")
+
+  page.fromLoader({type: "pdt:state", open: true, dock: "bottom", reserve: true, shortcut: "ctrl+shift+d"})
+  assert.equal(page.byId("pdt-hide").title, "Hide (Ctrl+Shift+D)")
+  assert.ok(press().defaultPrevented)
+  assert.equal(toggles(), 1)
+
+  for (const init of [{code: "KeyE"}, {altKey: true}, {repeat: true}, {isComposing: true}, {target: page.document.createElement("textarea")}]) {
+    assert.ok(!press(init).defaultPrevented, Object.keys(init).join())
+  }
+  assert.equal(toggles(), 1)
+
+  page.fromLoader({type: "pdt:state", open: true, dock: "bottom", reserve: true, shortcut: null})
+  press()
+  assert.equal(toggles(), 1, "the shortcut was dropped")
+  assert.equal(page.byId("pdt-hide").title, "Hide")
+})
