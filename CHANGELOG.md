@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-11-12
+
 - Dock menu on the Popover API with CSS anchor positioning; supported browsers raised (ADR 04)
 - Panel font sizes in `rem`, logical CSS properties, both guarded by a CSS test (ADR 04)
 - Panel theme: Auto, Light or Dark from the dock menu, stored per browser (ADR 04)
