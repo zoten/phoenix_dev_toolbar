@@ -19,12 +19,15 @@ tree. Picking an element joins the two.
 **Picking (loader).** The panel header's pick button (`#pdt-pick`) sends
 `pdt:pick`; the loader arms pick mode and answers `pdt:picking {armed}`. While
 armed, capture phase listeners on `document` (`pointermove`, `click`,
-`pointerdown`, `mousedown`, `pointerup`, `mouseup`, `keydown`) outline the element
+`pointerdown`, `mousedown`, `pointerup`, `mouseup`, `auxclick`, `contextmenu`,
+`keydown`) outline the element
 under the pointer (one resolve per animation frame) in a box drawn in the loader's
 shadow root (`pointer-events: none`), and swallow presses and the click
 (`preventDefault` plus `stopPropagation`) so the host page never sees them. Events
 on the toolbar's own element are left alone. A click posts `pdt:inspect`, disarms
-and opens the panel; Esc, a second `pdt:pick` or a panel reload disarms. Disarmed,
+and opens the panel; Esc (in the host page, or in the panel, which forwards it), a
+second `pdt:pick` or a panel reload disarms. The button is shown only when the
+LiveView tab is on. Disarmed,
 no listener is attached to the host page.
 
 **Resolving (`assets/js/inspect.mjs`).** A pure function turns the element into:
@@ -74,8 +77,10 @@ The server never starts an editor.
 - No host code changes and no new config: a Phoenix 1.8 app already emits the
   annotations in dev.
 - The host pays nothing until the button is pressed; all work is in the browser.
-- The dev harness turns both flags on, so the toolbar's own templates are
-  annotated there too.
+- The dev harness turns both flags on for its `Demo*` templates (set after `lib/`
+  compiles, so the toolbar's own templates stay unannotated there). In a host app
+  that sets them, `debug_attributes` also adds `data-phx-pid` to every LiveView
+  root, the panel's included: harmless.
 
 ## Open limits
 
@@ -88,5 +93,9 @@ The server never starts an editor.
 - Pick mode stays armed if the toolbar is hidden mid-pick (Esc still disarms).
 - Only `phx-click`, `phx-submit` and `phx-change` bindings are reported.
 - Annotation paths outside the working directory (absolute) get no editor link.
+- Umbrella apps: LiveView writes annotation paths relative to the app directory at
+  compile time, while links join them to the runtime working directory (usually
+  the umbrella root), so links can point to a missing file.
+- `phx-click` holding a JS command shows its raw JSON in the strip.
 - A pick in the page's own LiveView opens Components, not Assigns, until the tree has
   been read once: the root's DOM id comes from that read.
