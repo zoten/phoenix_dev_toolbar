@@ -127,3 +127,17 @@ screenshot (`media/`), CHANGELOG lines, roadmap entry.
 - **Public API**: no new config; `PLUG_EDITOR` is Phoenix's convention.
   Degrades without annotations (strip says which two flags turn them on).
 - **Tests and ADR sync**: as listed per task; ADR 16 new, ADR 07 updated.
+
+## Follow-ups from the feature reviews
+
+- Walk budget configurable: `inspect_nodes:` (default 500, 50 to 10_000), sent as
+  `data-pdt-inspect-nodes`; the payload carries `truncated` and the strip says when
+  the walk stopped early (ADR 16).
+- Pick mode listens on `window` in the capture phase with
+  `stopImmediatePropagation`, and also swallows `dblclick`, `auxclick`,
+  `contextmenu` and touches; Esc in the panel is forwarded.
+- A pick in a LiveView outside the page's tree (a sticky `live_render`) shows the
+  strip only, with a hint.
+- `#pdt-pick` is a crosshair icon in the collapsed bar and the open panel, shown
+  only with the LiveView tab on; a pick from the collapsed bar opens the panel at
+  the right sub-tab.
