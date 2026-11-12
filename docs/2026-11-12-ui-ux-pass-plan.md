@@ -209,6 +209,73 @@ All in `lib/phoenix_dev_toolbar/panel_layout.ex`, `components.ex`,
 - **Resize handle** (loader `STYLE`): hit area 12px (the visible bar stays 4px, via
   `::after`), `aria-valuetext` "<n> pixels".
 
+### Batch C tasks
+
+Three tasks on disjoint files, run in parallel, each in its own worktree branched from
+`ui-pass-batch-c` and merged back. The orchestrator writes ADR 04 and CHANGELOG after
+the merge (tasks do not touch them, so they never conflict). An Opus reviewer per task,
+a feature review at the end, a hand check with a screen reader tree (Chrome DevTools
+accessibility snapshot) and the keyboard.
+
+**C1: panel semantics and focus** (`lib/phoenix_dev_toolbar/panel_layout.ex`,
+`assets/js/panel.js`, `assets/js/test/panel.test.mjs`, `test/phoenix_dev_toolbar/panel_live_test.exs`
+or the closest panel layout test; `priv/static/panel.js`).
+
+- Toggle `#pdt-toggle`: `aria-expanded` set by `setOpen` in panel.js, label
+  "Toolbar panel". The button is server rendered and LiveView patching drops attributes
+  the server did not render: move `#pdt-hide` and `#pdt-toggle` into a wrapper with
+  `phx-update="ignore"` (as `#pdt-dock-picker` already is; neither button has server
+  state), and give the toggle a server rendered `aria-expanded="false"` start value.
+  Check that `.pdt-standalone` CSS still hides them (selectors are by class).
+- Dock menu: drop `aria-haspopup` from `#pdt-dock`; close the menu on `focusout` when
+  `relatedTarget` is outside `#pdt-dock-picker` (no refocus).
+- Tabs: `<nav role="tablist">` becomes `<div role="tablist" aria-label="Toolbar tabs">`
+  (keep the class and id); `Home`/`End` in the tab keydown handler (first/last tab, focus
+  and click like the arrows). The error state: a `<span class="pdt-sr-only">
+  (disabled after an error)</span>` inside the tab when `tab_error/4` is set (C2 makes
+  the CSS `" !"` visual only).
+- Disconnected notice: `#pdt-offline` keeps its CSS display but drops `role="status"`
+  and gets `aria-hidden="true"`; a new empty `<span id="pdt-live-status"
+  class="pdt-sr-only" role="status" phx-update="ignore">` in the header; the `PdtPanel`
+  hook's `disconnected()` writes "Toolbar disconnected: what it shows is frozen until it
+  reconnects" there and `reconnected()` writes "Toolbar reconnected" (cleared after 3s).
+- Focus on show (panel half of the loader's C3): a `pdt:focus` message from the parent
+  (same origin and source checks as `pdt:state`) focuses `#pdt-toggle`.
+- Tests: panel.test.mjs (aria-expanded follows pdt:state, Home/End, focusout closes the
+  menu, pdt:focus from parent focuses the toggle and from another source does nothing,
+  live status text on disconnected/reconnected); a LiveView test for the tablist markup,
+  the sr-only error text and the ignored wrapper ids. Extend `fake_dom.mjs` if needed.
+
+**C2: information in titles, focus rings** (`lib/phoenix_dev_toolbar/components.ex`,
+`assets/css/panel.css`, `test/phoenix_dev_toolbar/components_test.exs`; `priv/static/panel.css`).
+
+- `summary_bar/1`: a badge with a `title` also renders it as
+  `<span class="pdt-sr-only">: {title}</span>`; same for the dropped and trimmed badges.
+- `phase_tag/1` (HTTP, live), the `framework` and `task` tags and the `N+1` tag in
+  `query_row/1`: the explanation as `pdt-sr-only` text after the visible label. `title`
+  stays for mouse users.
+- `.pdt-tab--error::after`: `content: " !" / ""` (alternative text syntax), so screen
+  readers read C1's sr-only text instead of the `!`.
+- Focus rings: one shared `:focus-visible` rule (outline 2px `--pdt-accent`, offset 1px)
+  replacing the per-class rules, covering also `.pdt-crumb`, `.pdt-export input`,
+  `.pdt-actions__kill select`, `.pdt-pid-link`. Inputs and textareas keep offset 0.
+- Tests: components_test (sr-only text present for a titled badge and for each tag),
+  contrast.test.mjs still green.
+
+**C3: loader focus and resize handle** (`assets/js/loader.js`,
+`assets/js/test/loader.test.mjs`; `priv/static/loader.js`).
+
+- Hide: on `pdt:hide`, when focus is in our frame (`root.activeElement === frame`, the
+  shadow root's), focus the pill after it shows. Otherwise leave focus alone.
+- Show: the pill's click, after `setState("collapsed")`, focuses the frame
+  (`frame.focus()`) and posts `pdt:focus` (C1 handles it).
+- Handle: hit area 12px (`height`/`width` and the `calc(var(--pdt-extent) - 6px)` offsets),
+  the visible `::after` bar unchanged; `aria-valuetext` "<n> pixels" next to
+  `aria-valuenow` in `applySize`.
+- Tests: loader.test.mjs (focus moves to the pill only when the frame had focus; pill click
+  posts pdt:focus; valuetext follows resizes). Extend `fake_dom.mjs` for shadow root
+  `activeElement` if needed (it has `attachShadow` and `focus`).
+
 ## Batch D: theme, pill corner, shortcut
 
 - **Theme** (dock menu, per browser): an "Auto / Light / Dark" choice under the
