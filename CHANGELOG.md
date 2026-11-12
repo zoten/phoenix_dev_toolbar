@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Element inspector: pick an element, see its component, HEEx source, binding, editor links (ADR 16)
 - Component tree rows highlight their element on the host page (ADR 16)
+- `inspect_nodes:` config for the inspector's walk budget; pick icon in the collapsed bar (ADR 16)
 - README: using with Tidewave, its known conflicts (ADR 04)
 
 ## [0.0.5] - 2026-11-12

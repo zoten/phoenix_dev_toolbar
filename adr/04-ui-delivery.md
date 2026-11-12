@@ -70,7 +70,8 @@ interfere with the host's LiveSocket, DOM patching or CSP.
   button), `pdt:open` (a tab was picked), `pdt:hide` (hide button) and `pdt:dock` (dock
   picker, a known dock only), `pdt:reserve` (a boolean) and `pdt:theme` (`auto`, `light`
   or `dark`); the loader answers with `pdt:state` (`open`, `dock`, `reserve`, `theme` and
-  `shortcut`). Focus follows hide and show: on `pdt:hide`
+  `shortcut`). The element inspector adds `pdt:pick` and `pdt:highlight` (iframe to
+  loader) and `pdt:picking` and `pdt:inspect` (loader to iframe), ADR 16. Focus follows hide and show: on `pdt:hide`
   the pill takes focus only when focus was in the panel (the shadow root's
   `activeElement` is the iframe), never on load; clicking the pill focuses the iframe and
   posts `pdt:focus`, which focuses the panel's toggle. The toggle carries `aria-expanded`

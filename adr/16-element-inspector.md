@@ -16,16 +16,18 @@ tree. Picking an element joins the two.
 
 ## Decision
 
-**Picking (loader).** The panel header's pick button (`#pdt-pick`) sends
-`pdt:pick`; the loader arms pick mode and answers `pdt:picking {armed}`. While
-armed, capture phase listeners on `document` (`pointermove`, `click`,
+**Picking (loader).** The header's pick button (`#pdt-pick`, a crosshair icon
+labelled "Pick an element (Esc cancels)", in the collapsed bar and the open panel)
+sends `pdt:pick`; the loader arms pick mode and answers `pdt:picking {armed}`. While
+armed, capture phase listeners on `window` (`pointermove`, `click`, `dblclick`,
 `pointerdown`, `mousedown`, `pointerup`, `mouseup`, `auxclick`, `contextmenu`,
-`keydown`) outline the element
+`touchstart`, `touchend`, `keydown`) outline the element
 under the pointer (one resolve per animation frame) in a box drawn in the loader's
 shadow root (`pointer-events: none`), and swallow presses and the click
-(`preventDefault` plus `stopPropagation`) so the host page never sees them. Events
+(`preventDefault` plus `stopImmediatePropagation`; a touch is prevented only when
+cancelable) so the host's handlers do not see them. Events
 on the toolbar's own element are left alone. A click posts `pdt:inspect`, disarms
-and opens the panel; Esc (in the host page, or in the panel, which forwards it), a
+and opens the panel (from the collapsed bar too) at the right sub-tab; Esc (in the host page, or in the panel, which forwards it), a
 second `pdt:pick` or a panel reload disarms. The button is shown only when the
 LiveView tab is on. Disarmed,
 no listener is attached to the host page.
@@ -42,7 +44,9 @@ no listener is attached to the host page.
   annotations are skipped;
 - `caller`: the `@caller` comment right before the innermost frame.
 
-At most 200 nodes visited, 20 frames, strings cut to 512 UTF-8 bytes (never
+At most `inspect_nodes:` nodes visited (500 by default, 50 to 10_000, written as
+`data-pdt-inspect-nodes` on the loader tag when not the default; `truncated: true`
+when the budget runs out before the root), 20 frames, strings cut to 512 UTF-8 bytes (never
 splitting a surrogate pair), integers in `0..10_000_000`.
 
 **Panel.** `PanelLive` parses the payload with `PhoenixDevToolbar.Inspected.parse/1`
@@ -52,8 +56,11 @@ keeps one inspected element (cleared when the page changes) and shows the
 "Inspected element" strip (`#pdt-inspected`): tag and line, binding, frames and
 caller. A pick inside a LiveComponent or a nested LiveView opens the Components
 sub-tab with that row selected (`aria-current`) and scrolled into view; a pick in
-the page's own LiveView opens Assigns; a dead render shows the strip only. Without
-annotations the strip names the two config flags.
+the page's own LiveView opens Assigns; a dead render shows the strip only. A pick whose root is no
+view of the page's tree (a sticky `live_render` has a session of its own) shows the
+strip only, with a hint, and selects nothing. Without annotations the strip names
+the two config flags; with a truncated walk it names `inspect_nodes:` instead, or
+notes that outer frames may be missing.
 
 **Root ids.** Each component tree view carries its DOM id, the topic of the
 `{Phoenix.LiveView, view, "lv:" <> id}` process label the tree read already
@@ -86,8 +93,12 @@ The server never starts an editor.
 
 - An element inside a slot reports the slot owner (`modal`) as the innermost frame,
   not the caller's template that wrote the slot content.
-- Long lists: the 200 node budget can run out on previous siblings, leaving only
-  the inner frames, with no truncation flag.
+- Long lists: past `inspect_nodes:` previous siblings the walk stops; the strip
+  says so and names the option.
+- A host listener registered on `window` in the capture phase before pick mode is
+  armed still runs first: listeners on one target run in registration order.
+- A pick in a sticky LiveView shows the strip only: its assigns and tree live in
+  another session.
 - While armed, the outline does not follow scroll until the pointer moves.
 - Elements inside host iframes cannot be picked.
 - Pick mode stays armed if the toolbar is hidden mid-pick (Esc still disarms).
