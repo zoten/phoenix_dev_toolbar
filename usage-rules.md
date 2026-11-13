@@ -47,6 +47,9 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
   `since` to get only pages that started after it), then `page_summary` with
   the page's `sid` or its `path` (compact; `verbose: true` for full items).
   Without either, tools read the newest page.
+- Where do a click's queries go: `page_summary` (`callbacks.heaviest` names the
+  callback with the most queries and its callers), then `page_queries` with
+  `group_by: "caller"` and its `event`, then `verbose: true` rows of one caller.
 - To check a change: `page_summary`, note its `sid`, edit, reload the page,
   then `compare_pages` with `before: sid` (the newest capture of the same path
   after it, or pass `after` or `path`): deltas, N+1 and errors fixed or new
@@ -62,7 +65,7 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
   summary, N+1, slowest queries, errors, assigns shape, then a report.
 - `recent_errors` after a change: crashes in `handle_info` or in other tabs that
   the page lookups miss (`since` takes the sid you measured: errors after that page started, never that page's own; or a time; `limit`).
-- `page_queries`, `page_callbacks` (`sort: "slowest"`, `limit`, filters `callback`, `event`; `page_queries` also `span`, `seq_from`, `seq_to`, and compact rows unless `verbose: true`),
+- `page_queries`, `page_callbacks` (`sort: "slowest"`, `limit`, filters `callback`, `event`; `page_queries` also `span`, `seq_from`, `seq_to`, compact rows unless `verbose: true`, and `group_by` `caller`, `origin`, `callback` or `sql`: counts per group instead of rows),
   `page_n_plus_one`, `page_errors` for the details. Queries carry `callback`,
   `event`, `origin` (the Repo call site), `caller` (the LiveView, controller
   or `on_mount` frame above it) and `noise` (framework queries such as

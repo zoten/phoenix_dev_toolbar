@@ -51,11 +51,15 @@ defmodule PhoenixDevToolbar.Report do
   alias PhoenixDevToolbar.Report.Markdown
   alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
+  alias PhoenixDevToolbar.Truncate
 
   @slowest 5
   @compare_cap Compare.cap()
   @burst_gap_us 100_000
   @unattributed_origins 5
+  @heaviest_callers 5
+  @sql_preview 160
+  @group_keys [:caller, :origin, :callback, :sql]
   @n_plus_one_callers 5
   @query_brief [
     :seq,
@@ -322,6 +326,41 @@ defmodule PhoenixDevToolbar.Report do
           | {:seq_from, non_neg_integer()}
           | {:seq_to, non_neg_integer()}
 
+  @typedoc "An option of `query_groups/3`: the `queries/2` options and `noise:`."
+  @type query_groups_opt :: queries_opt() | {:noise, boolean()}
+
+  @typedoc "What `query_groups/3` groups by."
+  @type group_by :: :caller | :origin | :callback | :sql
+
+  @typedoc """
+  Queries sharing a `key` (see `query_groups/3`). `n_plus_one` counts the group's
+  queries flagged `n_plus_one?`; `sql` is the first query's SQL cut to
+  #{@sql_preview} bytes (nil for `by: :sql`, where `key` is that cut SQL).
+  """
+  @type query_group :: %{
+          key: String.t() | nil,
+          count: pos_integer(),
+          total_us: non_neg_integer(),
+          n_plus_one: non_neg_integer(),
+          sql: String.t() | nil
+        }
+
+  @typedoc "The callers of the queries of one callback, from `summary/2`."
+  @type caller_tally :: %{
+          caller: String.t() | nil,
+          count: pos_integer(),
+          total_us: non_neg_integer()
+        }
+
+  @typedoc """
+  The callback with the most queries: a `t:callback_brief/0` (a `t:callback/0`
+  with `verbose: true`) plus `by_caller`, the top #{@heaviest_callers} callers of its queries.
+  """
+  @type heaviest_callback :: %{
+          required(:by_caller) => [caller_tally()],
+          optional(atom()) => term()
+        }
+
   @typedoc "An option of `summary/2`."
   @type summary_opt ::
           {:verbose, boolean()}
@@ -353,6 +392,8 @@ defmodule PhoenixDevToolbar.Report do
   `queries.noise`. `callbacks` counts real callbacks only. `unattributed` counts the queries of
   LiveView sessions that no callback or render owns (usually `handle_info` or
   PubSub reloads), with its top #{@unattributed_origins} `origins` by time.
+  `callbacks.heaviest` is the real callback with the most queries (tie: more
+  query time), nil when none ran a query.
   """
   @type summary :: %{
           sids: [sid()],
@@ -376,7 +417,8 @@ defmodule PhoenixDevToolbar.Report do
           callbacks: %{
             count: non_neg_integer(),
             total_us: non_neg_integer(),
-            slowest: [callback_brief() | callback()]
+            slowest: [callback_brief() | callback()],
+            heaviest: heaviest_callback() | nil
           },
           renders: %{count: non_neg_integer(), total_us: non_neg_integer()},
           errors: [error_brief() | error()],
@@ -509,7 +551,8 @@ defmodule PhoenixDevToolbar.Report do
           callbacks: %{
             count: length(callbacks),
             total_us: total(callbacks),
-            slowest: callbacks |> slowest() |> Enum.map(&brief.(&1, @callback_brief))
+            slowest: callbacks |> slowest() |> Enum.map(&brief.(&1, @callback_brief)),
+            heaviest: heaviest(callbacks, queries, brief)
           },
           renders: %{count: length(renders), total_us: total(renders)},
           errors: events |> errors_of(owners) |> Enum.map(&error_item(&1, brief)),
@@ -583,6 +626,75 @@ defmodule PhoenixDevToolbar.Report do
     events
     |> queries_of(owners(events, sessions), places(events, sessions), threshold(opts))
     |> matching(opts, [:callback, :event, :span, :seq_from, :seq_to])
+  end
+
+  @doc """
+  The queries of `target` grouped by `by`, most queries first (then most time).
+
+  `by` is `:caller` or `:origin` (the query's frame, nil groups as `nil`),
+  `:callback` (the callback name, plus the event when there is one, such as
+  `"handle_event \"withdraw\""`, so two clicks stay apart) or `:sql` (the SQL cut
+  to #{@sql_preview} bytes). Options are those of `queries/2`, filters
+  included, plus `noise:` (default false: framework queries are left out).
+  See `t:query_group/0`.
+  """
+  @spec query_groups(target(), group_by(), [query_groups_opt()]) :: [query_group()]
+  def query_groups(target, by, opts \\ []) when by in @group_keys do
+    rows = queries(target, opts)
+
+    rows =
+      if Keyword.get(opts, :noise, false), do: rows, else: Enum.reject(rows, &is_binary(&1.noise))
+
+    rows
+    |> Enum.group_by(&group_key(&1, by))
+    |> Enum.map(fn {key, group} -> query_group(key, group, by) end)
+    |> Enum.sort_by(&{-&1.count, -&1.total_us})
+  end
+
+  defp query_group(key, [first | _] = group, by) do
+    %{
+      key: key,
+      count: length(group),
+      total_us: total(group),
+      n_plus_one: Enum.count(group, & &1.n_plus_one?),
+      sql: if(by == :sql, do: nil, else: sql_preview(first))
+    }
+  end
+
+  defp group_key(query, :caller), do: query.caller
+  defp group_key(query, :origin), do: query.origin
+  defp group_key(query, :sql), do: sql_preview(query)
+  defp group_key(%{callback: callback, event: nil}, :callback), do: Atom.to_string(callback)
+
+  defp group_key(%{callback: callback, event: event}, :callback),
+    do: "#{callback} #{inspect(event)}"
+
+  defp sql_preview(%{sql: nil}), do: nil
+  defp sql_preview(%{sql: sql}), do: Truncate.prefix(sql, @sql_preview)
+
+  # The real callback with the most queries (tie: more query time), with the
+  # top callers of the queries that ran in its {sid, span}.
+  defp heaviest(callbacks, queries, brief) do
+    callbacks
+    |> Enum.filter(&(&1.queries > 0))
+    |> Enum.max_by(&{&1.queries, &1.query_us}, fn -> nil end)
+    |> heaviest_item(queries, brief)
+  end
+
+  defp heaviest_item(nil, _queries, _brief), do: nil
+
+  defp heaviest_item(callback, queries, brief) do
+    by_caller =
+      queries
+      |> Enum.filter(&(&1.sid == callback.sid and &1.span == callback.span))
+      |> Enum.group_by(& &1.caller)
+      |> Enum.map(fn {caller, group} ->
+        %{caller: caller, count: length(group), total_us: total(group)}
+      end)
+      |> Enum.sort_by(&{-&1.count, -&1.total_us})
+      |> Enum.take(@heaviest_callers)
+
+    callback |> brief.(@callback_brief) |> Map.put(:by_caller, by_caller)
   end
 
   defp matching(rows, opts, keys) do

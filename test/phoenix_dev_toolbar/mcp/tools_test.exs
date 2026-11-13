@@ -423,6 +423,47 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
     end
   end
 
+  describe "page_queries group_by" do
+    setup do
+      s = session(:live_view, path: "/grp", view: DemoWeb.PageLive)
+      callback(s, :handle_event, span: 1, event: "withdraw")
+      callback(s, :handle_event, span: 2, event: "other")
+      query(s, span: 1, sql: "SELECT a", stacktrace: ["lib/r.ex:1: R.all/0", "lib/a.ex:1: A.f/0"])
+      query(s, span: 1, sql: "SELECT a", stacktrace: ["lib/r.ex:1: R.all/0", "lib/a.ex:1: A.f/0"])
+      query(s, span: 1, sql: "SELECT b", stacktrace: ["lib/r.ex:1: R.all/0", "lib/b.ex:1: B.f/0"])
+      query(s, span: 2, sql: "SELECT c", stacktrace: ["lib/r.ex:1: R.all/0", "lib/b.ex:1: B.f/0"])
+      {:ok, sid: s.sid}
+    end
+
+    test "returns groups, limit applies to groups, queries_total counts queries", %{sid: sid} do
+      result = call!("page_queries", %{"sid" => sid, "group_by" => "sql", "limit" => 2})
+      assert %{"total" => 3, "queries_total" => 4, "returned" => 2, "groups" => groups} = result
+      refute Map.has_key?(result, "queries")
+      assert [%{"key" => "SELECT a", "count" => 2, "sql" => nil}, %{"count" => 1}] = groups
+    end
+
+    test "combines with filters", %{sid: sid} do
+      result =
+        call!("page_queries", %{"sid" => sid, "group_by" => "caller", "event" => "withdraw"})
+
+      assert %{"total" => 2, "queries_total" => 3} = result
+      assert [%{"count" => 2, "key" => a}, %{"count" => 1}] = result["groups"]
+      assert a =~ "A.f/0"
+
+      callbacks = call!("page_queries", %{"sid" => sid, "group_by" => "callback"})
+
+      assert [~s(handle_event "withdraw"), ~s(handle_event "other")] ==
+               Enum.map(callbacks["groups"], & &1["key"])
+    end
+
+    test "a bad group_by is a tool error", %{sid: sid} do
+      assert call_error("page_queries", %{"sid" => sid, "group_by" => "nope"}) =~
+               "group_by: one of"
+
+      assert call_error("page_queries", %{"sid" => sid, "group_by" => 1}) =~ "group_by:"
+    end
+  end
+
   describe "page_callbacks" do
     test "rows, slowest first, nil durations last" do
       s = session(:request, path: "/c")

@@ -148,6 +148,126 @@ defmodule PhoenixDevToolbar.ReportTest do
     end
   end
 
+  describe "query_groups/3 and the heaviest callback" do
+    @stack_a [
+      "lib/demo/repo_a.ex:1: Demo.RepoA.all/0",
+      "lib/demo_web/live/page_live.ex:10: DemoWeb.PageLive.load_accounts/1",
+      "lib/demo_web/live/page_live.ex:30: DemoWeb.PageLive.handle_event/3"
+    ]
+    @stack_b [
+      "lib/demo/repo_b.ex:1: Demo.RepoB.all/0",
+      "lib/demo_web/live/page_live.ex:20: DemoWeb.PageLive.load_totals/1",
+      "lib/demo_web/live/page_live.ex:30: DemoWeb.PageLive.handle_event/3"
+    ]
+
+    setup do
+      s = session(:live_view, path: "/g", view: DemoWeb.PageLive)
+      callback(s, :mount, span: 1, us: 9000)
+      query(s, span: 1, sql: "SELECT mount", us: 5000, stacktrace: @stack_b)
+      callback(s, :handle_event, span: 2, event: "withdraw", us: 100)
+      callback(s, :handle_event, span: 3, event: "other", us: 100)
+
+      for _ <- 1..3,
+          do: query(s, span: 2, sql: "SELECT a", us: 10, stacktrace: @stack_a)
+
+      query(s, span: 2, sql: "SELECT b", us: 20, stacktrace: @stack_b)
+      query(s, span: 3, sql: "SELECT c", us: 10, stacktrace: @stack_b)
+      query(s, span: 2, sql: "SELECT nostack", us: 1, stacktrace: [])
+      {:ok, s: s}
+    end
+
+    test "groups by caller, count first, then time", %{s: s} do
+      groups = Report.query_groups(s.sid, :caller, event: "withdraw")
+
+      assert [
+               %{key: a, count: 3, total_us: 30, n_plus_one: 0, sql: "SELECT a"},
+               %{key: b, count: 1, total_us: 20, sql: "SELECT b"},
+               %{key: nil, count: 1, sql: "SELECT nostack"}
+             ] = groups
+
+      assert a =~ "load_accounts"
+      assert b =~ "load_totals"
+    end
+
+    test "groups by origin, callback (with the event) and sql", %{s: s} do
+      assert [%{key: origin, count: 3}, %{key: other, count: 3}, %{key: nil, count: 1}] =
+               Report.query_groups(s.sid, :origin)
+
+      # Equal counts: the slower group (RepoB, 5000 us from mount) first.
+      assert origin =~ "Demo.RepoB.all/0"
+      assert other =~ "Demo.RepoA.all/0"
+
+      by_callback = Report.query_groups(s.sid, :callback)
+
+      assert [
+               %{key: ~s(handle_event "withdraw"), count: 5},
+               %{key: "mount", count: 1},
+               %{key: ~s(handle_event "other"), count: 1}
+             ] = by_callback
+
+      assert [%{key: "SELECT a", count: 3, sql: nil} | _] = Report.query_groups(s.sid, :sql)
+    end
+
+    test "filters apply before grouping, noise is left out unless asked", %{s: s} do
+      assert [%{key: "mount", count: 1}] = Report.query_groups(s.sid, :callback, callback: :mount)
+      assert [%{count: 1}] = Report.query_groups(s.sid, :caller, span: 3)
+
+      query(s, span: 3, sql: ~s(SELECT s0."version" FROM "schema_migrations" AS s0), us: 1)
+      assert [%{count: 1}] = Report.query_groups(s.sid, :caller, span: 3)
+
+      assert 2 ==
+               s.sid
+               |> Report.query_groups(:caller, span: 3, noise: true)
+               |> Enum.map(& &1.count)
+               |> Enum.sum()
+
+      assert [] == Report.query_groups(s.sid, :caller, span: 99)
+    end
+
+    test "n_plus_one counts the flagged queries of a group" do
+      s = session(:request, path: "/n1")
+      for _ <- 1..5, do: query(s, sql: "SELECT repeated")
+
+      assert [%{count: 5, n_plus_one: n}] = Report.query_groups(s.sid, :sql)
+      assert n >= 1
+    end
+
+    test "heaviest is the callback with the most queries, not the slowest", %{s: s} do
+      %{callbacks: %{heaviest: heaviest, slowest: [slowest | _]}} = Report.summary(s.sid)
+
+      assert slowest.callback == :mount
+      assert %{callback: :handle_event, event: "withdraw", queries: 5} = heaviest
+      refute Map.has_key?(heaviest, :params)
+
+      assert [
+               %{caller: a, count: 3, total_us: 30},
+               %{caller: b, count: 1},
+               %{caller: nil, count: 1}
+             ] = heaviest.by_caller
+
+      assert a =~ "load_accounts"
+      assert b =~ "load_totals"
+
+      assert %{params: _} = Report.summary(s.sid, verbose: true).callbacks.heaviest
+    end
+
+    test "heaviest is nil when no callback ran a query" do
+      s = session(:live_view, path: "/q", view: DemoWeb.PageLive)
+      callback(s, :mount, span: 1)
+      assert %{callbacks: %{heaviest: nil}} = Report.summary(s.sid)
+    end
+
+    test "markdown names the heaviest callback and its callers", %{s: s} do
+      md = Report.markdown(s.sid)
+      assert md =~ "Heaviest callback: `DemoWeb.PageLive handle_event withdraw`, 5 queries, "
+      assert md =~ "load_accounts"
+      assert md =~ "×3"
+
+      quiet = session(:request, path: "/quiet")
+      refute Report.markdown(quiet.sid) =~ "Heaviest callback"
+    end
+  end
+
   describe "query origin" do
     test "falls back from the first frame to the task function to the owning callback" do
       s = session(:live_view, view: DemoWeb.PageLive)

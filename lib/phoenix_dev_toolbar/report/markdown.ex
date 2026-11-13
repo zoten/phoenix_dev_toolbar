@@ -20,6 +20,7 @@ defmodule PhoenixDevToolbar.Report.Markdown do
       n_plus_one(summary.n_plus_one),
       slowest_queries(summary.queries.slowest),
       slowest_callbacks(summary.callbacks.slowest),
+      heaviest_callback(summary.callbacks.heaviest),
       unattributed(summary.unattributed),
       errors(summary.errors),
       lost(summary)
@@ -141,6 +142,15 @@ defmodule PhoenixDevToolbar.Report.Markdown do
 
     headers = ["Callback", "Time", "Queries"] ++ if(origin?, do: ["Origin"], else: [])
     table("## Slowest callbacks", headers, rows)
+  end
+
+  defp heaviest_callback(nil), do: nil
+
+  defp heaviest_callback(c) do
+    callers = Enum.map_join(c.by_caller, ", ", &"#{code(&1.caller || "unknown")} ×#{&1.count}")
+
+    "Heaviest callback: #{code(callback_name(c))}, #{count(c.queries, "query", "queries")}, " <>
+      "#{ms(c.query_us) || "0 ms"}. Callers: #{callers}."
   end
 
   defp callback_name(c) do

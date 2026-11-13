@@ -14,6 +14,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   @type opts :: [base_url: String.t(), assigns_timeout: pos_integer()]
 
   @max_path 2048
+  @group_by %{"caller" => :caller, "origin" => :origin, "callback" => :callback, "sql" => :sql}
   # What `Session.new_sid/0` makes (12 random bytes, URL-safe Base64).
   @captured_sid_shape ~r/\A[A-Za-z0-9_-]{16}\z/
 
@@ -66,7 +67,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "page_queries",
         "List a page's Ecto queries",
-        "The Ecto queries run for a page, with SQL, timings, origin (the Repo call site), caller (the LiveView, controller or on_mount frame that led to it; needs the repo's stacktrace: true), and the callback and event they ran in (span is the callback's seq group, as in page_callbacks; callback is request for a query outside any LiveView callback). noise tags framework queries (check_repo_status: Phoenix.Ecto.CheckRepoStatus), which page_summary leaves out of its counts. Rows are compact by default (no params, times, stacktrace or timestamp; sql cut to 160 bytes, sql_truncated says when): pass verbose: true for full rows. Filter with callback (e.g. handle_event, request), event, span, seq_from and seq_to (inclusive); total counts the filtered rows.",
+        "The Ecto queries run for a page, with SQL, timings, origin (the Repo call site), caller (the LiveView, controller or on_mount frame that led to it; needs the repo's stacktrace: true), and the callback and event they ran in (span is the callback's seq group, as in page_callbacks; callback is request for a query outside any LiveView callback). noise tags framework queries (check_repo_status: Phoenix.Ecto.CheckRepoStatus), which page_summary leaves out of its counts. Rows are compact by default (no params, times, stacktrace or timestamp; sql cut to 160 bytes, sql_truncated says when): pass verbose: true for full rows. Filter with callback (e.g. handle_event, request), event, span, seq_from and seq_to (inclusive); total counts the filtered rows. group_by (caller, origin, callback or sql) returns groups instead of rows: each with key, count, total_us, n_plus_one and the first query's sql, most queries first (noise left out); limit applies to groups, total counts groups and queries_total the queries grouped. Use it to see where the queries of one click go: group_by caller with event, then read the rows of one group with verbose.",
         Map.merge(page_props(), %{
           "limit" => int_prop("Maximum queries to return.", 1, 200, 50),
           "sort" => sort_prop(),
@@ -86,6 +87,12 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
             "description" =>
               "Full rows (full SQL, params, times, stacktrace) instead of compact ones.",
             "default" => false
+          },
+          "group_by" => %{
+            "type" => "string",
+            "enum" => Map.keys(@group_by),
+            "description" =>
+              "Group the queries by caller, origin, callback (with its event) or sql, instead of listing them."
           }
         })
       ),
@@ -303,8 +310,9 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
 
   defp execute("page_queries", args, opts) do
     with {:ok, filters} <- filter_args(args, [:callback, :event], [:span, :seq_from, :seq_to]),
-         {:ok, verbose} <- bool_arg(args, "verbose") do
-      rows("queries", &Report.queries(&1, filters), args, opts, &compact(&1, verbose))
+         {:ok, verbose} <- bool_arg(args, "verbose"),
+         {:ok, group_by} <- group_by_arg(args) do
+      queries(group_by, filters, verbose, args, opts)
     end
   end
 
@@ -549,6 +557,26 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
     ArgumentError -> []
   end
 
+  defp queries(nil, filters, verbose, args, opts),
+    do: rows("queries", &Report.queries(&1, filters), args, opts, &compact(&1, verbose))
+
+  defp queries(by, filters, _verbose, args, opts) do
+    with {:ok, limit} <- int_arg(args, "limit", 50, 1, 200),
+         {:ok, sid} <- resolve(args) do
+      groups = Report.query_groups(sid, by, filters)
+
+      {:ok,
+       %{
+         "sid" => sid,
+         "panel_url" => panel_url(opts, sid),
+         "total" => length(groups),
+         "queries_total" => groups |> Enum.map(& &1.count) |> Enum.sum(),
+         "returned" => min(limit, length(groups)),
+         "groups" => Enum.take(groups, limit)
+       }}
+    end
+  end
+
   defp rows(key, reader, args, opts, shape) do
     with {:ok, limit} <- int_arg(args, "limit", 50, 1, 200),
          {:ok, sort} <- sort_arg(args),
@@ -695,6 +723,15 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
     case Map.get(args, key, default) do
       value when is_integer(value) and value >= min and value <= max -> {:ok, value}
       other -> {:error, "#{key}: an integer from #{min} to #{max}, got #{int_got(other)}."}
+    end
+  end
+
+  # The four names are mapped explicitly: a string never becomes an atom.
+  defp group_by_arg(args) do
+    case Map.get(args, "group_by") do
+      nil -> {:ok, nil}
+      name when is_binary(name) and is_map_key(@group_by, name) -> {:ok, @group_by[name]}
+      _other -> {:error, "group_by: one of #{@group_by |> Map.keys() |> Enum.join(", ")}."}
     end
   end
 
