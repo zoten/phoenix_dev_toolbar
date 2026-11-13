@@ -238,6 +238,7 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert slowest.callback == :mount
       assert %{callback: :handle_event, event: "withdraw", queries: 5} = heaviest
       refute Map.has_key?(heaviest, :params)
+      assert heaviest.span == 2
 
       assert [
                %{caller: a, count: 3, total_us: 30},
@@ -249,6 +250,20 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert b =~ "load_totals"
 
       assert %{params: _} = Report.summary(s.sid, verbose: true).callbacks.heaviest
+    end
+
+    test "heaviest counts noise free queries, as by_caller does" do
+      s = session(:live_view, path: "/hn", view: DemoWeb.PageLive)
+      callback(s, :mount, span: 1)
+      callback(s, :handle_event, span: 2, event: "go")
+      noise = ~s(CREATE TABLE IF NOT EXISTS "schema_migrations" (x\))
+      for _ <- 1..3, do: query(s, span: 1, sql: noise)
+      for _ <- 1..2, do: query(s, span: 2, sql: "SELECT real")
+
+      assert %{callbacks: %{heaviest: %{callback: :handle_event, span: 2, by_caller: [tally]}}} =
+               Report.summary(s.sid)
+
+      assert tally.count == 2
     end
 
     test "heaviest is nil when no callback ran a query" do

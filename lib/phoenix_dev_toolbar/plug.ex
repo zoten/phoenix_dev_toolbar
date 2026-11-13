@@ -434,11 +434,22 @@ defmodule PhoenixDevToolbar.Plug do
   # any failure leaves the response untouched.
   @spec before_send(Conn.t(), map()) :: Conn.t()
   def before_send(%Conn{private: %{phoenix_dev_toolbar: %{sid: sid} = info}} = conn, opts) do
+    # `Label.resolve/1` never raises: its conn (with the label cookie) is the
+    # one every later failure path returns.
     {conn, label} = Label.resolve(conn)
+    finish(conn, sid, info, label, opts)
+  after
+    # The response is done, whatever happened: keep the mark for
+    # `router_dispatch :stop`, but stop resolving this connection process as a
+    # `$callers` parent. `forget_pid/0` rescues the only error it can raise.
+    Attribution.forget_pid()
+  end
+
+  defp finish(conn, sid, info, label, opts) do
     Label.store(sid, label)
-    {conn, injected?} = maybe_inject(conn, sid, opts)
-    record(conn, info, injected?, label)
-    conn
+    {injected, injected?} = maybe_inject(conn, sid, opts)
+    record(injected, info, injected?, label)
+    injected
   catch
     # Every class: a throw or exit must not escape into the host's send_resp.
     kind, reason ->
@@ -451,11 +462,6 @@ defmodule PhoenixDevToolbar.Plug do
       )
 
       conn
-  after
-    # The response is done, whatever happened: keep the mark for
-    # `router_dispatch :stop`, but stop resolving this connection process as a
-    # `$callers` parent. `forget_pid/0` rescues the only error it can raise.
-    Attribution.forget_pid()
   end
 
   defp maybe_inject(%Conn{state: :set, status: 200, resp_body: body} = conn, sid, opts)

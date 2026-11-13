@@ -28,7 +28,7 @@ Store, built for IEx and agents:
   `before_send` (the host's request process, once per tracked page): the `?pdt_label=`
   param, else the `_pdt_label` cookie, else the `label:` config (`{Mod, :fun}` or a
   1-arity function of the conn, reading `conn.assigns` only). `?pdt_label=alice` sets the
-  cookie (`http_only`, `SameSite=Lax`, path `/`, session lifetime); an empty `?pdt_label=`
+  cookie (`http_only`, `SameSite=Lax`, `Secure` over https, path `/`, session lifetime); an empty `?pdt_label=`
   clears it and falls through to `label:`. The param is read from `conn.query_string` and
   the cookie from the raw `cookie` header, only when they contain the name (no
   `fetch_query_params` or `fetch_cookies`, which mutate the host conn); `pdt_label` stays in
@@ -36,13 +36,16 @@ Store, built for IEx and agents:
   and yields nil, a non-string return is nil, an invalid `label:` value is a boot warning.
   The label is cleaned (control characters stripped, trimmed, at most 64 bytes cut on a
   UTF-8 boundary, empty is nil) and written on the request session with one ETS update;
-  a LiveView session reads its request's label through `parent` (at most 10 hops).
+  a LiveView session copies its parent's label on creation (one lookup, so it outlives
+  a swept request) and reads fall back to `parent` (at most 10 hops). Integers and atoms
+  become text (an id works), booleans and nil give none; text is cut to 256 bytes before
+  cleaning, and format characters (bidi overrides, zero width) are stripped too.
   `sessions(label: "alice")` filters by exact match, `markdown/2` shows it in the heading
   and the Request tab on the response row. A label may hold personal data (an email):
   prefer an id or a persona name; it lives only in the dev Store until it expires.
 - `summary/2` gives one compact map per page: the request, query count, failures
   and total time with the 5 slowest queries, N+1 groups, callback totals with the
-  5 slowest and `callbacks.heaviest` (the real callback with the most queries, tie: more query time, nil when none ran a query; a callback brief plus `by_caller`, the top 5 callers of its queries as `caller`, `count`, `total_us`), render totals, errors, and the events lost to the caps. The slowest
+  5 slowest and `callbacks.heaviest` (the real callback with the most counted (noise free) queries, tie: more query time, nil when none ran a query; a callback brief plus its `span` and `by_caller`, the top 5 callers of its queries as `caller`, `count`, `total_us`), render totals, errors, and the events lost to the caps. The slowest
   queries, slowest callbacks and errors are briefs by default (no SQL, params,
   assigns changes, times or stacktrace; an error keeps its first frame as
   `origin`; LiveView crashes carry their stacktrace in call order, cut after the last host frame plus one, and `origin` is their first host frame, ADR 07; an error carries `stack_args`, the call arguments of its frames, only when the developer set `stack_args: [agents: true]`, ADR 03): `verbose: true` returns the full items, `queries/2`, `callbacks/2`

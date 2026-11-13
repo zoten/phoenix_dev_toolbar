@@ -12,7 +12,7 @@ defmodule PhoenixDevToolbar.McpHint do
 
   @flag {__MODULE__, :logged}
 
-  @doc "Logs the MCP URL once per boot (not when MCP is off)."
+  @doc "Logs the MCP URL once per boot, on the first loopback request (not when MCP is off)."
   @spec announce(Plug.Conn.t(), String.t()) :: :ok
   def announce(conn, base_path) do
     case :persistent_term.get(@flag, false) do
@@ -30,14 +30,20 @@ defmodule PhoenixDevToolbar.McpHint do
     :ok
   end
 
+  # Only a loopback client counts: another machine's request leaves the flag
+  # unset, so a later local one logs the line (the URL an agent here can use).
   defp first(conn, base_path) do
-    :persistent_term.put(@flag, true)
+    case Config.mcp?() and loopback_client?(conn) do
+      true ->
+        :persistent_term.put(@flag, true)
+        Logger.info(message(conn, base_path))
 
-    case Config.mcp?() do
-      true -> Logger.info(message(conn, base_path))
-      false -> :ok
+      false ->
+        :ok
     end
   end
+
+  defp loopback_client?(%{remote_ip: ip}), do: loopback?(ip)
 
   defp message(conn, base_path) do
     url = Endpoint.base_url(conn, base_path) <> "/mcp"
@@ -68,6 +74,7 @@ defmodule PhoenixDevToolbar.McpHint do
   end
 
   defp loopback?({127, _b, _c, _d}), do: true
+  defp loopback?({0, 0, 0, 0, 0, 65_535, high, _low}), do: div(high, 256) == 127
   defp loopback?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
   defp loopback?(_ip), do: false
 end

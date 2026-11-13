@@ -74,7 +74,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "page_queries",
         "List a page's Ecto queries",
-        "The Ecto queries run for a page, with SQL, timings, origin (the Repo call site), caller (the LiveView, controller or on_mount frame that led to it; needs the repo's stacktrace: true), and the callback and event they ran in (span is the callback's seq group, as in page_callbacks; callback is request for a query outside any LiveView callback). noise tags framework queries (check_repo_status: Phoenix.Ecto.CheckRepoStatus), which page_summary leaves out of its counts. Rows are compact by default (no params, times, stacktrace or timestamp; sql cut to 160 bytes, sql_truncated says when): pass verbose: true for full rows. Filter with callback (e.g. handle_event, request), event, span, seq_from and seq_to (inclusive); total counts the filtered rows. group_by (caller, origin, callback or sql) returns groups instead of rows: each with key, count, total_us, n_plus_one and the first query's sql, most queries first (noise left out); limit applies to groups, total counts groups and queries_total the queries grouped. Use it to see where the queries of one click go: group_by caller with event, then read the rows of one group with verbose.",
+        "The Ecto queries run for a page, with SQL, timings, origin (the Repo call site), caller (the LiveView, controller or on_mount frame that led to it; needs the repo's stacktrace: true), and the callback and event they ran in (span is the callback's seq group, as in page_callbacks; callback is request for a query outside any LiveView callback). noise tags framework queries (check_repo_status: Phoenix.Ecto.CheckRepoStatus), which page_summary leaves out of its counts. Rows are compact by default (no params, times, stacktrace or timestamp; sql cut to 160 bytes, sql_truncated says when): pass verbose: true for full rows. Filter with callback (e.g. handle_event, request), event, span, seq_from and seq_to (inclusive); total counts the filtered rows. group_by (caller, origin, callback or sql) returns groups instead of rows: each with key, count, total_us, n_plus_one and the first query's sql, most queries first (noise left out); limit applies to groups, total counts groups and queries_total the queries grouped. sort and verbose do not apply to groups. Use it to see where the queries of one click go: group_by caller with event, then read the rows of one group with verbose.",
         Map.merge(page_props(), %{
           "limit" => int_prop("Maximum queries to return.", 1, 200, 50),
           "sort" => sort_prop(),
@@ -246,8 +246,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
          {:ok, label} <- string_arg(args, "label"),
          {:ok, since} <- since_arg(args),
          {:ok, limit} <- int_arg(args, "limit", 10, 1, 50) do
-      by_label = if(label, do: [label: label], else: [])
-      filter = PageLookup.filter(path: path, path_prefix: prefix) ++ since ++ by_label
+      filter = PageLookup.filter(path: path, path_prefix: prefix) ++ since ++ label_filter(label)
       pages = pages(filter, limit)
 
       {:ok, %{"pages" => Enum.map(pages, &Map.put(&1, :panel_url, panel_url(opts, &1.sid)))}}
@@ -554,6 +553,9 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       "since: that is not a captured page sid or an ISO 8601 time. Pass a sid from " <>
         "list_pages or a timestamp such as 2026-11-11T10:00:00Z."
 
+  defp label_filter(nil), do: []
+  defp label_filter(label), do: [label: label]
+
   defp exclusive(path, prefix) when is_binary(path) and is_binary(prefix),
     do: {:error, "Use path or path_prefix, not both."}
 
@@ -563,8 +565,8 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   defp pages(filter, limit) do
     all = Label.inherit(Store.sessions())
 
-    filter
-    |> Report.sessions()
+    all
+    |> Report.sessions_in(filter)
     |> reject_mounts(all)
     |> Enum.take(limit)
     |> with_live_views(all)
@@ -683,12 +685,15 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       %{kind: :request, sid: sid} = page ->
         {shown, cut} = by_parent |> Map.get(sid, []) |> Enum.split(@live_views_cap)
         page = Map.put(page, :live_views, Enum.map(shown, &live_view/1))
-        if cut == [], do: page, else: Map.put(page, :live_views_more, length(cut))
+        maybe_more(page, cut)
 
       page ->
         page
     end)
   end
+
+  defp maybe_more(page, []), do: page
+  defp maybe_more(page, cut), do: Map.put(page, :live_views_more, length(cut))
 
   defp live_view(session) do
     %{

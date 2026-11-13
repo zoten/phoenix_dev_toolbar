@@ -107,8 +107,11 @@ interfere with the host's LiveSocket, DOM patching or CSP.
     pushes the page down).
   - `left` and `right`: a block cannot reserve width, so the loader sets an inline
     `padding-left` or `padding-right` on `<html>`: the host's computed padding plus the
-    toolbar, `!important`. This is the toolbar's **only write to a host element**: the
-    host's own inline value is put back whenever the dock changes or the toolbar hides.
+    toolbar, `!important`. The host's own inline value is put back whenever the dock
+    changes or the toolbar hides.
+  - The second host-facing write is the opt-in `_pdt_label` cookie (dev only, set only
+    when a page request carries `?pdt_label=`, ADR 13). These two are the toolbar's only
+    writes to the host page and browser.
   - Limits: reserving space only helps when the document is the scroller (an app shell
     that scrolls an inner `overflow: auto` container stays covered, and a full height
     shell gains a 34px document scroll), host `position: fixed` chrome stays under the

@@ -356,11 +356,13 @@ defmodule PhoenixDevToolbar.Report do
         }
 
   @typedoc """
-  The callback with the most queries: a `t:callback_brief/0` (a `t:callback/0`
-  with `verbose: true`) plus `by_caller`, the top #{@heaviest_callers} callers of its queries.
+  The callback with the most queries (framework queries not counted): a
+  `t:callback_brief/0` (a `t:callback/0` with `verbose: true`) plus `span` (its
+  seq group, for `queries/2`'s `span:`) and `by_caller`, the top #{@heaviest_callers} callers of its queries.
   """
   @type heaviest_callback :: %{
           required(:by_caller) => [caller_tally()],
+          required(:span) => non_neg_integer() | nil,
           optional(atom()) => term()
         }
 
@@ -395,8 +397,8 @@ defmodule PhoenixDevToolbar.Report do
   `queries.noise`. `callbacks` counts real callbacks only. `unattributed` counts the queries of
   LiveView sessions that no callback or render owns (usually `handle_info` or
   PubSub reloads), with its top #{@unattributed_origins} `origins` by time.
-  `callbacks.heaviest` is the real callback with the most queries (tie: more
-  query time), nil when none ran a query.
+  `callbacks.heaviest` is the real callback with the most counted (noise free)
+  queries (tie: more query time), nil when none ran a query.
   """
   @type summary :: %{
           sids: [sid()],
@@ -499,9 +501,12 @@ defmodule PhoenixDevToolbar.Report do
   unknown sid or any other value gives `[]`, never a raise).
   """
   @spec sessions([sessions_opt()]) :: [session()]
-  def sessions(opts \\ []) do
-    all = all_sessions()
+  def sessions(opts \\ []), do: sessions_in(all_sessions(), opts)
 
+  @doc false
+  # `sessions/1` over an already read (and label inherited) session list.
+  @spec sessions_in([Session.t()], [sessions_opt()]) :: [session()]
+  def sessions_in(all, opts) do
     all
     |> Enum.filter(&matches?(&1, opts))
     |> since(all, opts[:since])
@@ -646,14 +651,15 @@ defmodule PhoenixDevToolbar.Report do
   def query_groups(target, by, opts \\ []) when by in @group_keys do
     rows = queries(target, opts)
 
-    rows =
-      if Keyword.get(opts, :noise, false), do: rows, else: Enum.reject(rows, &is_binary(&1.noise))
-
     rows
+    |> maybe_reject_noise(Keyword.get(opts, :noise, false))
     |> Enum.group_by(&group_key(&1, by))
     |> Enum.map(fn {key, group} -> query_group(key, group, by) end)
     |> Enum.sort_by(&{-&1.count, -&1.total_us})
   end
+
+  defp maybe_reject_noise(rows, true), do: rows
+  defp maybe_reject_noise(rows, _false), do: Enum.reject(rows, &is_binary(&1.noise))
 
   defp query_group(key, [first | _] = group, by) do
     %{
@@ -680,17 +686,23 @@ defmodule PhoenixDevToolbar.Report do
   # top callers of the queries that ran in its {sid, span}.
   defp heaviest(callbacks, queries, brief) do
     callbacks
-    |> Enum.filter(&(&1.queries > 0))
-    |> Enum.max_by(&{&1.queries, &1.query_us}, fn -> nil end)
-    |> heaviest_item(queries, brief)
+    |> Enum.map(&{&1, noise_free_queries(&1, queries)})
+    |> Enum.filter(fn {_callback, own} -> own != [] end)
+    |> Enum.max_by(fn {_callback, own} -> {length(own), total(own)} end, fn -> nil end)
+    |> heaviest_item(brief)
   end
 
-  defp heaviest_item(nil, _queries, _brief), do: nil
+  # The counted (noise free) queries of a callback's {sid, span}: the pick and
+  # `by_caller` read the same rows.
+  defp noise_free_queries(callback, queries) do
+    Enum.filter(queries, &(&1.sid == callback.sid and &1.span == callback.span))
+  end
 
-  defp heaviest_item(callback, queries, brief) do
+  defp heaviest_item(nil, _brief), do: nil
+
+  defp heaviest_item({callback, own}, brief) do
     by_caller =
-      queries
-      |> Enum.filter(&(&1.sid == callback.sid and &1.span == callback.span))
+      own
       |> Enum.group_by(& &1.caller)
       |> Enum.map(fn {caller, group} ->
         %{caller: caller, count: length(group), total_us: total(group)}
@@ -698,7 +710,9 @@ defmodule PhoenixDevToolbar.Report do
       |> Enum.sort_by(&{-&1.count, -&1.total_us})
       |> Enum.take(@heaviest_callers)
 
-    callback |> brief.(@callback_brief) |> Map.put(:by_caller, by_caller)
+    callback
+    |> brief.(@callback_brief)
+    |> Map.merge(%{span: callback.span, by_caller: by_caller})
   end
 
   defp matching(rows, opts, keys) do

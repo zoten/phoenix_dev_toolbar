@@ -79,8 +79,26 @@ defmodule PhoenixDevToolbar.McpHintTest do
     end
   end
 
-  test "nothing is logged when mcp is off" do
+  test "nothing is logged when mcp is off, and the line still comes once it is on" do
     put_app_env(:mcp, false)
     refute hit(page()) =~ "MCP at"
+    assert :persistent_term.get({McpHint, :logged}, false) == false
+
+    put_app_env(:mcp, :loopback)
+    assert hit(page()) =~ "MCP at"
+  end
+
+  test "only a loopback client sets the flag: a remote request leaves it for a local one" do
+    remote = %{page() | remote_ip: {192, 168, 1, 20}}
+    refute hit(remote) =~ "MCP at"
+    assert hit(page()) =~ "MCP at"
+    refute hit(page()) =~ "MCP at"
+  end
+
+  test "IPv6 loopback and mapped IPv4 loopback clients count as local" do
+    for ip <- [{0, 0, 0, 0, 0, 0, 0, 1}, {0, 0, 0, 0, 0, 65_535, 0x7F00, 1}] do
+      McpHint.reset()
+      assert hit(%{page() | remote_ip: ip}) =~ "MCP at"
+    end
   end
 end

@@ -9,8 +9,10 @@ defmodule PhoenixDevToolbar.LabelTest do
   import PhoenixDevToolbar.JsonHelpers, only: [builtin_json_decode!: 1]
   import PhoenixDevToolbar.PageHelpers
 
+  alias PhoenixDevToolbar.Label
   alias PhoenixDevToolbar.Mcp.Tools
   alias PhoenixDevToolbar.Report
+  alias PhoenixDevToolbar.Session
   alias PhoenixDevToolbar.Store
 
   @flag {PhoenixDevToolbar.Label, :function_failed}
@@ -30,7 +32,7 @@ defmodule PhoenixDevToolbar.LabelTest do
   def boom(_conn), do: raise("boom")
   def throws(_conn), do: throw(:nope)
   def exits(_conn), do: exit(:gone)
-  def not_text(_conn), do: 42
+  def not_text(_conn), do: %{id: 42}
 
   defp label_of(sid) do
     assert %{label: label} = Report.sessions() |> Enum.find(&(&1.sid == sid))
@@ -77,8 +79,8 @@ defmodule PhoenixDevToolbar.LabelTest do
           end)
 
         case unquote(fun) do
-          :not_text -> refute log =~ "label: function failed"
-          _failing -> assert log =~ "label: function failed"
+          :not_text -> refute log =~ "the label function failed"
+          _failing -> assert log =~ "the label function failed"
         end
       end
     end
@@ -92,7 +94,7 @@ defmodule PhoenixDevToolbar.LabelTest do
           load("/demo")
         end)
 
-      assert length(String.split(log, "label: function failed")) == 2
+      assert length(String.split(log, "the label function failed")) == 2
     end
 
     test "an invalid value is a boot warning and no label" do
@@ -170,6 +172,89 @@ defmodule PhoenixDevToolbar.LabelTest do
       assert PhoenixDevToolbar.Label.sanitize("\n \t") == nil
       assert PhoenixDevToolbar.Label.sanitize(<<0xFF, "ok">>) == "ok"
       assert PhoenixDevToolbar.Label.sanitize(nil) == nil
+    end
+  end
+
+  describe "sanitizing more" do
+    test "integers and atoms become text, booleans and nil give none" do
+      assert Label.sanitize(42) == "42"
+      assert Label.sanitize(:alice) == "alice"
+      assert Label.sanitize(true) == nil
+      assert Label.sanitize(false) == nil
+      assert Label.sanitize(nil) == nil
+    end
+
+    test "format characters (bidi override, zero width) are stripped" do
+      assert Label.sanitize("al\u202Eic\u200Be\uFEFF") == "alice"
+    end
+
+    test "a huge label is cut before the regex runs" do
+      assert Label.sanitize(String.duplicate("a", 1_000_000)) == String.duplicate("a", 64)
+    end
+
+    test "an integer id from the label function labels the page" do
+      put_app_env(:label, fn _conn -> 7 end)
+      {_conn, sid} = load("/demo")
+      assert label_of(sid) == "7"
+    end
+  end
+
+  describe "inherit" do
+    defp chain(count, root_label) do
+      for i <- 0..(count - 1) do
+        %Session{
+          sid: "s#{i}",
+          kind: :live_view,
+          started_at: i,
+          parent: if(i == 0, do: nil, else: "s#{i - 1}"),
+          label: if(i == 0, do: root_label)
+        }
+      end
+    end
+
+    test "walks at most 10 hops" do
+      assert %{label: "x"} = chain(11, "x") |> Label.inherit() |> Enum.at(10)
+      assert %{label: nil} = chain(12, "x") |> Label.inherit() |> Enum.at(11)
+    end
+
+    test "a parent cycle ends with no label" do
+      a = %Session{sid: "a", kind: :live_view, started_at: 1, parent: "b"}
+      b = %Session{sid: "b", kind: :live_view, started_at: 2, parent: "a"}
+      assert [%{label: nil}, %{label: nil}] = Label.inherit([a, b])
+    end
+  end
+
+  describe "label survives and cookies" do
+    test "a connected mount keeps the label once its request is swept" do
+      {_host, _sid} = visit("/demo?pdt_label=alice")
+      [request] = Report.sessions(kind: :request)
+      Store.sweep(System.system_time(:microsecond) + :timer.hours(1) * 1000)
+      assert Store.session(request.sid) == :error
+
+      assert [%{label: "alice", sid: mount_sid}] = Report.sessions(kind: :live_view)
+      assert [%{sid: ^mount_sid}] = Report.sessions(label: "alice")
+      assert Report.summary(mount_sid).session.label == "alice"
+    end
+
+    test "the host's own cookie and _pdt_label are both sent, Secure only over https" do
+      sent = fn scheme, query ->
+        :get
+        |> Plug.Test.conn("/page" <> query)
+        |> Map.put(:scheme, scheme)
+        |> browser_headers()
+        |> PhoenixDevToolbar.Plug.call(PhoenixDevToolbar.Plug.init([]))
+        |> Plug.Conn.put_resp_cookie("host_cookie", "1")
+        |> Plug.Conn.put_resp_content_type("text/html")
+        |> Plug.Conn.send_resp(200, "<html><body>hi</body></html>")
+      end
+
+      http = sent.(:http, "?pdt_label=alice")
+
+      assert %{"host_cookie" => _, "_pdt_label" => %{http_only: true, same_site: "Lax"} = c} =
+               http.resp_cookies
+
+      refute c[:secure]
+      assert %{"_pdt_label" => %{secure: true}} = sent.(:https, "?pdt_label=bob").resp_cookies
     end
   end
 
