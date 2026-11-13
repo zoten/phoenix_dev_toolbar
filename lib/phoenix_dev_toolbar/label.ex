@@ -18,6 +18,7 @@ defmodule PhoenixDevToolbar.Label do
   @cookie "_pdt_label"
   @param "pdt_label"
   @max_bytes 64
+  @scan_bytes 256
   @max_hops 10
   @flag {__MODULE__, :function_failed}
 
@@ -44,29 +45,52 @@ defmodule PhoenixDevToolbar.Label do
     _kind, _reason -> {conn, nil}
   end
 
+  @doc """
+  The label of the session `parent` sid, for a new LiveView session: one ETS
+  lookup, nil when the parent is gone or has none. Never raises.
+  """
+  @spec parent_label(Session.sid() | nil) :: String.t() | nil
+  def parent_label(parent) when is_binary(parent) do
+    case Store.session(parent) do
+      {:ok, %Session{label: label}} -> label
+      :error -> nil
+    end
+  rescue
+    ArgumentError -> nil
+  end
+
+  def parent_label(_parent), do: nil
+
   @doc "Writes `label` on the request session: one ETS update, nothing when nil."
   @spec store(Session.sid(), String.t() | nil) :: :ok | :error
   def store(_sid, nil), do: :ok
   def store(sid, label), do: Store.put_label(sid, label)
 
-  @doc "Cleans a label: printable, trimmed, at most 64 bytes on a UTF-8 boundary; nil when empty or not text."
+  @doc "Cleans a label: printable (no control, format or separator characters), trimmed, at most 64 bytes on a UTF-8 boundary; integers and atoms become text (booleans and nil: nil); nil when empty or not text."
   @spec sanitize(term()) :: String.t() | nil
   def sanitize(label) when is_binary(label) do
     label
+    |> Truncate.prefix(@scan_bytes)
     |> String.replace_invalid("")
-    |> String.replace(~r/[\p{Cc}\p{Zl}\p{Zp}]/u, "")
+    |> String.replace(~r/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u, "")
     |> String.trim()
     |> Truncate.prefix(@max_bytes)
     |> String.trim()
     |> blank_to_nil()
   end
 
+  def sanitize(label) when is_integer(label), do: label |> Integer.to_string() |> sanitize()
+  def sanitize(label) when is_boolean(label), do: nil
+
+  def sanitize(label) when is_atom(label) and label != nil,
+    do: label |> Atom.to_string() |> sanitize()
+
   def sanitize(_other), do: nil
 
   @doc """
-  Gives every session without a label its request ancestor's, walking `parent`
-  at most #{@max_hops} hops (so a cycle ends). A read time rule: the hot path
-  writes the label on the request only.
+  Gives every session without a label its ancestor's, walking `parent` at most
+  #{@max_hops} hops (so a cycle ends). A read time fallback: a LiveView session
+  copies its parent's label when it is created (`parent_label/1`).
   """
   @spec inherit([Session.t()]) :: [Session.t()]
   def inherit(sessions) do
@@ -109,14 +133,14 @@ defmodule PhoenixDevToolbar.Label do
   defp apply_param(conn, %{@param => value}) when is_binary(value) do
     case sanitize(value) do
       nil ->
-        {Conn.delete_resp_cookie(conn, @cookie, cookie_opts()), :cleared}
+        {Conn.delete_resp_cookie(conn, @cookie, cookie_opts(conn)), :cleared}
 
       label ->
         {Conn.put_resp_cookie(
            conn,
            @cookie,
            Base.url_encode64(label, padding: false),
-           cookie_opts()
+           cookie_opts(conn)
          ), label}
     end
   end
@@ -124,7 +148,8 @@ defmodule PhoenixDevToolbar.Label do
   defp apply_param(conn, _params), do: {conn, nil}
 
   # Session lifetime (no max_age), dev only: the plug is a no-op in prod.
-  defp cookie_opts, do: [http_only: true, same_site: "Lax", path: "/"]
+  defp cookie_opts(conn),
+    do: [http_only: true, same_site: "Lax", path: "/", secure: conn.scheme == :https]
 
   defp cookie_label(%Conn{} = conn) do
     header = conn |> Conn.get_req_header("cookie") |> Enum.join("; ")
@@ -169,8 +194,8 @@ defmodule PhoenixDevToolbar.Label do
         :persistent_term.put(@flag, true)
 
         Logger.warning(
-          "[phoenix_dev_toolbar] label: function failed, pages get no label from it " <>
-            "(logged once): " <> Truncate.banner(kind, reason)
+          "[phoenix_dev_toolbar] the label function failed (first failure shown, logged once); " <>
+            "pages where it fails get no label: " <> Truncate.banner(kind, reason)
         )
 
         nil

@@ -20,8 +20,10 @@ host's hot path).
   request process dictionary (`:pdt_sid`) and in `conn.private`, and embeds it in
   the injected loader (ADR 04).
 - A request `Session` also carries an actor `label` (at most 64 printable bytes), written in
-  the plug's `before_send` with one ETS update (ADR 13). LiveView sessions get theirs
-  at read time through `parent`, so no telemetry handler changes.
+  the plug's `before_send` with one ETS update (ADR 13). A LiveView session copies its
+  parent's label when it is created (one parent lookup, only on session creation, nil
+  when the parent is gone, never raising), so the label survives the parent's sweep;
+  reads also fall back to `parent` (at most 10 hops). Other handlers are unchanged.
 - The LiveView `socket.id` (`"phx-" <> random`) is generated during the dead render,
   signed into the session and reused by the connected mount, and it is the `id` of the
   `[data-phx-main]` element. So on `[:phoenix, :live_view, :mount, :start]`:

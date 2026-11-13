@@ -16,6 +16,7 @@ defmodule PhoenixDevToolbar.Tracker do
 
   alias Phoenix.LiveView.Socket
   alias PhoenixDevToolbar.Attribution
+  alias PhoenixDevToolbar.Label
   alias PhoenixDevToolbar.LiveViewCompat
   alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.Session
@@ -61,6 +62,7 @@ defmodule PhoenixDevToolbar.Tracker do
         session =
           Session.new(:live_view,
             parent: parent,
+            label: Label.parent_label(parent),
             owner: self(),
             transport: tab_transport(info),
             view: info.view,

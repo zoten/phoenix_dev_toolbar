@@ -166,7 +166,7 @@ config :phoenix_dev_toolbar,
   # shortcut: "ctrl+shift+d",
   # Who a page belongs to when several people or personas share one server: shown in the
   # Request tab, on `Report` sessions and `list_pages`, and filterable by `label`. Reads
-  # `conn.assigns` only (no queries): it runs in your request process. An id or a persona
+  # `conn.assigns` only (no queries): it runs in your request process. An id (an integer is fine) or a persona
   # name beats an email. `?pdt_label=alice` on any page request tags that browser with a
   # `_pdt_label` cookie (`?pdt_label=` clears it) and wins over this function.
   # label: fn conn -> conn.assigns[:current_scope] && conn.assigns.current_scope.user.id end,
