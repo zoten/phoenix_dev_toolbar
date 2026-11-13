@@ -93,6 +93,18 @@ and `Report`.
   named after its query. The plan (Postgres' text lines, otherwise
   `Ecto.Adapters.SQL.format_table/1`), truncated to 8 KB, or the error, replaces the row.
 
+**Filter** (`PhoenixDevToolbar.QueryTags`, pure; the row under the export form).
+- One toggle chip per source table of the page (sorted, at most 50; the rest are counted
+  and stay shown), then `no source`, `framework` and `task`, each with its page count, plus
+  `all` and `none`. Everything starts shown; a query is hidden when any of its tags is off.
+  A counter shows `N of M shown`.
+- View only: the toolbar badge, the N+1 list, the export and the report API stay unfiltered.
+- Hidden tags live in the tab's component and outlive the page (so `framework` stays off
+  while navigating); tags new to a page start shown. Only tags of the page's queries are
+  accepted from the browser, as strings: a client never grows the set.
+- A toggle re-reads the events already delivered from the Store (newer ones are still on
+  their way to `handle_events/2`) and resets the stream; open details and plans are kept.
+
 **Export** (`PhoenixDevToolbar.EctoExport`, pure; the form above the Ecto tab's list).
 - Two formats of the page's queries (its sids, read from the Store, oldest first):
   `short` (seq, SQL, params, location: the origin frame) and `full` (adds time, duration,

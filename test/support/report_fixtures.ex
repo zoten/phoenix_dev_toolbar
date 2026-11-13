@@ -25,7 +25,7 @@ defmodule PhoenixDevToolbar.ReportFixtures do
       repo: DemoWeb.SQLiteRepo,
       sql: Keyword.get(opts, :sql, "SELECT * FROM users WHERE id = ?"),
       params: "[1]",
-      source: "users",
+      source: Keyword.get(opts, :source, "users"),
       result: Keyword.get(opts, :result, {:ok, 1}),
       times: %{query_time: 90, queue_time: 10},
       stacktrace: Keyword.get(opts, :stacktrace, ["lib/app.ex:10: App.list/0"]),

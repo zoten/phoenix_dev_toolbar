@@ -413,6 +413,10 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 .pdt-export { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 12px; border-block-end: 1px solid var(--pdt-border); font-size: 0.6875rem; }
 .pdt-export__label { font-weight: 600; color: var(--pdt-muted); }
 .pdt-export label { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
+.pdt-filter__chip { padding: 0 6px; border: 1px solid var(--pdt-border); border-radius: 3px; background: transparent; color: var(--pdt-muted); font: inherit; cursor: pointer; text-decoration: line-through; }
+.pdt-filter__chip[aria-pressed="true"] { color: var(--pdt-fg); background: var(--pdt-bg-alt); text-decoration: none; }
+.pdt-filter__chip:hover { border-color: var(--pdt-accent); }
+.pdt-filter__count { color: var(--pdt-muted); font-family: var(--pdt-mono); }
 .pdt-n-plus-one { border-block-end: 1px solid var(--pdt-border); background: var(--pdt-bg-alt); }
 .pdt-n-plus-one__head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 0; }
 .pdt-n-plus-one__title { margin: 0; font-size: 0.75rem; color: var(--pdt-warn); }

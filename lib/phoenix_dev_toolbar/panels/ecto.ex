@@ -8,6 +8,8 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   # Export (EctoExport): Download is a same-origin link the plug answers; Copy
   # pushes the JSON to the PdtExport hook, built in start_async since a full
   # export may run EXPLAINs. One EXPLAIN or copy at a time.
+  # Filter (QueryTags): view only. Hidden tags outlive the page; a toggle
+  # re-reads the delivered events from the Store and resets the stream.
 
   use PhoenixDevToolbar.Panel
 
@@ -18,7 +20,9 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   alias PhoenixDevToolbar.Explain
   alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.NPlusOne
+  alias PhoenixDevToolbar.PageData
   alias PhoenixDevToolbar.Plugins
+  alias PhoenixDevToolbar.QueryTags
   alias PhoenixDevToolbar.Store
   alias PhoenixDevToolbar.Truncate
 
@@ -27,6 +31,8 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
   # Expanded rows and EXPLAIN plans kept beside the stream (rows render their
   # details only when open, ADR 04): the newest seqs win.
   @side_limit 50
+  # Source chips in the filter row; the others stay shown.
+  @chip_limit 50
 
   @impl Phoenix.LiveComponent
   def mount(socket) do
@@ -44,14 +50,17 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
        explaining: nil,
        exporting: nil,
        queries?: false,
-       export_choice: %{format: "short", explain?: false}
+       export_choice: %{format: "short", explain?: false},
+       hidden: MapSet.new(),
+       tag_counts: %{},
+       total: 0,
+       visible: 0,
+       upto: 0
      )}
   end
 
   @impl PhoenixDevToolbar.Panel
   def handle_reset(events, socket) do
-    threshold = Plugins.Ecto.n_plus_one(socket.assigns[:config])
-
     # A new page: an EXPLAIN still running is stopped, so it never holds a
     # pool connection past its page (the task's exit rolls it back).
     socket =
@@ -59,20 +68,40 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
       |> cancel_explain()
       |> cancel_export()
       |> assign(
+        open: MapSet.new(),
+        plans: %{},
+        explaining: nil,
+        exporting: nil
+      )
+
+    restream(socket, events)
+  end
+
+  # Folds `events` from scratch and replaces the rows with the visible ones.
+  # Plans and open details are kept: the rows that come back keep them.
+  defp restream(socket, events) do
+    threshold = Plugins.Ecto.n_plus_one(socket.assigns[:config])
+
+    socket =
+      assign(socket,
         n_plus_one: NPlusOne.new(threshold),
         groups: [],
         detected: 0,
         flagged: MapSet.new(),
         shown: :queue.new(),
-        open: MapSet.new(),
-        plans: %{},
-        explaining: nil,
-        exporting: nil,
-        queries?: false
+        queries?: false,
+        tag_counts: %{},
+        total: 0,
+        visible: 0,
+        upto: 0
       )
 
     {queries, socket} = detect(events, socket)
-    stream(socket, :queries, queries, reset: true, limit: -@dom_limit)
+
+    stream(socket, :queries, Enum.map(queries, &with_side(socket, &1)),
+      reset: true,
+      limit: -@dom_limit
+    )
   end
 
   @impl PhoenixDevToolbar.Panel
@@ -95,6 +124,8 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
       end)
 
     queries = Enum.filter(marked, &(&1.kind == :query))
+    hidden = socket.assigns.hidden
+    visible = Enum.filter(queries, &QueryTags.visible?(&1.data, hidden))
 
     socket =
       socket
@@ -102,10 +133,17 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
       |> assign(:groups, NPlusOne.groups(n_plus_one))
       |> assign(:detected, NPlusOne.detected(n_plus_one))
       |> update(:flagged, &flag(&1, queries))
-      |> update(:shown, &show(&1, queries))
+      |> update(:shown, &show(&1, visible))
       |> update(:queries?, &(&1 or queries != []))
+      |> update(
+        :tag_counts,
+        &Enum.reduce(queries, &1, fn q, acc -> QueryTags.count(acc, q.data) end)
+      )
+      |> update(:total, &(&1 + length(queries)))
+      |> update(:visible, &(&1 + length(visible)))
+      |> update(:upto, &Enum.reduce(events, &1, fn event, upto -> max(event.seq || 0, upto) end))
 
-    {queries, socket}
+    {visible, socket}
   end
 
   defp mark(event, :ok), do: event
@@ -214,6 +252,24 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
 
   def handle_event("toggle_details", _params, socket), do: {:noreply, socket}
 
+  # Only tags of this page's queries: the client never grows `hidden`.
+  def handle_event("filter", %{"tag" => tag}, socket) when is_binary(tag) do
+    case Map.has_key?(socket.assigns.tag_counts, tag) do
+      true -> {:noreply, socket |> update(:hidden, &QueryTags.toggle(&1, tag)) |> refilter()}
+      false -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("filter", _params, socket), do: {:noreply, socket}
+
+  def handle_event("filter_all", _params, socket),
+    do: {:noreply, socket |> assign(:hidden, MapSet.new()) |> refilter()}
+
+  def handle_event("filter_none", _params, socket) do
+    tags = Map.keys(socket.assigns.tag_counts)
+    {:noreply, socket |> update(:hidden, &QueryTags.hide(&1, tags)) |> refilter()}
+  end
+
   def handle_event("hide_plan", _params, socket), do: {:noreply, socket}
 
   # Clear is an event in the Store (ADR 08): the Ecto summary (the badge) and
@@ -271,6 +327,19 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
      socket
      |> assign(:exporting, nil)
      |> export_failed("the export crashed: " <> Truncate.inspect_value(reason))}
+  end
+
+  # The events delivered so far only (seq up to `upto`): newer ones are still
+  # on their way to handle_events, reading them here would count them twice.
+  defp refilter(socket) do
+    upto = socket.assigns.upto
+
+    events =
+      for %{plugin: :ecto, seq: seq} = event <- PageData.read_all(socket.assigns.page.sids),
+          seq <= upto,
+          do: event
+
+    restream(socket, events)
   end
 
   defp export(%{assigns: %{explaining: nil, exporting: nil}} = socket, format, explain?) do
@@ -337,7 +406,10 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
 
   # Re-renders a row from the Store's event plus what the component keeps for
   # it: its plan, its N+1 tag and whether its details are open.
-  defp insert_row(socket, event) do
+  defp insert_row(socket, event),
+    do: stream_insert(socket, :queries, with_side(socket, event), limit: -@dom_limit)
+
+  defp with_side(socket, event) do
     %{plans: plans, flagged: flagged, open: open} = socket.assigns
 
     data =
@@ -346,7 +418,7 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
       |> Map.put(:open?, MapSet.member?(open, event.seq))
       |> put_plan(Map.get(plans, event.seq))
 
-    stream_insert(socket, :queries, %{event | data: data}, limit: -@dom_limit)
+    %{event | data: data}
   end
 
   defp put_plan(data, nil), do: Map.delete(data, :plan)
@@ -386,6 +458,14 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
         page={page_key(@page)}
         target={@myself}
       />
+      <.filter_row
+        :if={@queries?}
+        counts={@tag_counts}
+        hidden={@hidden}
+        total={@total}
+        visible={@visible}
+        target={@myself}
+      />
       <ul id="pdt-queries" class="pdt-list" phx-update="stream">
         <li id="pdt-queries-empty" class="pdt-list__empty">No queries yet.</li>
         <.query_row
@@ -399,6 +479,66 @@ defmodule PhoenixDevToolbar.Panels.Ecto do
     </div>
     """
   end
+
+  attr :counts, :map, required: true, doc: "tag => number of the page's queries"
+  attr :hidden, :any, required: true, doc: "the MapSet of tags turned off"
+  attr :total, :integer, required: true
+  attr :visible, :integer, required: true
+  attr :target, :any, required: true
+
+  defp filter_row(assigns) do
+    {chips, more} = QueryTags.ordered(assigns.counts, @chip_limit)
+    assigns = assign(assigns, chips: chips, more: more)
+
+    ~H"""
+    <div
+      id="pdt-ecto-filter"
+      class="pdt-export pdt-filter"
+      role="group"
+      aria-label="Filter queries by tag"
+    >
+      <span class="pdt-export__label">Show</span>
+      <button
+        :for={{tag, label, n} <- @chips}
+        id={"pdt-filter-" <> chip_id(tag)}
+        type="button"
+        class="pdt-filter__chip"
+        phx-click="filter"
+        phx-value-tag={tag}
+        phx-target={@target}
+        aria-pressed={to_string(not MapSet.member?(@hidden, tag))}
+        data-pdt-keep-focus
+      >
+        {label} <span class="pdt-filter__count">{n}</span>
+      </button>
+      <span :if={@more > 0} class="pdt-hint">+{@more} more tables</span>
+      <button
+        id="pdt-filter-all"
+        type="button"
+        class="pdt-button pdt-button--small"
+        phx-click="filter_all"
+        phx-target={@target}
+      >
+        all
+      </button>
+      <button
+        id="pdt-filter-none"
+        type="button"
+        class="pdt-button pdt-button--small"
+        phx-click="filter_none"
+        phx-target={@target}
+      >
+        none
+      </button>
+      <span id="pdt-ecto-filter-count" class="pdt-hint" aria-live="polite">
+        {@visible} of {@total} shown
+      </span>
+    </div>
+    """
+  end
+
+  # A DOM id from a tag: table names may hold any character.
+  defp chip_id(tag), do: Base.url_encode64(tag, padding: false)
 
   attr :exporting, :boolean, required: true
   attr :busy, :boolean, required: true, doc: "an export or an EXPLAIN is running"
