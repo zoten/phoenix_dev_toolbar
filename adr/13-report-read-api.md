@@ -20,9 +20,26 @@ the plugins.
 Store, built for IEx and agents:
 
 - `sessions/1` lists page views newest first, filtered by `:path` (string or
-  regex), `:view`, `:kind`, `:limit`, `:since` (a sid, read as its page root, or a `DateTime`: only
+  regex), `:view`, `:kind`, `:label` (exact), `:limit`, `:since` (a sid, read as its page root, or a `DateTime`: only
   sessions that started after that page; an unknown sid gives `[]`); `latest/1` is the
   newest match.
+- **Actor label**: sessions and `summary.session` carry `label` (a string or nil), who the
+  page belongs to when several people or personas share one server. The plug resolves it in
+  `before_send` (the host's request process, once per tracked page): the `?pdt_label=`
+  param, else the `_pdt_label` cookie, else the `label:` config (`{Mod, :fun}` or a
+  1-arity function of the conn, reading `conn.assigns` only). `?pdt_label=alice` sets the
+  cookie (`http_only`, `SameSite=Lax`, path `/`, session lifetime); an empty `?pdt_label=`
+  clears it and falls through to `label:`. The param is read from `conn.query_string` and
+  the cookie from the raw `cookie` header, only when they contain the name (no
+  `fetch_query_params` or `fetch_cookies`, which mutate the host conn); `pdt_label` stays in
+  the host's params. A failing `label:` function (raise, throw, exit) logs once per boot
+  and yields nil, a non-string return is nil, an invalid `label:` value is a boot warning.
+  The label is cleaned (control characters stripped, trimmed, at most 64 bytes cut on a
+  UTF-8 boundary, empty is nil) and written on the request session with one ETS update;
+  a LiveView session reads its request's label through `parent` (at most 10 hops).
+  `sessions(label: "alice")` filters by exact match, `markdown/2` shows it in the heading
+  and the Request tab on the response row. A label may hold personal data (an email):
+  prefer an id or a persona name; it lives only in the dev Store until it expires.
 - `summary/2` gives one compact map per page: the request, query count, failures
   and total time with the 5 slowest queries, N+1 groups, callback totals with the
   5 slowest and `callbacks.heaviest` (the real callback with the most queries, tie: more query time, nil when none ran a query; a callback brief plus `by_caller`, the top 5 callers of its queries as `caller`, `count`, `total_us`), render totals, errors, and the events lost to the caps. The slowest

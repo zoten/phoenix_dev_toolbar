@@ -134,12 +134,45 @@ defmodule PhoenixDevToolbar.Config do
     Enum.join(ordered, "+") <> "+" <> key
   end
 
-  @doc "Logs, at boot, an invalid `pill_corner:`, `shortcut:` or `inspect_nodes:` and what is used instead."
+  @typedoc "A valid `label:`: `{module, function}` called as `module.function(conn)`, or a 1-arity function."
+  @type label_fun :: {module(), atom()} | (Plug.Conn.t() -> term())
+
+  @doc """
+  The actor label function (ADR 13): `label:`, `{Mod, :fun}` or a 1-arity
+  function. Unset or invalid is `nil`. Never logs (`warn_ui/0` does).
+  """
+  @spec label() :: label_fun() | nil
+  def label, do: :phoenix_dev_toolbar |> Application.get_env(:label) |> valid_label()
+
+  defp valid_label({module, function}) when is_atom(module) and is_atom(function),
+    do: {module, function}
+
+  defp valid_label(fun) when is_function(fun, 1), do: fun
+  defp valid_label(_invalid), do: nil
+
+  @doc "Logs, at boot, an invalid `pill_corner:`, `shortcut:`, `inspect_nodes:` or `label:` and what is used instead."
   @spec warn_ui() :: :ok
   def warn_ui do
     warn_pill_corner(Application.get_env(:phoenix_dev_toolbar, :pill_corner))
     warn_shortcut(Application.get_env(:phoenix_dev_toolbar, :shortcut))
     warn_inspect_nodes(Application.get_env(:phoenix_dev_toolbar, :inspect_nodes))
+    warn_label(Application.get_env(:phoenix_dev_toolbar, :label))
+  end
+
+  defp warn_label(nil), do: :ok
+
+  defp warn_label(value) do
+    case valid_label(value) do
+      nil ->
+        Logger.warning(
+          "[phoenix_dev_toolbar] invalid label: #{inspect(value, limit: 5)}, " <>
+            "expected {Module, :function} or a function of arity 1 (called with the conn). " <>
+            "Using no label."
+        )
+
+      _valid ->
+        :ok
+    end
   end
 
   defp warn_inspect_nodes(nil), do: :ok

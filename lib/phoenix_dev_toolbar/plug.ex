@@ -121,6 +121,7 @@ defmodule PhoenixDevToolbar.Plug do
   alias PhoenixDevToolbar.EctoExport
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.HostCheck
+  alias PhoenixDevToolbar.Label
   alias PhoenixDevToolbar.Mcp
   alias PhoenixDevToolbar.McpHint
   alias PhoenixDevToolbar.Notify
@@ -433,8 +434,10 @@ defmodule PhoenixDevToolbar.Plug do
   # any failure leaves the response untouched.
   @spec before_send(Conn.t(), map()) :: Conn.t()
   def before_send(%Conn{private: %{phoenix_dev_toolbar: %{sid: sid} = info}} = conn, opts) do
+    {conn, label} = Label.resolve(conn)
+    Label.store(sid, label)
     {conn, injected?} = maybe_inject(conn, sid, opts)
-    record(conn, info, injected?)
+    record(conn, info, injected?, label)
     conn
   catch
     # Every class: a throw or exit must not escape into the host's send_resp.
@@ -537,13 +540,14 @@ defmodule PhoenixDevToolbar.Plug do
     end
   end
 
-  defp record(conn, %{sid: sid, started_at: started_at}, injected?) do
+  defp record(conn, %{sid: sid, started_at: started_at}, injected?, label) do
     data = %{
       method: conn.method,
       path: conn.request_path,
       status: conn.status,
       content_type: conn |> Conn.get_resp_header("content-type") |> List.first(),
-      injected?: injected?
+      injected?: injected?,
+      label: label
     }
 
     event = Event.new(:request, :response, data, duration: System.monotonic_time() - started_at)

@@ -43,6 +43,7 @@ defmodule PhoenixDevToolbar.Report do
 
   alias PhoenixDevToolbar.Collector
   alias PhoenixDevToolbar.Event
+  alias PhoenixDevToolbar.Label
   alias PhoenixDevToolbar.NPlusOne
   alias PhoenixDevToolbar.PageLookup
   alias PhoenixDevToolbar.Plugins
@@ -102,6 +103,7 @@ defmodule PhoenixDevToolbar.Report do
           parent: sid() | nil,
           view: module() | nil,
           path: String.t() | nil,
+          label: String.t() | nil,
           owner: pid() | nil,
           started_at: DateTime.t(),
           events: non_neg_integer(),
@@ -309,6 +311,7 @@ defmodule PhoenixDevToolbar.Report do
           {:path, String.t() | Regex.t()}
           | {:view, module()}
           | {:kind, :request | :live_view}
+          | {:label, String.t()}
           | {:limit, non_neg_integer() | nil}
           | {:since, sid() | DateTime.t()}
 
@@ -488,7 +491,8 @@ defmodule PhoenixDevToolbar.Report do
   Lists the sessions the Store holds, newest first.
 
   Options: `:path` (exact string or a `Regex`), `:view` (module), `:kind`
-  (`:request` or `:live_view`), `:limit`, `:since` (a sid: only sessions that
+  (`:request` or `:live_view`), `:label` (exact actor label, inherited by a
+  request's LiveViews), `:limit`, `:since` (a sid: only sessions that
   started after that page, a connected mount reading as its request; the
   request's own mount is listed since it started later, use `compare/3` to
   read a whole page; a `DateTime`: only sessions that started after it; an
@@ -820,7 +824,7 @@ defmodule PhoenixDevToolbar.Report do
 
   defp all_sessions do
     case PhoenixDevToolbar.enabled?() do
-      true -> Store.sessions()
+      true -> Label.inherit(Store.sessions())
       false -> []
     end
   rescue
@@ -877,6 +881,7 @@ defmodule PhoenixDevToolbar.Report do
       {:path, path} -> session.path == path
       {:view, view} -> session.view == view
       {:kind, kind} -> session.kind == kind
+      {:label, label} -> session.label == label
       _other -> true
     end)
   end
@@ -929,6 +934,7 @@ defmodule PhoenixDevToolbar.Report do
       parent: session.parent,
       view: session.view,
       path: session.path,
+      label: session.label,
       owner: session.owner,
       started_at: datetime(session.started_at),
       events: session.count,

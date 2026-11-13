@@ -32,7 +32,8 @@ defmodule PhoenixDevToolbar.Report.Markdown do
 
   defp heading(%{session: session}) do
     view = if session.view, do: " (`#{inspect(session.view)}`)"
-    "# #{plain(session.path || "unknown path")}#{view}"
+    label = if session.label, do: " [#{plain(session.label)}]"
+    "# #{plain(session.path || "unknown path")}#{view}#{label}"
   end
 
   defp request(nil), do: nil

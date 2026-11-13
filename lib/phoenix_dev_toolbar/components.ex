@@ -324,6 +324,14 @@ defmodule PhoenixDevToolbar.Components do
       <div class="pdt-row__meta">
         <span class="pdt-tag">response</span>
         <span :if={@event.data.content_type} class="pdt-tag">{@event.data.content_type}</span>
+        <span
+          :if={Map.get(@event.data, :label)}
+          id={"#{@id}-label"}
+          class="pdt-tag"
+          data-pdt-label={@event.data.label}
+        >
+          {@event.data.label}
+        </span>
       </div>
     </li>
     """

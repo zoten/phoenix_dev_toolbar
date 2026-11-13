@@ -42,7 +42,8 @@ Report.sessions(path: ~r{^/posts}, limit: 5)
 When the project's MCP config has the `phoenix-dev-toolbar` server
 (`http://localhost:4000/__pdt/mcp`), prefer its tools to evaluating code:
 
-- `list_pages` (filter with `path` or `path_prefix`; `since` takes a sid or
+- `list_pages` (filter with `path`, `path_prefix` or `label`, the actor the app or a
+  `?pdt_label=name` request tagged the page with, shown on each row; `since` takes a sid or
   ISO 8601 time: note the sid you measured, edit, reload, then list with
   `since` to get only pages that started after it; a request row lists its
   connected LiveViews in `live_views`: pass the request sid, the page tools

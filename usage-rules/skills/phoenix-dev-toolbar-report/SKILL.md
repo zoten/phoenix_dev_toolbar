@@ -79,7 +79,8 @@ Check, in this order:
 
 `latest/1` can pick up a page the user opened in another tab. When unsure, use
 `Report.sessions(path: "/posts", limit: 5)` (over MCP, `list_pages` with
-`path: "/posts"`) and keep the session whose
+`path: "/posts"`; several testers on one server: filter by `label`, the actor each page
+carries) and keep the session whose
 `started_at` follows your trigger. For a before/after check, remember the sid
 you measured, then use `Report.compare(sid, after_sid)`, or `Report.sessions(since: sid)` (it lists the request's own connected mount too; over MCP, `list_pages`
 with `since`; a `list_pages` row also shows its connected mounts in `live_views`, and the request sid covers them in every page tool). Over MCP the loop is: `page_summary`, note the sid, edit,

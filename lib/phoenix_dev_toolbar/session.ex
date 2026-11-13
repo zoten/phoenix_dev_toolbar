@@ -13,6 +13,7 @@ defmodule PhoenixDevToolbar.Session do
             transport: nil,
             view: nil,
             path: nil,
+            label: nil,
             started_at: nil,
             count: 0,
             dropped: 0,
@@ -29,17 +30,18 @@ defmodule PhoenixDevToolbar.Session do
           transport: pid() | nil,
           view: module() | nil,
           path: String.t() | nil,
+          label: String.t() | nil,
           started_at: integer(),
           count: non_neg_integer(),
           dropped: non_neg_integer(),
           trimmed: non_neg_integer()
         }
 
-  @fields [:parent, :owner, :transport, :view, :path]
+  @fields [:parent, :owner, :transport, :view, :path, :label]
 
   @doc """
   Builds a session with a fresh sid, stamped with the current system time in
-  microseconds. Accepts `:parent`, `:owner`, `:transport`, `:view` and `:path`.
+  microseconds. Accepts `:parent`, `:owner`, `:transport`, `:view`, `:path` and `:label`.
   """
   @spec new(kind(), keyword()) :: t()
   def new(kind, attrs \\ []) when kind in [:request, :live_view] do

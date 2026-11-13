@@ -164,6 +164,12 @@ config :phoenix_dev_toolbar,
   # pill_corner: :bottom_left,
   # Opt-in keyboard shortcut that toggles the toolbar (physical keys, ignored while typing)
   # shortcut: "ctrl+shift+d",
+  # Who a page belongs to when several people or personas share one server: shown in the
+  # Request tab, on `Report` sessions and `list_pages`, and filterable by `label`. Reads
+  # `conn.assigns` only (no queries): it runs in your request process. An id or a persona
+  # name beats an email. `?pdt_label=alice` on any page request tags that browser with a
+  # `_pdt_label` cookie (`?pdt_label=` clears it) and wins over this function.
+  # label: fn conn -> conn.assigns[:current_scope] && conn.assigns.current_scope.user.id end,
   # DOM nodes the element inspector walks to find a picked element's components;
   # raise it for very long lists (50 to 10_000)
   # inspect_nodes: 500,

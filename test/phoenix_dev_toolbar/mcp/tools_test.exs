@@ -151,7 +151,7 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
                "path: an exact request path string, such as \"/posts\", got a number."
 
       assert call_error("list_pages", %{"bogus" => 1}) ==
-               "Unknown argument(s): \"bogus\". Accepted: limit, path, path_prefix, since."
+               "Unknown argument(s): \"bogus\". Accepted: label, limit, path, path_prefix, since."
 
       assert call_error("list_pages", [1]) == "arguments must be an object"
     end

@@ -42,6 +42,9 @@ Application.put_env(:phoenix_live_view, :debug_attributes, true)
 Code.require_file("examples/oban/oban_plugin.ex", __DIR__)
 Code.require_file("examples/oban/oban_panel.ex", __DIR__)
 
+# The actor label (ADR 13): reads the fake user the router pipeline assigns.
+Application.put_env(:phoenix_dev_toolbar, :label, fn conn -> conn.assigns[:demo_user] end)
+
 Application.put_env(:phoenix_dev_toolbar, :plugins, [
   :defaults,
   {PdtExamples.Oban, queues: :all},
@@ -638,9 +641,12 @@ defmodule Demo.Router do
 
   import Phoenix.LiveView.Router
 
+  def assign_demo_user(conn, _opts), do: Plug.Conn.assign(conn, :demo_user, "demo-user")
+
   pipeline :browser do
     plug :fetch_session
     plug :fetch_live_flash
+    plug :assign_demo_user
     plug :put_root_layout, html: {Demo.Layouts, :root}
     plug :protect_from_forgery
   end

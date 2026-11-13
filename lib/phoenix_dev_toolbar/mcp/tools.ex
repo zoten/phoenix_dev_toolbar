@@ -4,6 +4,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   # Pure: no conn. Every result goes through `Mcp.Json.safe/1`.
 
   alias PhoenixDevToolbar.AssignsShape
+  alias PhoenixDevToolbar.Label
   alias PhoenixDevToolbar.Mcp.Json
   alias PhoenixDevToolbar.PageLookup
   alias PhoenixDevToolbar.Report
@@ -36,7 +37,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "list_pages",
         "List captured pages",
-        "Lists the pages the toolbar captured, newest first, each with a panel_url. A request row lists its connected LiveView sessions in live_views (sid, view, path, started_at, events; at most 10, live_views_more when cut). Pass the request sid to the page tools: they cover its LiveViews, and a connected-mount sid reads as its page.",
+        "Lists the pages the toolbar captured, newest first, each with a panel_url. A request row lists its connected LiveView sessions in live_views (sid, view, path, started_at, events; at most 10, live_views_more when cut). Rows carry label (the actor, set by the app's label: config or ?pdt_label=name on a request); filter with label. Pass the request sid to the page tools: they cover its LiveViews, and a connected-mount sid reads as its page.",
         %{
           "path" => @path_prop,
           "path_prefix" => %{
@@ -47,6 +48,11 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
             "type" => "string",
             "description" =>
               "Only pages that started after this: a sid from an earlier list_pages, or an ISO 8601 timestamp."
+          },
+          "label" => %{
+            "type" => "string",
+            "description" =>
+              "Only pages of this actor label (exact match), such as a persona or user id."
           },
           "limit" => int_prop("Maximum pages to return.", 1, 50, 10)
         }
@@ -237,9 +243,11 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
     with {:ok, path} <- string_arg(args, "path"),
          {:ok, prefix} <- string_arg(args, "path_prefix"),
          :ok <- exclusive(path, prefix),
+         {:ok, label} <- string_arg(args, "label"),
          {:ok, since} <- since_arg(args),
          {:ok, limit} <- int_arg(args, "limit", 10, 1, 50) do
-      filter = Keyword.merge(PageLookup.filter(path: path, path_prefix: prefix), since)
+      by_label = if(label, do: [label: label], else: [])
+      filter = PageLookup.filter(path: path, path_prefix: prefix) ++ since ++ by_label
       pages = pages(filter, limit)
 
       {:ok, %{"pages" => Enum.map(pages, &Map.put(&1, :panel_url, panel_url(opts, &1.sid)))}}
@@ -553,7 +561,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
 
   # A Store that is restarting (its tables missing) holds no pages.
   defp pages(filter, limit) do
-    all = Store.sessions()
+    all = Label.inherit(Store.sessions())
 
     filter
     |> Report.sessions()
@@ -687,6 +695,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       sid: session.sid,
       view: session.view,
       path: session.path,
+      label: session.label,
       started_at: DateTime.from_unix!(session.started_at, :microsecond),
       events: session.count
     }

@@ -19,6 +19,9 @@ host's hot path).
 - `PhoenixDevToolbar.Plug` assigns a sid to every HTML request, stores it in the
   request process dictionary (`:pdt_sid`) and in `conn.private`, and embeds it in
   the injected loader (ADR 04).
+- A request `Session` also carries an actor `label` (at most 64 printable bytes), written in
+  the plug's `before_send` with one ETS update (ADR 13). LiveView sessions get theirs
+  at read time through `parent`, so no telemetry handler changes.
 - The LiveView `socket.id` (`"phx-" <> random`) is generated during the dead render,
   signed into the session and reused by the connected mount, and it is the `id` of the
   `[data-phx-main]` element. So on `[:phoenix, :live_view, :mount, :start]`:

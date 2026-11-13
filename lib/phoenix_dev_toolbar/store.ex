@@ -118,6 +118,24 @@ defmodule PhoenixDevToolbar.Store do
     end
   end
 
+  @doc """
+  Sets the actor label of a session with one ETS update (ADR 13). `:error`
+  when the session is gone or the tables are missing; never raises.
+  """
+  @spec put_label(Session.sid(), String.t()) :: :ok | :error
+  def put_label(sid, label) when is_binary(label) do
+    case :ets.lookup(@sessions, sid) do
+      [{^sid, session, _count, _dropped, _trimmed}] ->
+        :ets.update_element(@sessions, sid, {2, %{session | label: label}})
+        :ok
+
+      [] ->
+        :error
+    end
+  rescue
+    ArgumentError -> :error
+  end
+
   ## Indexes
 
   @doc "Attributes a process to a session (used for `$callers` lookups)."

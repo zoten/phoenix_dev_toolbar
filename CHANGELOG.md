@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Actor `label:` config and `?pdt_label=` tag on sessions, `list_pages` filter (ADR 13, 15)
 - Boot log line with the MCP URL and loopback binding note (ADR 15)
 - `list_pages` rows list their connected LiveViews in `live_views` (ADR 15)
 - `Report.query_groups`, `page_queries` `group_by`, `callbacks.heaviest` in the summary (ADR 13, 15)
