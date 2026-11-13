@@ -308,6 +308,20 @@ defmodule PhoenixDevToolbar.Report do
           | {:limit, non_neg_integer() | nil}
           | {:since, sid() | DateTime.t()}
 
+  @typedoc "An option of `callbacks/2`."
+  @type callbacks_opt ::
+          {:children, boolean()}
+          | {:callback, atom() | String.t()}
+          | {:event, String.t()}
+
+  @typedoc "An option of `queries/2`."
+  @type queries_opt ::
+          callbacks_opt()
+          | {:threshold, pos_integer() | false}
+          | {:span, non_neg_integer()}
+          | {:seq_from, non_neg_integer()}
+          | {:seq_to, non_neg_integer()}
+
   @typedoc "An option of `summary/2`."
   @type summary_opt ::
           {:verbose, boolean()}
@@ -554,13 +568,35 @@ defmodule PhoenixDevToolbar.Report do
 
   @doc """
   Every query of `target`, oldest first.
-  Options: `children:`, `threshold:` (see `n_plus_one/2`).
+
+  Options: `children:`, `threshold:` (see `n_plus_one/2`), and filters, which
+  all must match: `callback:` (an atom or a string, compared as a string:
+  `"handle_event"`, `"request"`), `event:` (a LiveView event name), `span:`
+  (a callback's seq group, as on `callbacks/2`) and `seq_from:` / `seq_to:`
+  (inclusive; seq is global, so they window a page across its sessions).
+  Filters apply after the read: `n_plus_one?` still counts every query.
   """
-  @spec queries(target(), keyword()) :: [query()]
+  @spec queries(target(), [queries_opt()]) :: [query()]
   def queries(target, opts \\ []) do
     {sessions, events} = read(target, opts)
-    queries_of(events, owners(events, sessions), places(events, sessions), threshold(opts))
+
+    events
+    |> queries_of(owners(events, sessions), places(events, sessions), threshold(opts))
+    |> matching(opts, [:callback, :event, :span, :seq_from, :seq_to])
   end
+
+  defp matching(rows, opts, keys) do
+    filters = for key <- keys, value = Keyword.get(opts, key), value != nil, do: {key, value}
+    Enum.filter(rows, fn row -> Enum.all?(filters, &match_filter?(row, &1)) end)
+  end
+
+  defp match_filter?(row, {:callback, value}),
+    do: Atom.to_string(row.callback) == to_string(value)
+
+  defp match_filter?(row, {:event, value}), do: row.event == value
+  defp match_filter?(row, {:span, value}), do: row.span == value
+  defp match_filter?(row, {:seq_from, value}), do: row.seq >= value
+  defp match_filter?(row, {:seq_to, value}), do: row.seq <= value
 
   @doc """
   The repeated queries of `target`, most recent first.
@@ -574,13 +610,18 @@ defmodule PhoenixDevToolbar.Report do
     n_plus_one_of(events, places(events, sessions), threshold(opts))
   end
 
-  @doc "Every LiveView and LiveComponent callback of `target`, oldest first. Option: `children:`."
-  @spec callbacks(target(), keyword()) :: [callback()]
+  @doc """
+  Every LiveView and LiveComponent callback of `target`, oldest first.
+  Options: `children:`, and the filters `callback:` and `event:` (as on
+  `queries/2`).
+  """
+  @spec callbacks(target(), [callbacks_opt()]) :: [callback()]
   def callbacks(target, opts \\ []) do
     {sessions, events} = read(target, opts)
 
     (callbacks_of(events) ++ inferred_of(events, sessions))
     |> Enum.sort_by(& &1.seq)
+    |> matching(opts, [:callback, :event])
   end
 
   @doc "Every failure of `target`, oldest first. Option: `children:`."

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Breaking: `page_queries` rows compact by default, `verbose`, callback/event/span/seq filters (ADR 15)
+
 ## [0.0.6] - 2026-11-12
 
 - Element inspector: pick an element, see its component, HEEx source, binding, editor links (ADR 16)

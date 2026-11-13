@@ -62,7 +62,7 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
   summary, N+1, slowest queries, errors, assigns shape, then a report.
 - `recent_errors` after a change: crashes in `handle_info` or in other tabs that
   the page lookups miss (`since` takes the sid you measured: errors after that page started, never that page's own; or a time; `limit`).
-- `page_queries`, `page_callbacks` (`sort: "slowest"`, `limit`),
+- `page_queries`, `page_callbacks` (`sort: "slowest"`, `limit`, filters `callback`, `event`; `page_queries` also `span`, `seq_from`, `seq_to`, and compact rows unless `verbose: true`),
   `page_n_plus_one`, `page_errors` for the details. Queries carry `callback`,
   `event`, `origin` (the Repo call site), `caller` (the LiveView, controller
   or `on_mount` frame above it) and `noise` (framework queries such as

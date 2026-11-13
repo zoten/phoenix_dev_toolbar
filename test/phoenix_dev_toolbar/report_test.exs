@@ -114,6 +114,40 @@ defmodule PhoenixDevToolbar.ReportTest do
     end
   end
 
+  describe "queries/2 and callbacks/2 filters" do
+    test "filter by callback, event, span and seq; the string never becomes an atom" do
+      s = session(:live_view, path: "/f", view: DemoWeb.PageLive)
+      callback(s, :handle_event, span: 1, event: "save")
+      callback(s, :handle_event, span: 2, event: "delete")
+      query(s, span: 1, sql: "A")
+      query(s, span: 2, sql: "B")
+      query(s, span: 2, sql: "C")
+
+      sqls = fn opts -> s.sid |> Report.queries(opts) |> Enum.map(& &1.sql) end
+
+      assert sqls.(callback: "handle_event") == ["A", "B", "C"]
+      assert sqls.(callback: :handle_event, event: "delete") == ["B", "C"]
+      assert sqls.(span: 1) == ["A"]
+      assert sqls.(callback: "no_such_callback_xyz") == []
+
+      [first, second, _third] = Report.queries(s.sid)
+      assert sqls.(seq_from: first.seq, seq_to: second.seq) == ["A", "B"]
+
+      assert [%{event: "save"}] = Report.callbacks(s.sid, event: "save")
+      assert [_, _] = Report.callbacks(s.sid, callback: "handle_event")
+    end
+
+    test "n_plus_one? still sees every query when filtered" do
+      s = session(:request, path: "/n")
+      for _ <- 1..5, do: query(s, sql: "SELECT repeated")
+
+      all = Report.queries(s.sid)
+      last = List.last(all)
+      assert last.n_plus_one?
+      assert [%{n_plus_one?: true}] = Report.queries(s.sid, seq_from: last.seq)
+    end
+  end
+
   describe "query origin" do
     test "falls back from the first frame to the task function to the owning callback" do
       s = session(:live_view, view: DemoWeb.PageLive)

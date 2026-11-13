@@ -63,6 +63,17 @@ defmodule PhoenixDevToolbar.Truncate do
   def sql(sql) when is_binary(sql), do: valid_prefix(sql, @sql_limit) <> " [truncated]"
 
   @doc """
+  Cuts `text` to at most `limit` bytes on a UTF-8 boundary, without a marker.
+
+      iex> PhoenixDevToolbar.Truncate.prefix("héllo", 2)
+      "h"
+
+  """
+  @spec prefix(String.t(), non_neg_integer()) :: String.t()
+  def prefix(text, limit) when is_binary(text) and byte_size(text) <= limit, do: text
+  def prefix(text, limit) when is_binary(text), do: valid_prefix(text, limit)
+
+  @doc """
   Caps any text (exception messages, banners) at `limit` bytes, #{@string_limit} by default.
 
       iex> PhoenixDevToolbar.Truncate.string("boom")
@@ -595,7 +606,8 @@ defmodule PhoenixDevToolbar.Truncate do
   # back). Binaries that are not UTF-8 at all are cut at `limit`.
   defp valid_prefix(binary, limit), do: valid_prefix(binary, limit, 0)
 
-  defp valid_prefix(binary, limit, back) when back > 3, do: binary_part(binary, 0, limit)
+  defp valid_prefix(binary, limit, back) when back > 3 or back > limit,
+    do: binary_part(binary, 0, limit)
 
   defp valid_prefix(binary, limit, back) do
     prefix = binary_part(binary, 0, limit - back)

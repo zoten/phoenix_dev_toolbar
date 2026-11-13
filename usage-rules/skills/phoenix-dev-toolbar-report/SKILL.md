@@ -21,7 +21,7 @@ The data lives in the dev server's VM (`mix phx.server` or `mix dev`, in dev).
 
 - With the `phoenix-dev-toolbar` MCP server configured: call its tools
   instead of the Elixir below: `page_summary` (`path: "/posts"`) for step 3,
-  `page_n_plus_one`, `page_queries`, `page_callbacks` (`sort: "slowest"`) and
+  `page_n_plus_one`, `page_queries` (compact rows, SQL cut to 160 bytes; `verbose: true` for full ones; filters `callback`, `event`, `span`, `seq_from`, `seq_to`), `page_callbacks` (`sort: "slowest"`; filters `callback`, `event`) and
   `page_errors` for the details, `page_report` for a Markdown page to paste
   (`Report.markdown/2`), `page_assigns_shape` for big lists in assigns that
   should be streams (live read: the page must be open; `live_view_sid`, `note`

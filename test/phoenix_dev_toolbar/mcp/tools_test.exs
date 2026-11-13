@@ -331,6 +331,98 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
     end
   end
 
+  describe "page_queries filters and compact rows" do
+    setup do
+      s = session(:live_view, path: "/two", view: DemoWeb.PageLive)
+      callback(s, :mount, span: 1)
+      callback(s, :handle_event, span: 2, event: "save")
+      callback(s, :handle_event, span: 3, event: "delete")
+      query(s, span: 1, sql: "SELECT mount")
+      query(s, span: 2, sql: "SELECT save")
+      query(s, span: 3, sql: "SELECT delete")
+      query(s, span: 3, sql: "SELECT delete 2")
+      {:ok, sid: s.sid}
+    end
+
+    defp sqls(%{"queries" => queries}), do: Enum.map(queries, & &1["sql"])
+
+    test "callback, event and span filters; total counts the filtered rows", %{sid: sid} do
+      by_callback = call!("page_queries", %{"sid" => sid, "callback" => "handle_event"})
+      assert %{"total" => 3} = by_callback
+      assert sqls(by_callback) == ["SELECT save", "SELECT delete", "SELECT delete 2"]
+
+      by_event = call!("page_queries", %{"sid" => sid, "event" => "delete"})
+      assert %{"total" => 2} = by_event
+
+      assert ["SELECT delete", "SELECT delete 2"] ==
+               sqls(call!("page_queries", %{"sid" => sid, "span" => 3}))
+
+      assert %{"total" => 0} = call!("page_queries", %{"sid" => sid, "callback" => "nope"})
+    end
+
+    test "seq_from and seq_to are inclusive", %{sid: sid} do
+      %{"queries" => [_mount, save | _]} = all = call!("page_queries", %{"sid" => sid})
+      seqs = Enum.map(all["queries"], & &1["seq"])
+      [_, second, third | _] = seqs
+
+      windowed = call!("page_queries", %{"sid" => sid, "seq_from" => second, "seq_to" => third})
+      assert [save["sql"], "SELECT delete"] == sqls(windowed)
+    end
+
+    test "page_callbacks filters by callback and event", %{sid: sid} do
+      assert %{"total" => 2} =
+               call!("page_callbacks", %{"sid" => sid, "callback" => "handle_event"})
+
+      assert %{"total" => 1, "callbacks" => [%{"event" => "save"}]} =
+               call!("page_callbacks", %{"sid" => sid, "event" => "save"})
+    end
+
+    test "default rows are compact, verbose gives the full ones", %{sid: sid} do
+      %{"queries" => [row | _]} = call!("page_queries", %{"sid" => sid})
+
+      assert row |> Map.keys() |> Enum.sort() ==
+               ~w(callback caller duration_us error event n_plus_one? noise origin rows seq sid source span sql sql_truncated)
+
+      assert row["sql_truncated"] == false
+
+      %{"queries" => [full | _]} = call!("page_queries", %{"sid" => sid, "verbose" => true})
+      assert %{"params" => "[1]", "times" => _, "stacktrace" => [_ | _], "at" => _} = full
+    end
+
+    test "long SQL is cut at 160 bytes on a UTF-8 boundary" do
+      s = session(:request, path: "/wide")
+      # 159 ASCII bytes then a 2 byte character straddling byte 160.
+      sql = String.duplicate("a", 159) <> "é" <> "tail"
+      query(s, sql: sql)
+
+      assert %{"queries" => [row]} = call!("page_queries", %{"sid" => s.sid})
+      assert row["sql"] == String.duplicate("a", 159)
+      assert row["sql_truncated"] == true
+      assert String.valid?(row["sql"])
+
+      assert %{"queries" => [full]} = call!("page_queries", %{"sid" => s.sid, "verbose" => true})
+      assert full["sql"] == sql
+      refute Map.has_key?(full, "sql_truncated")
+    end
+
+    test "a wrong typed filter names the argument", %{sid: sid} do
+      assert call_error("page_queries", %{"sid" => sid, "callback" => 5}) =~ "callback: a string"
+      assert call_error("page_queries", %{"sid" => sid, "event" => true}) =~ "event: a string"
+
+      assert call_error("page_queries", %{"sid" => sid, "span" => "1"}) =~
+               "span: a non-negative integer"
+
+      assert call_error("page_queries", %{"sid" => sid, "seq_from" => -1}) =~
+               "seq_from: a non-negative"
+
+      assert call_error("page_queries", %{"sid" => sid, "seq_to" => 1.5}) =~ "seq_to:"
+      assert call_error("page_queries", %{"sid" => sid, "verbose" => "yes"}) =~ "verbose:"
+
+      assert call_error("page_callbacks", %{"sid" => sid, "callback" => 1}) =~
+               "callback: a string"
+    end
+  end
+
   describe "page_callbacks" do
     test "rows, slowest first, nil durations last" do
       s = session(:request, path: "/c")

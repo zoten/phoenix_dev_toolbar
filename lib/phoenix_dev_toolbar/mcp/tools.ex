@@ -8,6 +8,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   alias PhoenixDevToolbar.PageLookup
   alias PhoenixDevToolbar.Report
   alias PhoenixDevToolbar.Store
+  alias PhoenixDevToolbar.Truncate
 
   @type definition :: %{String.t() => term()}
   @type opts :: [base_url: String.t(), assigns_timeout: pos_integer()]
@@ -65,19 +66,41 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "page_queries",
         "List a page's Ecto queries",
-        "The Ecto queries run for a page, with SQL, timings, origin (the Repo call site), caller (the LiveView, controller or on_mount frame that led to it; needs the repo's stacktrace: true), and the callback and event they ran in (span is the callback's seq group, as in page_callbacks; callback is request for a query outside any LiveView callback). noise tags framework queries (check_repo_status: Phoenix.Ecto.CheckRepoStatus), which page_summary leaves out of its counts.",
+        "The Ecto queries run for a page, with SQL, timings, origin (the Repo call site), caller (the LiveView, controller or on_mount frame that led to it; needs the repo's stacktrace: true), and the callback and event they ran in (span is the callback's seq group, as in page_callbacks; callback is request for a query outside any LiveView callback). noise tags framework queries (check_repo_status: Phoenix.Ecto.CheckRepoStatus), which page_summary leaves out of its counts. Rows are compact by default (no params, times, stacktrace or timestamp; sql cut to 160 bytes, sql_truncated says when): pass verbose: true for full rows. Filter with callback (e.g. handle_event, request), event, span, seq_from and seq_to (inclusive); total counts the filtered rows.",
         Map.merge(page_props(), %{
           "limit" => int_prop("Maximum queries to return.", 1, 200, 50),
-          "sort" => sort_prop()
+          "sort" => sort_prop(),
+          "callback" => %{
+            "type" => "string",
+            "description" => "Only queries run in this callback, e.g. handle_event or request."
+          },
+          "event" => %{
+            "type" => "string",
+            "description" => "Only queries run in this LiveView event, e.g. save."
+          },
+          "span" => nonneg_prop("Only queries of this callback span (seq group)."),
+          "seq_from" => nonneg_prop("Only queries with seq >= this."),
+          "seq_to" => nonneg_prop("Only queries with seq <= this."),
+          "verbose" => %{
+            "type" => "boolean",
+            "description" =>
+              "Full rows (full SQL, params, times, stacktrace) instead of compact ones.",
+            "default" => false
+          }
         })
       ),
       tool(
         "page_callbacks",
         "List a page's LiveView callbacks",
-        "The LiveView and LiveComponent callbacks of a page (mount, handle_event, ...) with timings and assigns changes. inferred: true entries stand for handle_info (or async task) queries no callback owns: their duration_us is null, never 0, so sum with a default; sort: \"slowest\" puts them last.",
+        "The LiveView and LiveComponent callbacks of a page (mount, handle_event, ...) with timings and assigns changes. Filter with callback (e.g. handle_event) and event. inferred: true entries stand for handle_info (or async task) queries no callback owns: their duration_us is null, never 0, so sum with a default; sort: \"slowest\" puts them last.",
         Map.merge(page_props(), %{
           "limit" => int_prop("Maximum callbacks to return.", 1, 200, 50),
-          "sort" => sort_prop()
+          "sort" => sort_prop(),
+          "callback" => %{
+            "type" => "string",
+            "description" => "Only this callback, e.g. handle_event or mount."
+          },
+          "event" => %{"type" => "string", "description" => "Only this LiveView event."}
         })
       ),
       tool(
@@ -152,6 +175,9 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       "description" => "\"order\" (oldest first) or \"slowest\" (longest duration first)."
     }
   end
+
+  defp nonneg_prop(description),
+    do: %{"type" => "integer", "minimum" => 0, "description" => description}
 
   defp int_prop(description, min, max, default) do
     %{
@@ -275,10 +301,18 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
     end
   end
 
-  defp execute("page_queries", args, opts), do: rows("queries", &Report.queries/1, args, opts)
+  defp execute("page_queries", args, opts) do
+    with {:ok, filters} <- filter_args(args, [:callback, :event], [:span, :seq_from, :seq_to]),
+         {:ok, verbose} <- bool_arg(args, "verbose") do
+      rows("queries", &Report.queries(&1, filters), args, opts, &compact(&1, verbose))
+    end
+  end
 
-  defp execute("page_callbacks", args, opts),
-    do: rows("callbacks", &Report.callbacks/1, args, opts)
+  defp execute("page_callbacks", args, opts) do
+    with {:ok, filters} <- filter_args(args, [:callback, :event], []) do
+      rows("callbacks", &Report.callbacks(&1, filters), args, opts, & &1)
+    end
+  end
 
   defp execute("page_n_plus_one", args, opts) do
     with {:ok, sid} <- resolve(args) do
@@ -515,7 +549,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
     ArgumentError -> []
   end
 
-  defp rows(key, reader, args, opts) do
+  defp rows(key, reader, args, opts, shape) do
     with {:ok, limit} <- int_arg(args, "limit", 50, 1, 200),
          {:ok, sort} <- sort_arg(args),
          {:ok, sid} <- resolve(args) do
@@ -527,8 +561,48 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
          "panel_url" => panel_url(opts, sid),
          "total" => length(all),
          "returned" => min(limit, length(all)),
-         key => Enum.take(all, limit)
+         key => all |> Enum.take(limit) |> Enum.map(shape)
        }}
+    end
+  end
+
+  @compact_keys ~w(seq sid span callback event origin caller duration_us rows source n_plus_one? noise error)a
+  @sql_preview 160
+
+  defp compact(row, true), do: row
+
+  defp compact(row, false) do
+    sql = Truncate.prefix(row.sql || "", @sql_preview)
+
+    row
+    |> Map.take(@compact_keys)
+    |> Map.merge(%{sql: row.sql && sql, sql_truncated: is_binary(row.sql) and sql != row.sql})
+  end
+
+  # Filters as Report options: strings stay strings (never atoms), integers
+  # are non-negative.
+  defp filter_args(args, strings, integers) do
+    with {:ok, text} <- collect(args, strings, &string_arg/2),
+         {:ok, numbers} <- collect(args, integers, &filter_int/2) do
+      {:ok, text ++ numbers}
+    end
+  end
+
+  defp collect(args, keys, reader) do
+    Enum.reduce_while(keys, {:ok, []}, fn key, {:ok, acc} ->
+      case reader.(args, Atom.to_string(key)) do
+        {:ok, nil} -> {:cont, {:ok, acc}}
+        {:ok, value} -> {:cont, {:ok, [{key, value} | acc]}}
+        {:error, _message} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp filter_int(args, key) do
+    case Map.get(args, key) do
+      nil -> {:ok, nil}
+      value when is_integer(value) and value >= 0 -> {:ok, value}
+      other -> {:error, "#{key}: a non-negative integer, got #{int_got(other)}."}
     end
   end
 
