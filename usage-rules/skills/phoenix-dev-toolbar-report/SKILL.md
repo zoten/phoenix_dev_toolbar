@@ -82,7 +82,7 @@ Check, in this order:
 `path: "/posts"`) and keep the session whose
 `started_at` follows your trigger. For a before/after check, remember the sid
 you measured, then use `Report.compare(sid, after_sid)`, or `Report.sessions(since: sid)` (it lists the request's own connected mount too; over MCP, `list_pages`
-with `since`). Over MCP the loop is: `page_summary`, note the sid, edit,
+with `since`; a `list_pages` row also shows its connected mounts in `live_views`, and the request sid covers them in every page tool). Over MCP the loop is: `page_summary`, note the sid, edit,
 reload, `compare_pages(before: sid)`; in Elixir, `Report.compare(before_sid,
 after_sid)` returns the same deltas.
 

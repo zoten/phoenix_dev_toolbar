@@ -20,7 +20,8 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
 
   @sid_prop %{
     "type" => "string",
-    "description" => "Page id (sid) from list_pages. Wins over path. Default: the newest page."
+    "description" =>
+      "Page id (sid) from list_pages: pass the request sid, the page tools cover its LiveViews (a connected-mount sid reads as its page). Wins over path. Default: the newest page."
   }
   @path_prop %{
     "type" => "string",
@@ -35,7 +36,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "list_pages",
         "List captured pages",
-        "Lists the pages the toolbar captured, newest first, each with a panel_url.",
+        "Lists the pages the toolbar captured, newest first, each with a panel_url. A request row lists its connected LiveView sessions in live_views (sid, view, path, started_at, events; at most 10, live_views_more when cut). Pass the request sid to the page tools: they cover its LiveViews, and a connected-mount sid reads as its page.",
         %{
           "path" => @path_prop,
           "path_prefix" => %{
@@ -552,7 +553,13 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
 
   # A Store that is restarting (its tables missing) holds no pages.
   defp pages(filter, limit) do
-    filter |> Report.sessions() |> reject_mounts() |> Enum.take(limit)
+    all = Store.sessions()
+
+    filter
+    |> Report.sessions()
+    |> reject_mounts(all)
+    |> Enum.take(limit)
+    |> with_live_views(all)
   rescue
     ArgumentError -> []
   end
@@ -643,13 +650,46 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   end
 
   # A connected mount belongs to its request's page (see `PageLookup.newest/1`).
-  defp reject_mounts(sessions) do
-    request_sids =
-      for %{kind: :request, sid: sid} <- Store.sessions(), into: MapSet.new(), do: sid
+  defp reject_mounts(sessions, all) do
+    request_sids = for %{kind: :request, sid: sid} <- all, into: MapSet.new(), do: sid
 
     Enum.reject(sessions, fn page ->
       page.kind == :live_view and is_binary(page.parent) and page.parent in request_sids
     end)
+  end
+
+  @live_views_cap 10
+
+  # The LiveViews a request's sid covers: the ones `Report` reads with it (the
+  # connected mount, joined by `parent`), oldest first. A navigated LiveView
+  # (parent is a LiveView) is its own row and is not listed here. One Store
+  # read serves every row.
+  defp with_live_views(pages, all) do
+    by_parent =
+      all
+      |> Enum.filter(&(&1.kind == :live_view and is_binary(&1.parent)))
+      |> Enum.sort_by(& &1.started_at)
+      |> Enum.group_by(& &1.parent)
+
+    Enum.map(pages, fn
+      %{kind: :request, sid: sid} = page ->
+        {shown, cut} = by_parent |> Map.get(sid, []) |> Enum.split(@live_views_cap)
+        page = Map.put(page, :live_views, Enum.map(shown, &live_view/1))
+        if cut == [], do: page, else: Map.put(page, :live_views_more, length(cut))
+
+      page ->
+        page
+    end)
+  end
+
+  defp live_view(session) do
+    %{
+      sid: session.sid,
+      view: session.view,
+      path: session.path,
+      started_at: DateTime.from_unix!(session.started_at, :microsecond),
+      events: session.count
+    }
   end
 
   # Arguments

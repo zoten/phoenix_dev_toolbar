@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `list_pages` rows list their connected LiveViews in `live_views` (ADR 15)
 - `Report.query_groups`, `page_queries` `group_by`, `callbacks.heaviest` in the summary (ADR 13, 15)
 - Breaking: `page_queries` rows compact by default, `verbose`, callback/event/span/seq filters (ADR 15)
 

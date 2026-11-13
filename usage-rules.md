@@ -44,7 +44,9 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
 
 - `list_pages` (filter with `path` or `path_prefix`; `since` takes a sid or
   ISO 8601 time: note the sid you measured, edit, reload, then list with
-  `since` to get only pages that started after it), then `page_summary` with
+  `since` to get only pages that started after it; a request row lists its
+  connected LiveViews in `live_views`: pass the request sid, the page tools
+  cover them), then `page_summary` with
   the page's `sid` or its `path` (compact; `verbose: true` for full items).
   Without either, tools read the newest page.
 - Where do a click's queries go: `page_summary` (`callbacks.heaviest` names the

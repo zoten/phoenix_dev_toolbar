@@ -235,6 +235,65 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
     end
   end
 
+  describe "list_pages live_views" do
+    test "a request row lists its connected mount; page_queries by event works from the request sid" do
+      req = session(:request, path: "/users", started_at: @t0)
+
+      mount =
+        session(:live_view,
+          path: "/users",
+          parent: req.sid,
+          view: DemoWeb.PageLive,
+          started_at: @t0 + 1
+        )
+
+      callback(mount, :handle_event, span: 2, us: 20, event: "go")
+      query(mount, span: 2, sql: "SELECT click")
+      query(mount, span: 1, sql: "SELECT mount")
+
+      assert %{"pages" => [row]} = call!("list_pages")
+      assert row["sid"] == req.sid
+
+      assert [
+               %{
+                 "sid" => sid,
+                 "view" => "DemoWeb.PageLive",
+                 "path" => "/users",
+                 "events" => events,
+                 "started_at" => _
+               }
+             ] =
+               row["live_views"]
+
+      assert sid == mount.sid
+      assert events > 0
+      refute Map.has_key?(row, "live_views_more")
+
+      assert %{"queries" => [%{"sql" => "SELECT click"}]} =
+               call!("page_queries", %{"sid" => req.sid, "event" => "go"})
+    end
+
+    test "a navigated LiveView is its own row and not listed under the request" do
+      req = session(:request, path: "/a", started_at: @t0)
+      mount = session(:live_view, path: "/a", parent: req.sid, started_at: @t0 + 1)
+      nav = session(:live_view, path: "/b", parent: mount.sid, started_at: @t0 + 2)
+
+      assert %{"pages" => [nav_row, req_row]} = call!("list_pages")
+      assert nav_row["sid"] == nav.sid
+      assert Enum.map(req_row["live_views"], & &1["sid"]) == [mount.sid]
+      assert nav_row["live_views"] == nil
+    end
+
+    test "is cut at 10 with live_views_more" do
+      req = session(:request, path: "/many", started_at: @t0)
+      for n <- 1..12, do: session(:live_view, path: "/many", parent: req.sid, started_at: @t0 + n)
+
+      assert %{"pages" => [row]} = call!("list_pages")
+      assert length(row["live_views"]) == 10
+      assert row["live_views_more"] == 2
+    end
+  end
+
   describe "page_callbacks sids" do
     test "a LiveView sid reads its own callbacks, the request sid its children too" do
       root = session(:request, path: "/users")
