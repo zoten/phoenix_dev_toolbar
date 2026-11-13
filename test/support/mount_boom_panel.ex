@@ -1,6 +1,9 @@
 defmodule PhoenixDevToolbar.TestPlugins.MountBoomPanel do
   @moduledoc false
   use PhoenixDevToolbar.Panel
+  # Raises on purpose: fixture for panel mount crash isolation.
+  # Panel wraps mount/1 (defoverridable + super): this clause compiles as the overridable.
+  @dialyzer {:nowarn_function, [{:"mount (overridable 1)", 1}]}
 
   @impl Phoenix.LiveComponent
   def mount(_socket), do: raise("mount boom")

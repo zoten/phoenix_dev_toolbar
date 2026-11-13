@@ -2,6 +2,7 @@ defmodule DemoWeb.ThrowPlug do
   @moduledoc false
   # Throws a huge term, to check the exception banner stays bounded.
   @behaviour Plug
+  @dialyzer {:nowarn_function, call: 2}
 
   @impl Plug
   def init(opts), do: opts

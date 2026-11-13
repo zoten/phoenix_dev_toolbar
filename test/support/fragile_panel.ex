@@ -1,6 +1,9 @@
 defmodule PhoenixDevToolbar.TestPlugins.FragilePanel do
   @moduledoc false
   use PhoenixDevToolbar.Panel
+  # Raises on purpose: fixture for panel crash isolation.
+  # Panel wraps handle_async/3 (defoverridable + super): this clause compiles as the overridable.
+  @dialyzer {:nowarn_function, [{:"handle_async (overridable 1)", 3}]}
 
   @impl Phoenix.LiveComponent
   def mount(socket), do: {:ok, assign(socket, :values, [])}
