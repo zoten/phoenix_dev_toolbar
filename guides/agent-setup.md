@@ -148,6 +148,11 @@ in `config/dev.exs`), use that address in the URL. When it comes from an environ
 variable such as `PHX_IP`, write the URL as
 `http://${PHX_IP:-127.0.0.1}:<port>/__pdt/mcp`: Claude Code expands it in `.mcp.json`.
 
+The MCP URL must use an address the server listens on: bind `0.0.0.0`
+(`http: [ip: {0, 0, 0, 0}]`) or use the same `PHX_IP` in both. The first tracked
+request after boot logs `[phoenix_dev_toolbar] MCP at <url>` (with a note when the
+endpoint listens on 127.0.0.1 only): read it from the dev server's output.
+
 ## 6. Agent skill and usage rules
 
 The package ships a skill, `phoenix-dev-toolbar-report` (measure a page before and

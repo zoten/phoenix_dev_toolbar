@@ -280,6 +280,8 @@ If the dev server listens on a LAN address (so phones can reach it), use that ad
 {"mcpServers": {"phoenix-dev-toolbar": {"type": "http", "url": "http://${PHX_IP:-127.0.0.1}:4000/__pdt/mcp"}}}
 ```
 
+The MCP URL must use an address the server listens on: bind `0.0.0.0` (`http: [ip: {0, 0, 0, 0}]`) or use the same `PHX_IP` in both. The first page request after boot logs the URL (`[phoenix_dev_toolbar] MCP at ...`), with a note when the endpoint listens on 127.0.0.1 only.
+
 The variable must be set in the agent's environment too, not only the server's. Agents elsewhere (a container, a VM, another device) need their addresses allowed:
 
 ```elixir
@@ -318,7 +320,7 @@ Known conflicts with Tidewave 0.9:
 
 ## Troubleshooting
 
-**The agent's MCP tools fail with `ECONNREFUSED`.** The client tried to connect before the dev server listened, or the server restarted: reconnect it from the agent (`/mcp` in Claude Code). If the server listens on a LAN address only, the URL must use that address (see "MCP server").
+**The agent's MCP tools fail with `ECONNREFUSED`.** The client tried to connect before the dev server listened, or the server restarted: reconnect it from the agent (`/mcp` in Claude Code). If the server listens on a LAN address only, the URL must use that address (see "MCP server"). The boot log line `[phoenix_dev_toolbar] MCP at ...` shows the URL, and says when the server is bound to 127.0.0.1 only.
 
 **The toolbar does not appear.**
 - It is on only under `MIX_ENV=dev` (see "When it is on").

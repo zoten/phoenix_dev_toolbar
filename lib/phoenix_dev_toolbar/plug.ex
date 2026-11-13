@@ -122,6 +122,7 @@ defmodule PhoenixDevToolbar.Plug do
   alias PhoenixDevToolbar.Event
   alias PhoenixDevToolbar.HostCheck
   alias PhoenixDevToolbar.Mcp
+  alias PhoenixDevToolbar.McpHint
   alias PhoenixDevToolbar.Notify
   alias PhoenixDevToolbar.OriginCheck
   alias PhoenixDevToolbar.PageLookup
@@ -391,6 +392,7 @@ defmodule PhoenixDevToolbar.Plug do
   defp track(conn, opts) do
     session = Store.new_session(Session.new(:request, path: conn.request_path))
     Attribution.track(session.sid)
+    McpHint.announce(conn, opts.path)
 
     conn
     |> Conn.put_private(:phoenix_dev_toolbar, %{

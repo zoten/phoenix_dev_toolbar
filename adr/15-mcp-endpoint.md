@@ -186,4 +186,8 @@ upgrade.
 - Clients connect when the agent starts: a dev server started later, or
   restarted, gives `ECONNREFUSED` until the client reconnects (`/mcp` in Claude
   Code). The README and `guides/agent-setup.md` say so, with the LAN address and
-  `${PHX_IP:-127.0.0.1}` URL forms.
+  `${PHX_IP:-127.0.0.1}` URL forms. The same applies to an address the server does not listen on
+  (a `.mcp.json` URL with `${PHX_IP}` against a 127.0.0.1 bind). The first tracked
+  request per boot logs one info line with the MCP URL the browser reached, plus
+  a note when the endpoint's `http: [ip: ...]` is loopback (one
+  `:persistent_term` read per request afterwards; nothing when `mcp: false`).
