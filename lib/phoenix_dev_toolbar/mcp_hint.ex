@@ -9,6 +9,7 @@ defmodule PhoenixDevToolbar.McpHint do
 
   alias PhoenixDevToolbar.Config
   alias PhoenixDevToolbar.Mcp.Endpoint
+  alias PhoenixDevToolbar.OriginCheck
 
   @flag {__MODULE__, :logged}
 
@@ -30,8 +31,9 @@ defmodule PhoenixDevToolbar.McpHint do
     :ok
   end
 
-  # Only a loopback client counts: another machine's request leaves the flag
-  # unset, so a later local one logs the line (the URL an agent here can use).
+  # Only a direct loopback client counts: another machine's or a proxied
+  # request (the MCP endpoint refuses those) leaves the flag unset, so a later
+  # local one logs the line (the URL an agent here can use).
   defp first(conn, base_path) do
     case Config.mcp?() and loopback_client?(conn) do
       true ->
@@ -43,7 +45,8 @@ defmodule PhoenixDevToolbar.McpHint do
     end
   end
 
-  defp loopback_client?(%{remote_ip: ip}), do: loopback?(ip)
+  defp loopback_client?(%{remote_ip: ip} = conn),
+    do: loopback?(ip) and not OriginCheck.proxied?(conn)
 
   defp message(conn, base_path) do
     url = Endpoint.base_url(conn, base_path) <> "/mcp"

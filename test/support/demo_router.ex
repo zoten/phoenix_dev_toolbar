@@ -9,6 +9,7 @@ defmodule DemoWeb.Router do
 
   pipeline :browser do
     plug :fetch_session
+    plug DemoWeb.PersonaPlug
     plug :put_root_layout, html: {DemoWeb.Layouts, :root}
   end
 

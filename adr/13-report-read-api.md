@@ -66,7 +66,7 @@ Store, built for IEx and agents:
 - A query's `origin` (queries, briefs, `unattributed.origins`) is the first stacktrace
   frame, else the task function (`initial_call`), else `task in View.callback "event"`
   or `task in View` for a query run inside `Task.async` or `start_async` (ADR 08).
-  `queries/2`, `callbacks/2`, `n_plus_one/2` and `errors/2` return the full lists. `queries/2` takes filters, applied after the read so `n_plus_one?` still sees every query: `callback:` (atom or string, compared as a string, never turned into an atom), `event:`, `span:` and `seq_from:` / `seq_to:` (inclusive); `callbacks/2` takes `callback:` and `event:`. `query_groups(target, by, opts)` groups the queries by `:caller`, `:origin`, `:callback` or `:sql` (options as `queries/2` plus `noise:`, default false: framework queries are left out): each group has `key` (nil stays nil), `count`, `total_us`, `n_plus_one` (its flagged queries) and `sql` (the first query's, cut to 160 bytes; nil for `:sql`, whose key is the cut SQL), most queries first, then most time. The `:callback` key is the callback name plus the quoted event (`handle_event "withdraw"`), so two clicks stay apart.
+  `queries/2`, `callbacks/2`, `n_plus_one/2` and `errors/2` return the full lists. `queries/2` takes filters, applied after the read so `n_plus_one?` still sees every query: `callback:` (atom or string, compared as a string, never turned into an atom), `event:`, `span:` and `seq_from:` / `seq_to:` (inclusive); `callbacks/2` takes `callback:` and `event:`. `query_groups(target, by, opts)` groups the queries by `:caller`, `:origin`, `:callback` or `:sql` (options as `queries/2` plus `noise:`, default false: framework queries are left out): each group has `key` (nil stays nil), `count`, `total_us`, `n_plus_one` (its flagged queries) and `sql` (the first query's, cut to 160 bytes; nil for `:sql`, whose key is the cut SQL), most queries first, then most time. The `:callback` key is the owning LiveComponent or LiveView, the callback name and the quoted event (`DemoWeb.PageLive handle_event "withdraw"`), so two clicks, two views and two components stay apart; the request's own render (the dead render) adds ` (dead render)`, so it never merges with the connected mount; a query no LiveView owns keeps `request`. Query rows carry `owner` and `dead_render?` for it.
 - Each query also carries `caller` (the web-layer frame above the origin, ADR 08),
   `noise` (framework queries, ADR 08) and where it ran: `callback` and `event` of the
   `:callback` (else `:render`) event owning its `{sid, span}`; for a LiveView
@@ -137,6 +137,7 @@ Store, built for IEx and agents:
 
 ## Open limits
 
+- `?pdt_label=` needs a full page load: a live navigation to a URL with the param makes no HTTP request, so the plug never sees it.
 - Reaching the running node is up to the caller: a fresh `mix run` starts another
   VM with an empty Store. IEx in the dev server, a remote shell, Tidewave or the
   MCP endpoint (ADR 15) work.

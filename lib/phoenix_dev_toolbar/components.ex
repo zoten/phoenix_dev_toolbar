@@ -327,10 +327,11 @@ defmodule PhoenixDevToolbar.Components do
         <span
           :if={Map.get(@event.data, :label)}
           id={"#{@id}-label"}
-          class="pdt-tag"
+          class="pdt-tag pdt-tag--client"
+          title="Actor label (label: config or ?pdt_label=)"
           data-pdt-label={@event.data.label}
         >
-          {@event.data.label}
+          as {@event.data.label}
         </span>
       </div>
     </li>

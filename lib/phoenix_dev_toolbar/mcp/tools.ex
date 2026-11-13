@@ -74,7 +74,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "page_queries",
         "List a page's Ecto queries",
-        "The Ecto queries run for a page, with SQL, timings, origin (the Repo call site), caller (the LiveView, controller or on_mount frame that led to it; needs the repo's stacktrace: true), and the callback and event they ran in (span is the callback's seq group, as in page_callbacks; callback is request for a query outside any LiveView callback). noise tags framework queries (check_repo_status: Phoenix.Ecto.CheckRepoStatus), which page_summary leaves out of its counts. Rows are compact by default (no params, times, stacktrace or timestamp; sql cut to 160 bytes, sql_truncated says when): pass verbose: true for full rows. Filter with callback (e.g. handle_event, request), event, span, seq_from and seq_to (inclusive); total counts the filtered rows. group_by (caller, origin, callback or sql) returns groups instead of rows: each with key, count, total_us, n_plus_one and the first query's sql, most queries first (noise left out); limit applies to groups, total counts groups and queries_total the queries grouped. sort and verbose do not apply to groups. Use it to see where the queries of one click go: group_by caller with event, then read the rows of one group with verbose.",
+        "The Ecto queries run for a page, with SQL, timings, origin (the Repo call site), caller (the LiveView, controller or on_mount frame that led to it; needs the repo's stacktrace: true), and the callback and event they ran in (span is the callback's seq group, as in page_callbacks; callback is request for a query outside any LiveView callback). noise tags framework queries (check_repo_status: Phoenix.Ecto.CheckRepoStatus), which page_summary leaves out of its counts. Rows are compact by default (no params, times, stacktrace or timestamp; sql cut to 160 bytes, sql_truncated says when): pass verbose: true for full rows. Filter with callback (e.g. handle_event, request), event, span, seq_from and seq_to (inclusive); total counts the filtered rows. group_by (caller, origin, callback or sql) returns groups instead of rows: each with key, count, total_us, n_plus_one and the first query's sql, most queries first (noise left out); limit applies to groups, total counts groups and queries_total the queries grouped. verbose does not apply to groups, and sort is checked then ignored. Use it to see where the queries of one click go: group_by caller with event, then read the rows of one group with verbose.",
         Map.merge(page_props(), %{
           "limit" => int_prop("Maximum queries to return.", 1, 200, 50),
           "sort" => sort_prop(),
@@ -578,7 +578,9 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
     do: rows("queries", &Report.queries(&1, filters), args, opts, &compact(&1, verbose))
 
   defp queries(by, filters, _verbose, args, opts) do
+    # `sort` does not apply to groups, but a bad value is still an error.
     with {:ok, limit} <- int_arg(args, "limit", 50, 1, 200),
+         {:ok, _sort} <- sort_arg(args),
          {:ok, sid} <- resolve(args) do
       groups = Report.query_groups(sid, by, filters)
 

@@ -95,6 +95,14 @@ defmodule PhoenixDevToolbar.McpHintTest do
     refute hit(page()) =~ "MCP at"
   end
 
+  test "a proxied request leaves the flag for a direct local one" do
+    for header <- ~w(x-forwarded-for x-forwarded-host x-forwarded-proto x-real-ip forwarded) do
+      McpHint.reset()
+      refute hit(put_req_header(page(), header, "203.0.113.7")) =~ "MCP at"
+      assert hit(page()) =~ "MCP at"
+    end
+  end
+
   test "IPv6 loopback and mapped IPv4 loopback clients count as local" do
     for ip <- [{0, 0, 0, 0, 0, 0, 0, 1}, {0, 0, 0, 0, 0, 65_535, 0x7F00, 1}] do
       McpHint.reset()

@@ -40,8 +40,8 @@ defmodule PhoenixDevToolbar.ReportFixtures do
   def callback(session, callback, opts \\ []) do
     data = %{
       callback: callback,
-      view: DemoWeb.PageLive,
-      component: nil,
+      view: Keyword.get(opts, :view, DemoWeb.PageLive),
+      component: Keyword.get(opts, :component),
       cid: nil,
       id: nil,
       count: nil,

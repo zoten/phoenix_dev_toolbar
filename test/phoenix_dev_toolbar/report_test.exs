@@ -189,6 +189,56 @@ defmodule PhoenixDevToolbar.ReportTest do
       assert b =~ "load_totals"
     end
 
+    test "callback groups name the view or component and keep the dead render apart" do
+      request = session(:request, path: "/k")
+      live = session(:live_view, path: "/k", view: DemoWeb.PageLive, parent: request.sid)
+
+      callback(request, :mount, span: 1)
+      query(request, span: 1, sql: "SELECT dead")
+      callback(live, :mount, span: 1)
+      query(live, span: 1, sql: "SELECT live")
+      callback(live, :handle_event, span: 2, event: "save", component: DemoWeb.CounterComponent)
+      query(live, span: 2, sql: "SELECT counter")
+      callback(live, :handle_event, span: 3, event: "save")
+      query(live, span: 3, sql: "SELECT page")
+      callback(live, :mount, span: 4, view: DemoWeb.OtherLive)
+      query(live, span: 4, sql: "SELECT other")
+      query(request, span: 9, sql: "SELECT controller")
+
+      keys =
+        [request.sid, live.sid]
+        |> Report.query_groups(:callback)
+        |> Enum.map(& &1.key)
+        |> Enum.sort()
+
+      assert keys ==
+               Enum.sort([
+                 "DemoWeb.PageLive mount (dead render)",
+                 "DemoWeb.PageLive mount",
+                 ~s(DemoWeb.CounterComponent handle_event "save"),
+                 ~s(DemoWeb.PageLive handle_event "save"),
+                 "DemoWeb.OtherLive mount",
+                 "request"
+               ])
+    end
+
+    test "the heaviest callback counts noise free queries" do
+      s = session(:live_view, path: "/h", view: DemoWeb.PageLive)
+      callback(s, :mount, span: 1, us: 100)
+
+      for _ <- 1..3 do
+        query(s,
+          span: 1,
+          sql: "SELECT schema_migrations",
+          stacktrace: ["lib/ecto/x.ex:1: Ecto.Migration.SchemaMigration.versions/2"]
+        )
+      end
+
+      for _ <- 1..2, do: query(s, span: 1, sql: "SELECT real", us: 10)
+
+      assert %{callbacks: %{heaviest: %{queries: 2, query_us: 20}}} = Report.summary(s.sid)
+    end
+
     test "groups by origin, callback (with the event) and sql", %{s: s} do
       assert [%{key: origin, count: 3}, %{key: other, count: 3}, %{key: nil, count: 1}] =
                Report.query_groups(s.sid, :origin)
@@ -200,16 +250,18 @@ defmodule PhoenixDevToolbar.ReportTest do
       by_callback = Report.query_groups(s.sid, :callback)
 
       assert [
-               %{key: ~s(handle_event "withdraw"), count: 5},
-               %{key: "mount", count: 1},
-               %{key: ~s(handle_event "other"), count: 1}
+               %{key: ~s(DemoWeb.PageLive handle_event "withdraw"), count: 5},
+               %{key: "DemoWeb.PageLive mount", count: 1},
+               %{key: ~s(DemoWeb.PageLive handle_event "other"), count: 1}
              ] = by_callback
 
       assert [%{key: "SELECT a", count: 3, sql: nil} | _] = Report.query_groups(s.sid, :sql)
     end
 
     test "filters apply before grouping, noise is left out unless asked", %{s: s} do
-      assert [%{key: "mount", count: 1}] = Report.query_groups(s.sid, :callback, callback: :mount)
+      assert [%{key: "DemoWeb.PageLive mount", count: 1}] =
+               Report.query_groups(s.sid, :callback, callback: :mount)
+
       assert [%{count: 1}] = Report.query_groups(s.sid, :caller, span: 3)
 
       query(s, span: 3, sql: ~s(SELECT s0."version" FROM "schema_migrations" AS s0), us: 1)

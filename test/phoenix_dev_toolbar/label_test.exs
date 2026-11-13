@@ -60,11 +60,41 @@ defmodule PhoenixDevToolbar.LabelTest do
       assert label_of(sid) == "mfa:/demo"
     end
 
-    test "a function that finds no user yields no label" do
-      put_app_env(:label, {__MODULE__, :by_assign})
+    test "a function that finds no user is called and yields no label" do
+      test = self()
+
+      put_app_env(:label, fn conn ->
+        send(test, {:label_called, conn.assigns[:persona]})
+        conn.assigns[:persona]
+      end)
 
       {_conn, sid} = load("/demo")
+      assert_received {:label_called, nil}
       assert label_of(sid) == nil
+    end
+
+    test "a function reading what the router pipeline assigned labels both sessions" do
+      put_app_env(:label, {__MODULE__, :by_assign})
+
+      {host, sid} =
+        visit(Plug.Conn.put_req_header(build_conn(), "x-persona", "persona-a"), "/demo")
+
+      assert label_of(sid) == "persona-a"
+
+      assert Report.sessions(kind: :live_view) |> List.first() |> Map.fetch!(:label) ==
+               "persona-a"
+
+      assert Report.sessions(label: "persona-a") |> length() == 2
+      _ = host
+    end
+
+    test "without the header the same function labels nothing" do
+      put_app_env(:label, {__MODULE__, :by_assign})
+
+      {_host, sid} = visit("/demo")
+
+      assert label_of(sid) == nil
+      assert Report.sessions(kind: :live_view) |> List.first() |> Map.fetch!(:label) == nil
     end
 
     for {name, fun} <- [raising: :boom, throwing: :throws, exiting: :exits, non_text: :not_text] do
@@ -282,7 +312,7 @@ defmodule PhoenixDevToolbar.LabelTest do
       {_conn, plain} = load("/demo")
 
       panel = open_tab(labeled, "request")
-      assert has_element?(panel, ~s(#pdt-requests [data-pdt-label="alice"]), "alice")
+      assert has_element?(panel, ~s(#pdt-requests [data-pdt-label="alice"]), "as alice")
 
       panel = open_tab(plain, "request")
       refute has_element?(panel, "#pdt-requests [data-pdt-label]")

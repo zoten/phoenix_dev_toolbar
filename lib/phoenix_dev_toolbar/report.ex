@@ -129,7 +129,10 @@ defmodule PhoenixDevToolbar.Report do
   `callback` and `event`: a LiveView or LiveComponent callback, `:render`,
   `:handle_info` or `:async` for a LiveView query no callback owns (as the
   inferred entries of `callbacks/2`), `:request` for a request query outside
-  any LiveView callback (the plug pipeline, a controller).
+  any LiveView callback (the plug pipeline, a controller). `owner` is the
+  LiveComponent or LiveView module of that callback (nil outside any LiveView);
+  `dead_render?` is true for a callback of the request's own render (the
+  disconnected mount), false for the connected LiveView session.
 
   `noise` tags a framework query: `"check_repo_status"` for
   `Phoenix.Ecto.CheckRepoStatus` (the `schema_migrations` checks of every dev
@@ -155,6 +158,8 @@ defmodule PhoenixDevToolbar.Report do
           caller: String.t() | nil,
           callback: atom(),
           event: String.t() | nil,
+          owner: String.t() | nil,
+          dead_render?: boolean(),
           noise: String.t() | nil,
           stacktrace: [String.t()],
           n_plus_one?: boolean()
@@ -641,8 +646,10 @@ defmodule PhoenixDevToolbar.Report do
   The queries of `target` grouped by `by`, most queries first (then most time).
 
   `by` is `:caller` or `:origin` (the query's frame, nil groups as `nil`),
-  `:callback` (the callback name, plus the event when there is one, such as
-  `"handle_event \"withdraw\""`, so two clicks stay apart) or `:sql` (the SQL cut
+  `:callback` (the owning LiveView or LiveComponent, the callback name and the
+  event when there is one, such as `"DemoWeb.PageLive handle_event \"withdraw\""`,
+  so two clicks, two views and two components stay apart; the request's own
+  render adds `(dead render)`, so it stays apart from the connected mount) or `:sql` (the SQL cut
   to #{@sql_preview} bytes). Options are those of `queries/2`, filters
   included, plus `noise:` (default false: framework queries are left out).
   See `t:query_group/0`.
@@ -674,10 +681,13 @@ defmodule PhoenixDevToolbar.Report do
   defp group_key(query, :caller), do: query.caller
   defp group_key(query, :origin), do: query.origin
   defp group_key(query, :sql), do: sql_preview(query)
-  defp group_key(%{callback: callback, event: nil}, :callback), do: Atom.to_string(callback)
 
-  defp group_key(%{callback: callback, event: event}, :callback),
-    do: "#{callback} #{inspect(event)}"
+  defp group_key(query, :callback) do
+    owner = if query.owner, do: query.owner <> " "
+    event = if query.event, do: " " <> inspect(query.event)
+    dead = if query.dead_render?, do: " (dead render)"
+    "#{owner}#{query.callback}#{event}#{dead}"
+  end
 
   defp sql_preview(%{sql: nil}), do: nil
   defp sql_preview(%{sql: sql}), do: Truncate.prefix(sql, @sql_preview)
@@ -712,7 +722,12 @@ defmodule PhoenixDevToolbar.Report do
 
     callback
     |> brief.(@callback_brief)
-    |> Map.merge(%{span: callback.span, by_caller: by_caller})
+    |> Map.merge(%{
+      span: callback.span,
+      by_caller: by_caller,
+      queries: length(own),
+      query_us: total(own)
+    })
   end
 
   defp matching(rows, opts, keys) do
@@ -981,11 +996,17 @@ defmodule PhoenixDevToolbar.Report do
         caller: QueryFrames.caller(stacktrace, places.patterns),
         callback: place.callback,
         event: place.event,
+        owner: module_name(place.component || place.view),
+        dead_render?: dead_render?(places, event.sid, place),
         noise: QueryFrames.noise(data),
         stacktrace: stacktrace,
         n_plus_one?: MapSet.member?(flagged, event.seq)
       }
     end
+  end
+
+  defp dead_render?(%{sessions: sessions}, sid, place) do
+    match?(%{^sid => {:request, _view}}, sessions) and place.callback != :request
   end
 
   # {noise, counted}: framework queries are counted apart.

@@ -511,8 +511,18 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
 
       callbacks = call!("page_queries", %{"sid" => sid, "group_by" => "callback"})
 
-      assert [~s(handle_event "withdraw"), ~s(handle_event "other")] ==
-               Enum.map(callbacks["groups"], & &1["key"])
+      assert [
+               ~s{DemoWeb.PageLive handle_event "withdraw"},
+               ~s{DemoWeb.PageLive handle_event "other"}
+             ] == Enum.map(callbacks["groups"], & &1["key"])
+    end
+
+    test "sort is validated with group_by, then ignored", %{sid: sid} do
+      assert call_error("page_queries", %{"sid" => sid, "group_by" => "sql", "sort" => "bogus"}) =~
+               "sort:"
+
+      assert %{"groups" => [_ | _]} =
+               call!("page_queries", %{"sid" => sid, "group_by" => "sql", "sort" => "slowest"})
     end
 
     test "a bad group_by is a tool error", %{sid: sid} do
