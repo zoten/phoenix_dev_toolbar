@@ -6,7 +6,6 @@ defmodule PhoenixDevToolbar.LabelTest do
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
   import PhoenixDevToolbar.EnvHelpers
-  import PhoenixDevToolbar.JsonHelpers, only: [builtin_json_decode!: 1]
   import PhoenixDevToolbar.PageHelpers
 
   alias PhoenixDevToolbar.Label
@@ -294,6 +293,6 @@ defmodule PhoenixDevToolbar.LabelTest do
     assert {:ok, %{"pages" => pages}} =
              Tools.call("list_pages", args, base_url: "http://localhost:4000/__pdt")
 
-    pages |> PhoenixDevToolbar.Mcp.Json.encode!() |> builtin_json_decode!()
+    pages |> PhoenixDevToolbar.Mcp.Json.encode!() |> Jason.decode!()
   end
 end
