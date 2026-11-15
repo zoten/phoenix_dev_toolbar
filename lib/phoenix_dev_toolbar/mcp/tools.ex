@@ -71,7 +71,11 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
             "default" => false
           },
           "limit" => int_prop("Maximum pages to return.", 1, 50, 10),
-          "offset" => offset_prop()
+          "offset" =>
+            nonneg_prop(
+              "Pages to skip, after filters (default 0). Repeat while truncated is true (use next_offset); " <>
+                "more pages may remain when as many rows came back as `limit`."
+            )
         }
       ),
       tool(
@@ -83,7 +87,8 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
           "path" => @path_prop,
           "verbose" => %{
             "type" => "boolean",
-            "description" => "Full query, callback and error items instead of compact ones.",
+            "description" =>
+              "Full query, callback and error items instead of compact ones; also keeps session.owner.",
             "default" => false
           }
         }
@@ -197,7 +202,14 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
         "page_assigns_shape",
         "Weigh a LiveView's assigns",
         "The size of each assign of the page's LiveView, largest first, with no values: type, length, words (memory) and stream?. Look for big lists that should be streams. A stream's words are what the server holds; its items live in the client. Read live: the page must be open in a browser. live_view_sid and live_view_path name the LiveView read, which may be a later one than the page's path after live navigation. note says the newest capture had no live LiveView and an open tab of the same path was read instead; warning says the tab navigated away from the page's path.",
-        Map.put(page_props(), "offset", offset_prop())
+        Map.put(
+          page_props(),
+          "offset",
+          nonneg_prop(
+            "Assigns to skip (default 0). Repeat while truncated is true (use next_offset). " <>
+              "Entries past the 100-entry cut (see omitted) are not reachable."
+          )
+        )
       )
     ]
   end
@@ -208,8 +220,8 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
     nonneg_prop(
       "Rows to skip, after filters, sort and group_by and before limit (default 0). " <>
         "To read a long result in pieces, repeat the call while truncated is true (use " <>
-        "next_offset), or while offset + returned < total: an uncut result has no " <>
-        "next_offset even when rows beyond limit remain. total stays the full count."
+        "next_offset). When limit ends the result (no truncated), rows remain while " <>
+        "offset + returned < total, and there is no next_offset. total stays the full count."
     )
   end
 

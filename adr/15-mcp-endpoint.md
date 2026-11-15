@@ -108,8 +108,8 @@ developer. `path` and `path_prefix` are at most 2048 bytes.
 
 Every tool takes `max_bytes` (non-negative integer; `0` means no cap), this call's
 cap instead of `max_result_bytes:`: it can raise or lower it, the configured
-value is a default, not a ceiling. `page_summary` and `page_report` take
-`max_bytes` but no `offset`. A cut result carries `truncated: true`, `hint` and,
+value is a default, not a ceiling. `page_summary`, `page_report`, `compare_pages` and
+`page_n_plus_one` take `max_bytes` but no `offset`. A cut result carries `truncated: true`, `hint` and,
 on the row tools, `next_offset` (see Results).
 
 Results come as `structuredContent` and as the same JSON in a text block, except
@@ -124,13 +124,12 @@ is capped (`max_result_bytes:`, 60_000 bytes by default, or the call's
 `callbacks`, `errors`, `assigns`) is cut from the end in the order the tool chose,
 `returned` is updated, and the result gets `truncated: true`, `next_offset`
 (`offset` plus the rows kept: call again with it to page on) and a `hint` naming
-the options (`offset`, `max_bytes`, filters, `group_by`, a lower `limit`, no
-`verbose`). A row at `offset` larger than the cap leaves an empty list with
+the options (`offset`, `max_bytes`, and the narrowing arguments that tool accepts: filters, `group_by` on `page_queries`, a lower `limit`, no `verbose` where it applies; `max_bytes: 0` warns the result may exceed the client's limit). A row at `offset` larger than the room left after the fixed fields and the hint leaves an empty list with
 `next_offset` set past it (`offset + 1`) and a hint to read it with a larger
 `max_bytes` or skip it, so paging never stops mid-list; when the fixed fields
 alone exceed the cap, the list is empty, there is no `next_offset` and the hint
 asks for a larger `max_bytes`. An uncut result has no `next_offset`: rows past
-`limit` remain while `offset + returned < total`. `total` stays the full count. `page_summary`, `compare_pages` and
+`limit` remain while `offset + returned < total` (`list_pages` has no `total`: more may remain when as many rows came back as `limit`). `total` stays the full count. `page_summary`, `compare_pages` and
 `page_n_plus_one` have no rows: their longest list is shortened first, with the
 hint but no `next_offset` (the hint points to `page_queries`, `page_callbacks`
 and `page_errors`). `page_report` is cut on a UTF-8 boundary with a closing line
@@ -235,3 +234,5 @@ upgrade.
   about 250 bytes, whatever the cap.
 - `page_assigns_shape` has no `total` or `returned`, and `offset` applies after
   its 100 entry cut: the `omitted` entries cannot be paged to.
+- Offset paging over newest-first lists (`list_pages`, `recent_errors`) drifts when new captures arrive between calls: rows can repeat or be skipped.
+- `page_summary` and `compare_pages` cut a nested list without saying which, and when nothing is left to trim the result can stay over the cap.

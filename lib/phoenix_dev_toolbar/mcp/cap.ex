@@ -44,32 +44,32 @@ defmodule PhoenixDevToolbar.Mcp.Cap do
   defp cut(name, result, size, cap, offset) when name in @row_tools do
     case Enum.find(@row_keys, &is_list(Map.get(result, &1))) do
       nil -> cut_nested(name, result, size, cap)
-      key -> cut_rows(result, key, size, cap, offset || 0)
+      key -> cut_rows(name, result, key, size, cap, offset || 0)
     end
   end
 
   defp cut(name, result, size, cap, _offset), do: cut_nested(name, result, size, cap)
 
-  defp cut_rows(result, key, size, cap, offset) do
+  defp cut_rows(name, result, key, size, cap, offset) do
     rows = Map.fetch!(result, key)
     total = length(rows)
     sizes = Enum.map(rows, &(byte_size(Json.encode!(&1)) + 1))
     # What stays when every row goes (the envelope), plus the room the added keys need.
     envelope = size - Enum.sum(sizes) + 1
-    base = envelope + reserve(rows_hint(total, total, cap, offset))
+    base = envelope + reserve(rows_hint(:cut, name, total, total, cap, offset))
     keep = fitting(sizes, cap - base, 0)
-    reason = zero_reason(keep, sizes, cap - envelope)
+    reason = zero_reason(keep, sizes, cap - base)
 
     result
     |> Map.put(key, Enum.take(rows, keep))
     |> maybe_put_returned(keep)
     |> Map.put("truncated", true)
     |> maybe_put_next(reason, keep, offset)
-    |> Map.put("hint", rows_hint(reason, keep, total, cap, offset))
+    |> Map.put("hint", rows_hint(reason, name, keep, total, cap, offset))
   end
 
-  # Why nothing fits: the first row is bigger than the room the envelope leaves,
-  # or the fixed fields alone are over the cap.
+  # Why nothing fits: the first row is bigger than the room left after the fixed
+  # fields and the hint, or those alone are over the cap.
   defp zero_reason(0, [first | _], room) when room > 0 and first > room, do: :big_row
   defp zero_reason(0, _sizes, _room), do: :small_cap
   defp zero_reason(_keep, _sizes, _room), do: :cut
@@ -97,24 +97,39 @@ defmodule PhoenixDevToolbar.Mcp.Cap do
 
   defp reserve(hint), do: byte_size(hint) + 60
 
-  defp rows_hint(keep, total, cap, offset), do: rows_hint(:cut, keep, total, cap, offset)
-
-  defp rows_hint(:big_row, _keep, _total, cap, offset) do
+  defp rows_hint(:big_row, name, _keep, _total, cap, offset) do
     "the row at offset #{offset} is larger than the cap of #{cap} bytes: pass max_bytes " <>
-      "(max_bytes: 0 for no cap) to read it, or offset: #{offset + 1} to skip it; " <>
-      "or narrow it with filters, group_by, or without verbose."
+      "(max_bytes: 0 for no cap, the result may then exceed the client's tool result limit: " <>
+      "write it to a file with curl) to read it, or offset: #{offset + 1} to skip it" <>
+      narrowing(name, ";") <> "."
   end
 
-  defp rows_hint(:small_cap, _keep, _total, cap, _offset) do
+  defp rows_hint(:small_cap, _name, _keep, _total, cap, _offset) do
     "the cap of #{cap} bytes is too small for this result's fixed fields. " <>
       "Pass max_bytes with a larger value (or max_bytes: 0 for no cap)."
   end
 
-  defp rows_hint(:cut, keep, total, cap, offset) do
+  defp rows_hint(:cut, name, keep, total, cap, offset) do
     "result cut to #{keep} of the #{total} rows of this call to stay under #{cap} bytes. " <>
       "For the rest call again with offset: #{offset + keep}; for everything in one result " <>
-      "pass max_bytes (or max_bytes: 0 for no cap); or narrow it with filters, group_by, " <>
-      "a lower limit, or without verbose."
+      "pass max_bytes (or max_bytes: 0 for no cap, the result may then exceed the client's " <>
+      "tool result limit: write it to a file with curl)" <> narrowing(name, ";") <> "."
+  end
+
+  # The arguments each tool accepts to return less; never one it rejects.
+  @narrowing %{
+    "list_pages" => ["filters", "a lower limit", "without verbose"],
+    "page_queries" => ["filters", "group_by", "a lower limit", "without verbose"],
+    "page_callbacks" => ["filters", "a lower limit"],
+    "page_errors" => ["a lower limit"],
+    "recent_errors" => ["a lower limit"]
+  }
+
+  defp narrowing(name, lead) do
+    case Map.get(@narrowing, name, []) do
+      [] -> ""
+      options -> "#{lead} or narrow it with #{Enum.join(options, ", ")}"
+    end
   end
 
   # Tools without rows (page_summary, compare_pages, page_n_plus_one): the
@@ -184,12 +199,14 @@ defmodule PhoenixDevToolbar.Mcp.Cap do
   defp nested_hint("page_summary", cap) do
     "result cut to stay under #{cap} bytes: lists were shortened, longest first. " <>
       "Use page_queries, page_callbacks and page_errors for the full lists; " <>
-      "or pass max_bytes (max_bytes: 0 for no cap)."
+      "or pass max_bytes (max_bytes: 0 for no cap, the result may then exceed the client's " <>
+      "tool result limit: write it to a file with curl)."
   end
 
   defp nested_hint(_name, cap) do
     "result cut to stay under #{cap} bytes: lists were shortened, longest first. " <>
-      "Pass max_bytes (max_bytes: 0 for no cap) for the full result, or use page_queries, " <>
+      "Pass max_bytes (max_bytes: 0 for no cap, the result may then exceed the client's tool " <>
+      "result limit: write it to a file with curl) for the full result, or use page_queries, " <>
       "page_callbacks and page_errors for details."
   end
 
@@ -200,7 +217,7 @@ defmodule PhoenixDevToolbar.Mcp.Cap do
 
     closing =
       "\n\n_Report cut to stay under #{cap} bytes: pass max_bytes (max_bytes: 0 for no cap) " <>
-        "for all of it, or use page_queries, page_callbacks and page_errors._\n"
+        "for all of it, or use the page_* tools (page_queries, page_callbacks, page_errors)._\n"
 
     room = max(cap - byte_size(closing) - byte_size(footer), 0)
 
@@ -209,7 +226,9 @@ defmodule PhoenixDevToolbar.Mcp.Cap do
     |> Map.put("truncated", true)
     |> Map.put(
       "hint",
-      "report cut to stay under #{cap} bytes. Pass max_bytes (max_bytes: 0 for no cap) for all of it."
+      "report cut to stay under #{cap} bytes. Pass max_bytes (max_bytes: 0 for no cap, the result " <>
+        "may then exceed the client's tool result limit: write it to a file with curl) for all of it, " <>
+        "or use page_queries, page_callbacks and page_errors."
     )
   end
 

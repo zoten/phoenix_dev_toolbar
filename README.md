@@ -249,10 +249,10 @@ Without an MCP client (a subagent, a script), call the tools with `curl` and rea
 
 ```sh
 curl -s -o /dev/null -H 'Accept: text/html' http://localhost:4000/posts
-curl -s -X POST -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"page_queries","arguments":{"path":"/posts","group_by":"caller"}}}' http://localhost:4000/__pdt/mcp | jq -r '.result.content[0].text'
+curl -s -X POST -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"page_queries","arguments":{"path":"/posts","group_by":"caller"}}}' http://localhost:4000/__pdt/mcp | jq -r '.result.content[0].text // .error.message'
 ```
 
-Results are capped at `mcp: [max_result_bytes: 60_000]` (`:infinity` for none). A `truncated` result carries `next_offset` and a `hint`: page with `offset`, pass `max_bytes` (`0` = no cap, for a file), or narrow (filters, `group_by`, lower `limit`, no `verbose`). `list_pages` takes `view` (the newest page of a view: `limit: 1`); `owner` needs `verbose: true`.
+Results are capped at `mcp: [max_result_bytes: 60_000]` (`:infinity` for none). A `truncated` result carries `next_offset` and a `hint`: page with `offset: next_offset`, pass `max_bytes` (`0` = no cap, for a file), or narrow (filters, `group_by`, lower `limit`, no `verbose`). When `limit` ends a result (no `truncated`), more rows remain while `offset + returned < total`. `list_pages` takes `view` (the newest page of a view: `limit: 1`); `owner` needs `verbose: true`.
 
 The tools answer "No page captured" until the page was loaded (browser, or `curl` with `Accept: text/html`) in the last 10 minutes.
 

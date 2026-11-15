@@ -109,6 +109,36 @@ defmodule PhoenixDevToolbar.Mcp.CapTest do
       assert result["hint"] =~ "offset: 1"
     end
 
+    test "a row between the two bounds is skipped by next_offset, never the small cap dead end" do
+      for pad <- 600..1_000, rem(pad, 7) == 0 do
+        rows = [%{"id" => 1, "pad" => String.duplicate("x", pad)}, %{"id" => 2, "pad" => "y"}]
+        result = paged_rows(rows, 0, 1_000)
+
+        case result["returned"] do
+          0 ->
+            assert result["next_offset"] == 1, "pad #{pad}"
+            assert result["hint"] =~ "larger than the cap", "pad #{pad}"
+
+          _fits ->
+            :ok
+        end
+      end
+    end
+
+    test "the narrowing hint names only arguments the tool accepts", %{sid: sid} do
+      queries = call!("page_queries", %{"sid" => sid, "max_bytes" => 3_000})
+      assert queries["hint"] =~ "group_by"
+
+      for name <- ["page_errors", "recent_errors"] do
+        rows = for n <- 1..30, do: %{"id" => n, "pad" => String.duplicate("x", 100)}
+        result = Cap.apply(name, %{"total" => 30, "returned" => 30, "errors" => rows}, 1_500, 0)
+        assert result["hint"] =~ "lower limit"
+        refute result["hint"] =~ "group_by"
+        refute result["hint"] =~ "verbose"
+        refute result["hint"] =~ "filters"
+      end
+    end
+
     test "fixed fields over the cap get the cap too small hint, no next_offset", %{sid: sid} do
       result = call!("page_queries", %{"sid" => sid, "max_bytes" => 50})
       assert %{"truncated" => true, "returned" => 0, "queries" => []} = result
@@ -248,6 +278,8 @@ defmodule PhoenixDevToolbar.Mcp.CapTest do
         assert byte_size(md) <= cap
         assert String.ends_with?(md, footer)
         assert md =~ "Report cut"
+        assert md =~ "page_queries"
+        assert result["hint"] =~ "client's tool result limit"
       end
     end
 

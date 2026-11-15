@@ -164,9 +164,10 @@ endpoint is plain JSON-RPC over HTTP (no `initialize`, no version header), so
 curl -s -o /dev/null -H 'Accept: text/html' http://<host>:<port>/posts
 
 # 2. Call a tool; the result is JSON text in result.content[0].text
-mcp() { curl -s -X POST -H 'content-type: application/json' \
-  -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"$1\",\"arguments\":$2}}" \
-  http://<host>:<port>/__pdt/mcp | jq -r '.result.content[0].text'; }
+mcp() { local args="${2:-}"; [ -n "$args" ] || args='{}'
+  curl -s -X POST -H 'content-type: application/json' \
+  -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"$1\",\"arguments\":$args}}" \
+  http://<host>:<port>/__pdt/mcp | jq -r '.result.content[0].text // .error.message'; }
 
 mcp page_summary '{"path":"/posts"}'
 mcp page_queries '{"path":"/posts","group_by":"caller"}'
@@ -178,8 +179,9 @@ mcp page_queries '{"path":"/posts","verbose":true,"max_bytes":0}' > /tmp/queries
 A LiveView event (click, submit) needs a real browser: a `curl` capture has the
 dead render only. Results are capped (`mcp: [max_result_bytes:]`, 60_000 bytes
 by default): a `truncated` result carries `next_offset` and a `hint`. Page with
-`offset`, pass `max_bytes` (`0` = no cap), or narrow with filters, `group_by`, a
-lower `limit` or no `verbose`. `list_pages` takes `view` (the newest page of a
+`offset: next_offset`, pass `max_bytes` (`0` = no cap), or narrow with filters, `group_by`, a
+lower `limit` or no `verbose`. When `limit` ends a result (no `truncated`), more
+rows remain while `offset + returned < total`. `list_pages` takes `view` (the newest page of a
 view: `limit: 1`); `owner` appears only with `verbose`.
 
 ## 6. Agent skill and usage rules

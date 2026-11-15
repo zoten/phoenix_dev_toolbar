@@ -23,6 +23,8 @@ defmodule PhoenixDevToolbar.Mcp.Protocol do
                   "pages captured after an earlier call. To check a change: page_summary, note " <>
                   "its sid, edit, reload the page, then compare_pages with before: sid. " <>
                   "The audit_page prompt (argument path) walks these tools for one page. " <>
+                  "A result over the size cap has truncated: true: page with next_offset, " <>
+                  "or pass max_bytes (0 = no cap). " <>
                   "Load the page first (a browser, or curl with " <>
                   "Accept: text/html): only pages captured in the last 10 minutes are available."
 

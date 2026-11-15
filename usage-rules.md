@@ -78,11 +78,12 @@ When the project's MCP config has the `phoenix-dev-toolbar` server
 - Results are capped (60_000 bytes by default). A `truncated` result has
   `next_offset` and a `hint`: page with `offset: next_offset`, pass `max_bytes`
   (`0` = no cap, for a file), or narrow (filters, `group_by`, lower `limit`, no
-  `verbose`). `list_pages` takes `view` (newest page of a view: `limit: 1`);
-  `owner` needs `verbose: true`.
+  `verbose`). When `limit` ends a result (no `truncated`), more rows remain
+  while `offset + returned < total`. `list_pages` takes `view` (newest page of
+  a view: `limit: 1`); `owner` needs `verbose: true`.
 - No MCP client (a subagent)? The endpoint is plain JSON-RPC: load the page with
   `curl -s -o /dev/null -H 'Accept: text/html' URL` (dead render only), then
-  `curl -s -X POST -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"page_summary","arguments":{"path":"/posts"}}}' http://localhost:4000/__pdt/mcp | jq -r '.result.content[0].text'`.
+  `curl -s -X POST -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"page_summary","arguments":{"path":"/posts"}}}' http://localhost:4000/__pdt/mcp | jq -r '.result.content[0].text // .error.message'`.
   Brief subagents with this recipe; `page_queries` takes `group_by: "caller"`.
 - Tools or fields missing from your tool list after a `phoenix_dev_toolbar`
   upgrade: the client connected before it. Ask the user to reconnect

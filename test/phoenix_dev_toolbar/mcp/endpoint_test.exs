@@ -283,6 +283,21 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
       assert {:ok, %{"queries" => %{"count" => 1}}} = Json.decode(text)
     end
 
+    test "mcp: [max_result_bytes:] caps a tools/call result" do
+      put_app_env(:mcp, max_result_bytes: 1_000)
+      session = session(:request, path: "/capped")
+      for n <- 1..30, do: query(session, sql: "SELECT #{n} FROM t")
+
+      conn =
+        post(
+          rpc("tools/call", %{"name" => "page_queries", "arguments" => %{"sid" => session.sid}})
+        )
+
+      assert %{"result" => %{"content" => [%{"text" => text}]}} = json(conn)
+      assert byte_size(text) <= 1_000
+      assert {:ok, %{"truncated" => true}} = Json.decode(text)
+    end
+
     test "stateless: tools/call with no initialize and no version header (curl)" do
       session(:request, path: "/users") |> query()
 

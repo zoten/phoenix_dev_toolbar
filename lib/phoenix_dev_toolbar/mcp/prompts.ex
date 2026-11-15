@@ -63,7 +63,7 @@ defmodule PhoenixDevToolbar.Mcp.Prompts do
     4. Call page_errors with sid set to that sid: failures during the page's requests and callbacks.
     5. If the page is a LiveView, call page_assigns_shape with path #{quoted} (the page must be open in a browser; not the pinned sid, so a curl capture can fall back to the open tab) and read its note and live_view_sid to know what was read: look for large lists that should be streams.
 
-    If a result is truncated, page with offset set to next_offset, pass max_bytes, or narrow the call (filters, group_by, lower limit).
+    If a result is truncated, page with offset set to next_offset, pass max_bytes, or narrow the call (filters, group_by, lower limit). A result that limit ends (no truncated) has more rows while offset + returned < total.
 
     Then report the findings, most important first, each with the evidence (query, count, duration, assign name) and a proposed fix, and end with the panel_url so the developer can open the page in the toolbar.
 
