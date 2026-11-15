@@ -38,7 +38,8 @@ dependency: JSON goes through `Phoenix.json_library/0`.
   alone): the cap on a tool result, a positive integer or `:infinity` (no cap),
   default 60_000 (see Results). A bad value logs one boot warning and counts as
   the default.
-- Any other value logs a boot warning and counts as `true`.
+- Any other value (an unknown or repeated key included) logs a boot warning and
+  counts as `true`.
 
 IPv4-mapped IPv6 peers compare as IPv4. Entries are parsed with
 `:inet.parse_strict_address/1` and a prefix of 1 to 3 digits, never into atoms;
@@ -124,8 +125,12 @@ is capped (`max_result_bytes:`, 60_000 bytes by default, or the call's
 `returned` is updated, and the result gets `truncated: true`, `next_offset`
 (`offset` plus the rows kept: call again with it to page on) and a `hint` naming
 the options (`offset`, `max_bytes`, filters, `group_by`, a lower `limit`, no
-`verbose`); a single row over the cap leaves an empty list and a hint without
-`next_offset`. `total` stays the full count. `page_summary`, `compare_pages` and
+`verbose`). A row at `offset` larger than the cap leaves an empty list with
+`next_offset` set past it (`offset + 1`) and a hint to read it with a larger
+`max_bytes` or skip it, so paging never stops mid-list; when the fixed fields
+alone exceed the cap, the list is empty, there is no `next_offset` and the hint
+asks for a larger `max_bytes`. An uncut result has no `next_offset`: rows past
+`limit` remain while `offset + returned < total`. `total` stays the full count. `page_summary`, `compare_pages` and
 `page_n_plus_one` have no rows: their longest list is shortened first, with the
 hint but no `next_offset` (the hint points to `page_queries`, `page_callbacks`
 and `page_errors`). `page_report` is cut on a UTF-8 boundary with a closing line
@@ -222,3 +227,11 @@ upgrade.
   request per boot logs one info line with the MCP URL the browser reached, plus
   a note when the endpoint's `http: [ip: ...]` is loopback (one
   `:persistent_term` read per request afterwards; nothing when `mcp: false`).
+- The cap measures the text block only: a client on 2025-06-18 or later also
+  gets the same data in `structuredContent`, so the response is about twice
+  `max_result_bytes`. A client that counts both against its limit can still
+  overflow: lower `max_bytes`.
+- A cut `page_report` keeps its closing line and footer, so it never goes below
+  about 250 bytes, whatever the cap.
+- `page_assigns_shape` has no `total` or `returned`, and `offset` applies after
+  its 100 entry cut: the `omitted` entries cannot be paged to.
