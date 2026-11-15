@@ -43,7 +43,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       tool(
         "list_pages",
         "List captured pages",
-        "Lists the pages the toolbar captured, newest first, each with a panel_url. A request row lists its connected LiveView sessions in live_views (sid, view, path, started_at, events; at most 10, live_views_more when cut). Rows carry label (the actor, set by the app's label: config or ?pdt_label=name on a request); filter with label. Pass the request sid to the page tools: they cover its LiveViews, and a connected-mount sid reads as its page.",
+        "Lists the pages the toolbar captured, newest first, each with a panel_url. A request row lists its connected LiveView sessions in live_views (sid, view, path, started_at, events; at most 10, live_views_more when cut). Rows carry label (the actor, set by the app's label: config or ?pdt_label=name on a request); filter with label or view (newest page for a path or view: limit: 1). Rows leave out the owner pid unless verbose: true. Pass the request sid to the page tools: they cover its LiveViews, and a connected-mount sid reads as its page.",
         %{
           "path" => @path_prop,
           "path_prefix" => %{
@@ -59,6 +59,16 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
             "type" => "string",
             "description" =>
               "Only pages of this actor label (exact match), such as a persona or user id."
+          },
+          "view" => %{
+            "type" => "string",
+            "description" =>
+              "Only pages whose LiveView (or one of its live_views) is this module, exactly as inspect/1 prints it, such as DemoWeb.PageLive."
+          },
+          "verbose" => %{
+            "type" => "boolean",
+            "description" => "Keep the owner pid string on rows and live_views.",
+            "default" => false
           },
           "limit" => int_prop("Maximum pages to return.", 1, 50, 10),
           "offset" => offset_prop()
@@ -275,11 +285,13 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
          {:ok, prefix} <- string_arg(args, "path_prefix"),
          :ok <- exclusive(path, prefix),
          {:ok, label} <- string_arg(args, "label"),
+         {:ok, view} <- string_arg(args, "view"),
+         {:ok, verbose} <- bool_arg(args, "verbose"),
          {:ok, since} <- since_arg(args),
          {:ok, limit} <- int_arg(args, "limit", 10, 1, 50),
          {:ok, offset} <- offset_arg(args) do
       filter = PageLookup.filter(path: path, path_prefix: prefix) ++ since ++ label_filter(label)
-      pages = pages(filter, limit, offset)
+      pages = pages(filter, view, verbose, limit, offset)
 
       {:ok, %{"pages" => Enum.map(pages, &Map.put(&1, :panel_url, panel_url(opts, &1.sid)))}}
     end
@@ -289,8 +301,12 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
     with {:ok, verbose} <- bool_arg(args, "verbose"),
          {:ok, sid} <- resolve(args) do
       case Report.summary(sid, verbose: verbose) do
-        nil -> {:error, no_page()}
-        summary -> {:ok, Map.put(summary, :panel_url, panel_url(opts, sid))}
+        nil ->
+          {:error, no_page()}
+
+        summary ->
+          {:ok,
+           summary |> drop_owner(:session, verbose) |> Map.put(:panel_url, panel_url(opts, sid))}
       end
     end
   end
@@ -600,18 +616,44 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   defp exclusive(_path, _prefix), do: :ok
 
   # A Store that is restarting (its tables missing) holds no pages.
-  defp pages(filter, limit, offset \\ 0) do
+  defp pages(filter, limit), do: pages(filter, nil, true, limit, 0)
+
+  defp pages(filter, view, verbose, limit, offset) do
     all = Label.inherit(Store.sessions())
+    by_parent = live_views_by_parent(all)
 
     all
     |> Report.sessions_in(filter)
     |> reject_mounts(all)
+    |> view_matches(view, by_parent)
     |> Enum.drop(offset)
     |> Enum.take(limit)
-    |> with_live_views(all)
+    |> with_live_views(by_parent, verbose)
+    |> Enum.map(&drop_owner(&1, nil, verbose))
   rescue
     ArgumentError -> []
   end
+
+  defp view_matches(pages, nil, _by_parent), do: pages
+
+  defp view_matches(pages, view, by_parent) do
+    Enum.filter(pages, fn page ->
+      view_name(page.view) == view or
+        Enum.any?(Map.get(by_parent, page.sid, []), &(view_name(&1.view) == view))
+    end)
+  end
+
+  # Compared as strings: a view name from the agent never becomes an atom.
+  defp view_name(nil), do: nil
+  defp view_name(view), do: inspect(view)
+
+  defp drop_owner(map, nil, true), do: map
+  defp drop_owner(map, nil, false), do: Map.delete(map, :owner)
+
+  defp drop_owner(map, key, verbose) when is_map_key(map, key),
+    do: Map.update!(map, key, &drop_owner(&1, nil, verbose))
+
+  defp drop_owner(map, _key, _verbose), do: map
 
   defp queries(nil, filters, verbose, args, opts),
     do: rows("queries", &Report.queries(&1, filters), args, opts, &compact(&1, verbose))
@@ -719,17 +761,18 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   # connected mount, joined by `parent`), oldest first. A navigated LiveView
   # (parent is a LiveView) is its own row and is not listed here. One Store
   # read serves every row.
-  defp with_live_views(pages, all) do
-    by_parent =
-      all
-      |> Enum.filter(&(&1.kind == :live_view and is_binary(&1.parent)))
-      |> Enum.sort_by(& &1.started_at)
-      |> Enum.group_by(& &1.parent)
+  defp live_views_by_parent(all) do
+    all
+    |> Enum.filter(&(&1.kind == :live_view and is_binary(&1.parent)))
+    |> Enum.sort_by(& &1.started_at)
+    |> Enum.group_by(& &1.parent)
+  end
 
+  defp with_live_views(pages, by_parent, verbose) do
     Enum.map(pages, fn
       %{kind: :request, sid: sid} = page ->
         {shown, cut} = by_parent |> Map.get(sid, []) |> Enum.split(@live_views_cap)
-        page = Map.put(page, :live_views, Enum.map(shown, &live_view/1))
+        page = Map.put(page, :live_views, Enum.map(shown, &live_view(&1, verbose)))
         maybe_more(page, cut)
 
       page ->
@@ -740,8 +783,8 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   defp maybe_more(page, []), do: page
   defp maybe_more(page, cut), do: Map.put(page, :live_views_more, length(cut))
 
-  defp live_view(session) do
-    %{
+  defp live_view(session, verbose) do
+    row = %{
       sid: session.sid,
       view: session.view,
       path: session.path,
@@ -749,6 +792,8 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       started_at: DateTime.from_unix!(session.started_at, :microsecond),
       events: session.count
     }
+
+    drop_owner(Map.put(row, :owner, session.owner), nil, verbose)
   end
 
   # Arguments
@@ -805,6 +850,13 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   defp check_size({:ok, value} = ok, key) when key in ["path", "path_prefix"] do
     case is_binary(value) and byte_size(value) > @max_path do
       true -> {:error, "#{key} must be at most #{@max_path} bytes"}
+      false -> ok
+    end
+  end
+
+  defp check_size({:ok, value} = ok, "view") do
+    case is_binary(value) and byte_size(value) > 256 do
+      true -> {:error, "view must be at most 256 bytes"}
       false -> ok
     end
   end

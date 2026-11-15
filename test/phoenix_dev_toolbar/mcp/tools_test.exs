@@ -151,7 +151,7 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
                "path: an exact request path string, such as \"/posts\", got a number."
 
       assert call_error("list_pages", %{"bogus" => 1}) ==
-               "Unknown argument(s): \"bogus\". Accepted: label, limit, max_bytes, offset, path, path_prefix, since."
+               "Unknown argument(s): \"bogus\". Accepted: label, limit, max_bytes, offset, path, path_prefix, since, verbose, view."
 
       assert call_error("list_pages", [1]) == "arguments must be an object"
     end
@@ -232,6 +232,74 @@ defmodule PhoenixDevToolbar.Mcp.ToolsTest do
       assert url == "http://localhost:4000/__pdt/panel?sid=" <> req.sid
       assert %{"sid" => sid, "total" => 2} = call!("page_queries", %{"sid" => mount.sid})
       assert sid == req.sid
+    end
+  end
+
+  describe "owner and view" do
+    test "owner is dropped by default and kept with verbose, rows and live_views" do
+      req = session(:request, path: "/o", started_at: @t0)
+      _mount = session(:live_view, path: "/o", parent: req.sid, started_at: @t0 + 1)
+
+      assert %{"pages" => [row]} = call!("list_pages")
+      refute Map.has_key?(row, "owner")
+      assert [lv] = row["live_views"]
+      refute Map.has_key?(lv, "owner")
+      assert row["panel_url"]
+
+      assert %{"pages" => [row]} = call!("list_pages", %{"verbose" => true})
+      assert Map.has_key?(row, "owner")
+      assert [lv] = row["live_views"]
+      assert Map.has_key?(lv, "owner")
+
+      assert call_error("list_pages", %{"verbose" => "yes"}) =~ "verbose: true or false"
+    end
+
+    test "page_summary drops owner unless verbose" do
+      s = session(:request, path: "/o")
+
+      assert %{"session" => session} = call!("page_summary", %{"sid" => s.sid})
+      refute Map.has_key?(session, "owner")
+
+      assert %{"session" => session} = call!("page_summary", %{"sid" => s.sid, "verbose" => true})
+      assert Map.has_key?(session, "owner")
+    end
+
+    test "view matches a row's own view or one of its live_views" do
+      req = session(:request, path: "/a", started_at: @t0)
+
+      mount =
+        session(:live_view,
+          path: "/a",
+          parent: req.sid,
+          view: DemoWeb.PageLive,
+          started_at: @t0 + 1
+        )
+
+      other = session(:live_view, path: "/b", view: DemoWeb.OtherLive, started_at: @t0 + 2)
+
+      assert %{"pages" => [%{"sid" => sid}]} =
+               call!("list_pages", %{"view" => "DemoWeb.PageLive"})
+
+      assert sid == req.sid
+      assert mount.sid != sid
+
+      assert %{"pages" => [%{"sid" => sid}]} =
+               call!("list_pages", %{"view" => "DemoWeb.OtherLive"})
+
+      assert sid == other.sid
+
+      assert %{"pages" => [%{"sid" => ^sid}]} =
+               call!("list_pages", %{"view" => "DemoWeb.OtherLive", "path" => "/b", "limit" => 1})
+
+      assert %{"pages" => []} =
+               call!("list_pages", %{"view" => "DemoWeb.PageLive", "path" => "/b"})
+    end
+
+    test "an unknown view is empty; a bad view is a tool error" do
+      session(:request, path: "/a")
+      assert %{"pages" => []} = call!("list_pages", %{"view" => "No.Such"})
+      assert call_error("list_pages", %{"view" => 1}) =~ "view:"
+      assert call_error("list_pages", %{"view" => String.duplicate("a", 257)}) =~ "view"
     end
   end
 
