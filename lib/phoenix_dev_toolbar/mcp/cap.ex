@@ -54,17 +54,25 @@ defmodule PhoenixDevToolbar.Mcp.Cap do
     rows = Map.fetch!(result, key)
     total = length(rows)
     sizes = Enum.map(rows, &(byte_size(Json.encode!(&1)) + 1))
-    # What stays when every row goes, plus the room the added keys need.
-    base = size - Enum.sum(sizes) + 1 + reserve(rows_hint(total, total, cap, offset))
+    # What stays when every row goes (the envelope), plus the room the added keys need.
+    envelope = size - Enum.sum(sizes) + 1
+    base = envelope + reserve(rows_hint(total, total, cap, offset))
     keep = fitting(sizes, cap - base, 0)
+    reason = zero_reason(keep, sizes, cap - envelope)
 
     result
     |> Map.put(key, Enum.take(rows, keep))
     |> maybe_put_returned(keep)
     |> Map.put("truncated", true)
-    |> maybe_put_next(keep, offset)
-    |> Map.put("hint", rows_hint(keep, total, cap, offset))
+    |> maybe_put_next(reason, keep, offset)
+    |> Map.put("hint", rows_hint(reason, keep, total, cap, offset))
   end
+
+  # Why nothing fits: the first row is bigger than the room the envelope leaves,
+  # or the fixed fields alone are over the cap.
+  defp zero_reason(0, [first | _], room) when room > 0 and first > room, do: :big_row
+  defp zero_reason(0, _sizes, _room), do: :small_cap
+  defp zero_reason(_keep, _sizes, _room), do: :cut
 
   defp fitting([size | rest], room, kept) when size <= room,
     do: fitting(rest, room - size, kept + 1)
@@ -78,18 +86,32 @@ defmodule PhoenixDevToolbar.Mcp.Cap do
     end
   end
 
-  defp maybe_put_next(result, 0, _offset), do: result
-  defp maybe_put_next(result, keep, offset), do: Map.put(result, "next_offset", offset + keep)
+  # An oversize row is skipped by next_offset, so paging never stops dead.
+  defp maybe_put_next(result, :big_row, _keep, offset),
+    do: Map.put(result, "next_offset", offset + 1)
+
+  defp maybe_put_next(result, :small_cap, _keep, _offset), do: result
+
+  defp maybe_put_next(result, :cut, keep, offset),
+    do: Map.put(result, "next_offset", offset + keep)
 
   defp reserve(hint), do: byte_size(hint) + 60
 
-  defp rows_hint(0, total, cap, _offset) when total > 0 do
-    "a single row is larger than the cap of #{cap} bytes. Pass max_bytes with a larger " <>
-      "value (or max_bytes: 0 for no cap), or narrow it with filters, group_by, or without verbose."
+  defp rows_hint(keep, total, cap, offset), do: rows_hint(:cut, keep, total, cap, offset)
+
+  defp rows_hint(:big_row, _keep, _total, cap, offset) do
+    "the row at offset #{offset} is larger than the cap of #{cap} bytes: pass max_bytes " <>
+      "(max_bytes: 0 for no cap) to read it, or offset: #{offset + 1} to skip it; " <>
+      "or narrow it with filters, group_by, or without verbose."
   end
 
-  defp rows_hint(keep, total, cap, offset) do
-    "result cut to #{keep} of #{total} rows to stay under #{cap} bytes. " <>
+  defp rows_hint(:small_cap, _keep, _total, cap, _offset) do
+    "the cap of #{cap} bytes is too small for this result's fixed fields. " <>
+      "Pass max_bytes with a larger value (or max_bytes: 0 for no cap)."
+  end
+
+  defp rows_hint(:cut, keep, total, cap, offset) do
+    "result cut to #{keep} of the #{total} rows of this call to stay under #{cap} bytes. " <>
       "For the rest call again with offset: #{offset + keep}; for everything in one result " <>
       "pass max_bytes (or max_bytes: 0 for no cap); or narrow it with filters, group_by, " <>
       "a lower limit, or without verbose."

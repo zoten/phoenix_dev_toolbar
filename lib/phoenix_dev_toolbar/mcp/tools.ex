@@ -207,8 +207,9 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   defp offset_prop do
     nonneg_prop(
       "Rows to skip, after filters, sort and group_by and before limit (default 0). " <>
-        "To read a long result in pieces, repeat the call with the next_offset of the " <>
-        "previous one while it says truncated: true. total stays the full count."
+        "To read a long result in pieces, repeat the call while truncated is true (use " <>
+        "next_offset), or while offset + returned < total: an uncut result has no " <>
+        "next_offset even when rows beyond limit remain. total stays the full count."
     )
   end
 

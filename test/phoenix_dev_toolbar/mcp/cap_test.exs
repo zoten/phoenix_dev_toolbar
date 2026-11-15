@@ -24,6 +24,30 @@ defmodule PhoenixDevToolbar.Mcp.CapTest do
     result
   end
 
+  defp page_all(name, args, key) do
+    Stream.unfold(0, fn
+      nil ->
+        nil
+
+      offset ->
+        r = call!(name, Map.put(args, "offset", offset))
+        {r[key], r["next_offset"]}
+    end)
+    |> Enum.to_list()
+  end
+
+  # What list_pages builds for `offset`, cut like the tool does.
+  defp paged_rows(rows, offset, cap) do
+    shown = Enum.drop(rows, offset)
+
+    Cap.apply(
+      "list_pages",
+      %{"total" => length(rows), "returned" => length(shown), "pages" => shown},
+      cap,
+      offset
+    )
+  end
+
   defp size(result), do: byte_size(Json.encode!(result))
 
   describe "page_queries" do
@@ -46,20 +70,56 @@ defmodule PhoenixDevToolbar.Mcp.CapTest do
     end
 
     test "paging with offset covers every row once", %{sid: sid} do
-      pages =
-        Stream.unfold(0, fn
-          nil ->
-            nil
-
-          offset ->
-            r = call!("page_queries", %{"sid" => sid, "max_bytes" => 3_000, "offset" => offset})
-            {r["queries"], r["next_offset"]}
-        end)
-        |> Enum.to_list()
+      pages = page_all("page_queries", %{"sid" => sid, "max_bytes" => 3_000}, "queries")
 
       sqls = pages |> List.flatten() |> Enum.map(& &1["sql"])
       assert sqls == for(n <- 1..30, do: "SELECT #{n} FROM t")
       assert length(pages) > 1
+    end
+
+    test "paging skips an oversize row in the middle and reaches every following row" do
+      rows =
+        for n <- 1..12,
+            do: %{"id" => n, "pad" => String.duplicate("x", if(n == 6, do: 3_000, else: 20))}
+
+      seen =
+        0
+        |> Stream.unfold(fn
+          nil ->
+            nil
+
+          offset ->
+            r = paged_rows(rows, offset, 1_000)
+            {r["pages"], r["next_offset"]}
+        end)
+        |> Enum.to_list()
+        |> List.flatten()
+        |> Enum.map(& &1["id"])
+
+      assert seen == for(n <- 1..12, n != 6, do: n)
+    end
+
+    test "an oversize row at offset gets next_offset skipping it and a hint saying so" do
+      rows = [%{"id" => 1, "pad" => String.duplicate("x", 3_000)}, %{"id" => 2, "pad" => "y"}]
+
+      result = paged_rows(rows, 0, 1_000)
+      assert %{"truncated" => true, "returned" => 0, "pages" => [], "next_offset" => 1} = result
+      assert result["hint"] =~ "row at offset 0 is larger than the cap"
+      assert result["hint"] =~ "max_bytes: 0"
+      assert result["hint"] =~ "offset: 1"
+    end
+
+    test "fixed fields over the cap get the cap too small hint, no next_offset", %{sid: sid} do
+      result = call!("page_queries", %{"sid" => sid, "max_bytes" => 50})
+      assert %{"truncated" => true, "returned" => 0, "queries" => []} = result
+      refute Map.has_key?(result, "next_offset")
+      assert result["hint"] =~ "too small"
+      assert result["hint"] =~ "max_bytes"
+    end
+
+    test "the cut hint says its rows are those of this call", %{sid: sid} do
+      result = call!("page_queries", %{"sid" => sid, "max_bytes" => 3_000})
+      assert result["hint"] =~ ~r/cut to \d+ of the 30 rows of this call/
     end
 
     test "offset applies after sort and before limit, total stays full", %{sid: sid} do
@@ -95,7 +155,7 @@ defmodule PhoenixDevToolbar.Mcp.CapTest do
       result = call!("page_queries", %{"sid" => sid, "max_bytes" => 400})
       assert %{"truncated" => true, "returned" => 0, "queries" => []} = result
       refute Map.has_key?(result, "next_offset")
-      assert result["hint"] =~ "single row"
+      assert result["hint"] =~ "too small"
     end
 
     test "groups are cut too", %{sid: sid} do
@@ -116,6 +176,38 @@ defmodule PhoenixDevToolbar.Mcp.CapTest do
 
       assert message =~ "offset: a non-negative integer"
     end
+  end
+
+  test "offset past the end is an empty list with the full total", %{sid: sid} do
+    assert %{"returned" => 0, "queries" => [], "total" => 30} =
+             call!("page_queries", %{"sid" => sid, "offset" => 99})
+
+    assert %{"returned" => 0, "errors" => [], "total" => 0} =
+             call!("page_errors", %{"sid" => sid, "offset" => 5})
+  end
+
+  test "offset on page_errors and recent_errors skips rows, total stays full" do
+    s = session(:request, path: "/errs", started_at: 1_800_000_000_000_000)
+    for m <- ~w(a b c), do: callback(s, :handle_info, error: m)
+
+    assert %{"total" => 3, "returned" => 1, "errors" => [_]} =
+             call!("page_errors", %{"sid" => s.sid, "offset" => 2})
+
+    assert %{"total" => 3, "returned" => 0, "errors" => []} =
+             call!("page_errors", %{"sid" => s.sid, "offset" => 3})
+
+    assert %{"total" => 3, "returned" => 2} = call!("recent_errors", %{"offset" => 1})
+    assert %{"total" => 3, "returned" => 0} = call!("recent_errors", %{"offset" => 7})
+  end
+
+  test "page_assigns_shape rows are cut with next_offset through Cap" do
+    assigns = for n <- 1..40, do: %{"name" => "assign_#{n}", "kind" => "map"}
+    result = %{"sid" => "x", "assigns" => assigns}
+
+    cut = Cap.apply("page_assigns_shape", result, 800, 10)
+    assert %{"truncated" => true, "assigns" => kept, "next_offset" => next} = cut
+    assert next == 10 + length(kept) and length(kept) < 40
+    assert byte_size(Json.encode!(cut)) <= 800
   end
 
   test "list_pages pages with offset and is cut by max_bytes" do

@@ -253,13 +253,16 @@ defmodule PhoenixDevToolbar.Config do
 
   # A non-empty keyword list of known `mcp:` options.
   defp mcp_options([_ | _] = value) do
-    case proper_list?(value) and Enum.all?(value, &known_option?/1) do
+    case proper_list?(value) and Enum.all?(value, &known_option?/1) and unique_keys?(value) do
       true -> {:ok, value}
       false -> :error
     end
   end
 
   defp mcp_options(_other), do: :error
+
+  defp unique_keys?(options),
+    do: length(Keyword.keys(options)) == length(Enum.uniq(Keyword.keys(options)))
 
   defp known_option?({key, _value}), do: key in @mcp_keys
   defp known_option?(_other), do: false

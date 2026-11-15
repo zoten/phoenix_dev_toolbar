@@ -123,6 +123,23 @@ defmodule PhoenixDevToolbar.ConfigMcpMaxBytesTest do
     end
   end
 
+  test "duplicate keys are an invalid shape: :local and the boot warning" do
+    put_app_env(:mcp, clients: :any, clients: :local)
+    assert Config.mcp() == :local
+    assert capture_log(&Config.warn_mcp/0) =~ "invalid mcp"
+
+    put_app_env(:mcp, max_result_bytes: 5, max_result_bytes: 7)
+    assert Config.mcp_max_result_bytes() == 60_000
+    assert capture_log(&Config.warn_mcp/0) =~ "invalid mcp"
+  end
+
+  test "an improper list next to max_result_bytes is :local with the default cap" do
+    put_app_env(:mcp, [{:max_result_bytes, 5} | :tail])
+    assert Config.mcp() == :local
+    assert Config.mcp_max_result_bytes() == 60_000
+    assert capture_log(&Config.warn_mcp/0) =~ "invalid mcp"
+  end
+
   test "unknown keys keep the invalid shape warning" do
     put_app_env(:mcp, clients: :local, bogus: 1)
     assert Config.mcp() == :local
