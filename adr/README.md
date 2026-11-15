@@ -5,7 +5,7 @@ How to write and maintain ADRs: see the ADR rules in [AGENTS.md](../AGENTS.md) a
 [TEMPLATE.md](./TEMPLATE.md). Status and area come from each ADR's header: keep
 this table in sync when you add an ADR or change its status.
 
-Next free number: **17**.
+Next free number: **18**.
 
 ## Product
 
@@ -33,6 +33,7 @@ Next free number: **17**.
 | 13 | [Report Read API](./13-report-read-api.md) | Implemented (2026-11-10) |
 | 14 | [Standalone Panel and Row Attributes](./14-standalone-panel-and-row-attributes.md) | Implemented (2026-11-10) |
 | 15 | [MCP Endpoint](./15-mcp-endpoint.md) | Implemented (2026-11-11) |
+| 17 | [MCP stdio Wrapper](./17-mcp-stdio-wrapper.md) | Proposed |
 
 ## Storage
 
