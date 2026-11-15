@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP result cap `max_result_bytes:`, `offset` and `max_bytes` arguments (ADR 15)
 - Breaking: `owner` only with `verbose` in `list_pages` and `page_summary` (ADR 15)
 - `list_pages` `view` filter (ADR 15)
+- Curl recipe for agents without MCP (ADR 15)
 - Ecto tab tag filter: per table, framework, task, no source, with a shown counter (ADR 08)
 
 ## [0.0.6] - 2026-11-12

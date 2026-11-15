@@ -204,6 +204,11 @@ upgrade.
 - An `initialize` asking for a version older than 2025-03-26 is answered
   2025-11-25 (the spec allows it; a strict old client may give up). A JSON-RPC
   response sent by the client gets 400: the server never sends requests.
+- No headless "GET as a user and wait for the LiveView mount" helper: a dead
+  render via `curl` (`Accept: text/html`) is the substitute, with no connected
+  mount and no events.
+- Captures live in memory (ADR 03): a before/after comparison needs both pages
+  in one server lifetime. Save `page_summary` JSON to diff across restarts.
 - No authentication: any local process can read the captured data, as it can
   load the panel.
 - Plugin events outside the built-ins, assigns snapshots and the component tree

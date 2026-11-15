@@ -28,6 +28,16 @@ The data lives in the dev server's VM (`mix phx.server` or `mix dev`, in dev).
   and `warning` say which LiveView was read). `compare_pages` gives each side
   its `panel_url` (`before.panel_url`, `after.panel_url`). The `audit_page`
   prompt (`path`) chains them for one page. Same keys as `Report`. No VM access needed.
+- Results are capped: a `truncated` result has `next_offset` and a `hint`. Page
+  with `offset: next_offset`, pass `max_bytes` (`0` = no cap), or narrow
+  (filters, `group_by`, lower `limit`, no `verbose`). `list_pages` takes `view`
+  (newest page of a view: `limit: 1`); `owner` needs `verbose: true`.
+- No MCP client (a subagent, a script): the endpoint is plain JSON-RPC. After
+  loading the page (step 2), `curl -s -X POST -H 'content-type: application/json'
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"page_summary","arguments":{"path":"/posts"}}}'
+  http://localhost:4000/__pdt/mcp | jq -r '.result.content[0].text'`; also
+  `page_queries` with `group_by: "caller"`. A curl capture is a dead render: no
+  connected mount, no events. Brief subagents with this recipe.
 - With Tidewave: run the code below through `project_eval`.
 - With only a browser tool: skip the Elixir below and read the standalone
   panel, `http://localhost:4000/__pdt/panel?path=/posts`, through its

@@ -153,6 +153,35 @@ The MCP URL must use an address the server listens on: bind `0.0.0.0`
 request after boot logs `[phoenix_dev_toolbar] MCP at <url>` (with a note when the
 endpoint listens on 127.0.0.1 only): read it from the dev server's output.
 
+## Without an MCP client (subagents, scripts)
+
+Subagents and scripts often do not inherit the agent's MCP connection. The
+endpoint is plain JSON-RPC over HTTP (no `initialize`, no version header), so
+`curl` works. Give subagents this recipe in their brief.
+
+```sh
+# 1. Load the page (dead render only: no connected mount, no LiveView events)
+curl -s -o /dev/null -H 'Accept: text/html' http://<host>:<port>/posts
+
+# 2. Call a tool; the result is JSON text in result.content[0].text
+mcp() { curl -s -X POST -H 'content-type: application/json' \
+  -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"$1\",\"arguments\":$2}}" \
+  http://<host>:<port>/__pdt/mcp | jq -r '.result.content[0].text'; }
+
+mcp page_summary '{"path":"/posts"}'
+mcp page_queries '{"path":"/posts","group_by":"caller"}'
+
+# A large result to a file, not capped
+mcp page_queries '{"path":"/posts","verbose":true,"max_bytes":0}' > /tmp/queries.json
+```
+
+A LiveView event (click, submit) needs a real browser: a `curl` capture has the
+dead render only. Results are capped (`mcp: [max_result_bytes:]`, 60_000 bytes
+by default): a `truncated` result carries `next_offset` and a `hint`. Page with
+`offset`, pass `max_bytes` (`0` = no cap), or narrow with filters, `group_by`, a
+lower `limit` or no `verbose`. `list_pages` takes `view` (the newest page of a
+view: `limit: 1`); `owner` appears only with `verbose`.
+
 ## 6. Agent skill and usage rules
 
 The package ships a skill, `phoenix-dev-toolbar-report` (measure a page before and

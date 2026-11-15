@@ -283,6 +283,17 @@ defmodule PhoenixDevToolbar.Mcp.EndpointTest do
       assert {:ok, %{"queries" => %{"count" => 1}}} = Json.decode(text)
     end
 
+    test "stateless: tools/call with no initialize and no version header (curl)" do
+      session(:request, path: "/users") |> query()
+
+      conn =
+        post(rpc("tools/call", %{"name" => "page_summary", "arguments" => %{"path" => "/users"}}))
+
+      assert conn.status == 200
+      assert %{"result" => %{"content" => [%{"text" => text}]}} = json(conn)
+      assert {:ok, %{"queries" => %{"count" => 1}}} = Json.decode(text)
+    end
+
     test "modern tools/call with headers and _meta" do
       session = session(:request, path: "/users")
 

@@ -63,6 +63,8 @@ defmodule PhoenixDevToolbar.Mcp.Prompts do
     4. Call page_errors with sid set to that sid: failures during the page's requests and callbacks.
     5. If the page is a LiveView, call page_assigns_shape with path #{quoted} (the page must be open in a browser; not the pinned sid, so a curl capture can fall back to the open tab) and read its note and live_view_sid to know what was read: look for large lists that should be streams.
 
+    If a result is truncated, page with offset set to next_offset, pass max_bytes, or narrow the call (filters, group_by, lower limit).
+
     Then report the findings, most important first, each with the evidence (query, count, duration, assign name) and a proposed fix, and end with the panel_url so the developer can open the page in the toolbar.
 
     To check a fix: keep the sid from step 1, change the code, reload the page, then call compare_pages with before set to that sid and recent_errors with since set to that sid.
