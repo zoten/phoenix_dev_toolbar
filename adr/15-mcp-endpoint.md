@@ -34,6 +34,10 @@ dependency: JSON goes through `Phoenix.json_library/0`.
   VM, another device). An invalid entry logs one boot warning and is ignored.
 - `[clients: :any]`: any peer, proxy headers included, with a boot warning:
   anyone who reaches the dev server can read the captured data.
+- `max_result_bytes:` sits in the same keyword (`[clients: :any, max_result_bytes: 30_000]`, or
+  alone): the cap on a tool result, a positive integer or `:infinity` (no cap),
+  default 60_000 (see Results). A bad value logs one boot warning and counts as
+  the default.
 - Any other value logs a boot warning and counts as `true`.
 
 IPv4-mapped IPv6 peers compare as IPv4. Entries are parsed with
@@ -86,27 +90,49 @@ the default resolve to the request too. `list_pages` with both `path` and
 
 | Tool | Arguments | Result |
 |---|---|---|
-| `list_pages` | `path`, `path_prefix`, `label` (exact actor label, ADR 13), `since` (a captured sid or ISO 8601 time: only later pages; a sid no longer in the Store is a tool error naming `started_at` as the fallback), `limit` (1..50, 10) | `pages`, newest first, each with `started_at` (ISO 8601), `label` (the actor, nil when none) and `panel_url`; a connected mount is part of its request's page, not a page of its own: a request row lists its connected LiveView sessions in `live_views` (`sid`, `view`, `path`, `label`, `started_at`, `events`; oldest first, at most 10, `live_views_more` counts the cut). Only the connected mounts the page tools read with the request sid are listed; a navigated LiveView (its parent is a LiveView) is its own row. One Store read serves all rows (`Report.sessions_in/2` over it) |
+| `list_pages` | `path`, `path_prefix`, `label` (exact actor label, ADR 13), `since` (a captured sid or ISO 8601 time: only later pages; a sid no longer in the Store is a tool error naming `started_at` as the fallback), `limit` (1..50, 10), `offset` | `pages`, newest first, each with `started_at` (ISO 8601), `label` (the actor, nil when none) and `panel_url`; a connected mount is part of its request's page, not a page of its own: a request row lists its connected LiveView sessions in `live_views` (`sid`, `view`, `path`, `label`, `started_at`, `events`; oldest first, at most 10, `live_views_more` counts the cut). Only the connected mounts the page tools read with the request sid are listed; a navigated LiveView (its parent is a LiveView) is its own row. One Store read serves all rows (`Report.sessions_in/2` over it) |
 | `page_summary` | `sid`, `path`, `verbose` (boolean, false) | `Report.summary/2` (compact items unless `verbose`) plus `panel_url` |
-| `page_queries` | `sid`, `path`, `limit` (1..200, 50), `sort` (`order`, `slowest`; checked, then ignored with `group_by`), filters `callback`, `event` (strings), `span`, `seq_from`, `seq_to` (non-negative integers), `verbose` (false), `group_by` (`caller`, `origin`, `callback`, `sql`; anything else is a tool error) | `sid`, `panel_url`, `total` (filtered rows), `returned`, `queries`; with `group_by`, `groups` instead of `queries` (`Report.query_groups/3`: `key` (for `callback`: owner, callback and event, ` (dead render)` for the request's own render, such as `DemoWeb.PageLive handle_event "save"`), `count`, `total_us`, `n_plus_one`, `sql`), `limit` and `total` counting groups, `queries_total` the queries grouped, noise left out. Compact rows by default: `seq`, `sid`, `span`, `callback`, `event`, `origin`, `caller`, `duration_us`, `rows`, `source`, `n_plus_one?`, `noise`, `error`, `sql` cut to 160 bytes on a UTF-8 boundary and `sql_truncated`; `verbose: true` returns the full rows (params, times, stacktrace, timestamp, whole SQL; ADR 13) |
-| `page_callbacks` | `sid`, `path`, `limit`, `sort` as `page_queries`, filters `callback` and `event` (no compact mode) | `sid`, `panel_url`, `total`, `returned`, `callbacks`; inferred entries have `duration_us: null` (stated in the tool description) and `sort: "slowest"` puts every null duration last |
+| `page_queries` | `sid`, `path`, `limit` (1..200, 50), `offset` (non-negative, 0: rows skipped after filters, sort and `group_by`, before `limit`), `sort` (`order`, `slowest`; checked, then ignored with `group_by`), filters `callback`, `event` (strings), `span`, `seq_from`, `seq_to` (non-negative integers), `verbose` (false), `group_by` (`caller`, `origin`, `callback`, `sql`; anything else is a tool error) | `sid`, `panel_url`, `total` (filtered rows), `returned`, `queries`; with `group_by`, `groups` instead of `queries` (`Report.query_groups/3`: `key` (for `callback`: owner, callback and event, ` (dead render)` for the request's own render, such as `DemoWeb.PageLive handle_event "save"`), `count`, `total_us`, `n_plus_one`, `sql`), `limit` and `total` counting groups, `queries_total` the queries grouped, noise left out. Compact rows by default: `seq`, `sid`, `span`, `callback`, `event`, `origin`, `caller`, `duration_us`, `rows`, `source`, `n_plus_one?`, `noise`, `error`, `sql` cut to 160 bytes on a UTF-8 boundary and `sql_truncated`; `verbose: true` returns the full rows (params, times, stacktrace, timestamp, whole SQL; ADR 13) |
+| `page_callbacks` | `sid`, `path`, `limit`, `offset`, `sort` as `page_queries`, filters `callback` and `event` (no compact mode) | `sid`, `panel_url`, `total`, `returned`, `callbacks`; inferred entries have `duration_us: null` (stated in the tool description) and `sort: "slowest"` puts every null duration last |
 | `page_n_plus_one` | `sid`, `path` | `sid`, `panel_url`, `n_plus_one`, each group with `ran_in` and `callers` (ADR 13) |
-| `page_errors` | `sid`, `path`, `limit` (1..100, 20) | `sid`, `panel_url`, `total`, `returned`, `errors` |
-| `recent_errors` | `since` (a captured sid: errors after that page started, never its own sessions; or ISO 8601 time; same parsing and errors as `list_pages`), `limit` (1..100, 20) | `total`, `returned`, `errors` (`Report.recent_errors/1`, newest first), each with `page_sid` (the root: a connected mount reads as its request) and a `panel_url` to that page |
+| `page_errors` | `sid`, `path`, `limit` (1..100, 20), `offset` | `sid`, `panel_url`, `total`, `returned`, `errors` |
+| `recent_errors` | `since` (a captured sid: errors after that page started, never its own sessions; or ISO 8601 time; same parsing and errors as `list_pages`), `limit` (1..100, 20), `offset` | `total`, `returned`, `errors` (`Report.recent_errors/1`, newest first), each with `page_sid` (the root: a connected mount reads as its request) and a `panel_url` to that page |
 | `page_report` | `sid`, `path` | `sid`, `panel_url`, `markdown` (`Report.markdown/2`) as `structuredContent`; the text block is the Markdown itself, not JSON |
-| `page_assigns_shape` | `sid`, `path` | `sid`, `view`, `live_view_sid` and `live_view_path` (the LiveView actually read: live navigation can make it a later one than the page's path), `panel_url`, `total_words`, `omitted`, `assigns` (at most 100, largest first, by `:erts_debug.flat_size/1` words of the untruncated value): `key` (inspect string), `type` (`list`, `map`, `struct Mod`, `binary`, ...), `length` (lists and maps), `words`, `stream?`. No values; each stream is its own entry, and a stream's words are what the server holds (its items live in the client). The LiveView is the page's newest one (a request page: its connected mount). Without `sid`, a newest capture whose LiveView is not alive (a dead render, a curl, a closed tab) yields to the newest page at the same path with a live LiveView, and `note` names both sids. `warning` when the LiveView read has another path than the page (live navigation). Tool errors: "the page has no LiveView" (a dead render only) is told apart from "the LiveView is gone" (tab closed or navigated away: open the page in a browser) |
+| `page_assigns_shape` | `sid`, `path`, `offset` (entries skipped) | `sid`, `view`, `live_view_sid` and `live_view_path` (the LiveView actually read: live navigation can make it a later one than the page's path), `panel_url`, `total_words`, `omitted`, `assigns` (at most 100, largest first, by `:erts_debug.flat_size/1` words of the untruncated value): `key` (inspect string), `type` (`list`, `map`, `struct Mod`, `binary`, ...), `length` (lists and maps), `words`, `stream?`. No values; each stream is its own entry, and a stream's words are what the server holds (its items live in the client). The LiveView is the page's newest one (a request page: its connected mount). Without `sid`, a newest capture whose LiveView is not alive (a dead render, a curl, a closed tab) yields to the newest page at the same path with a live LiveView, and `note` names both sids. `warning` when the LiveView read has another path than the page (live navigation). Tool errors: "the page has no LiveView" (a dead render only) is told apart from "the LiveView is gone" (tab closed or navigated away: open the page in a browser) |
 | `compare_pages` | `before` (a captured sid, required), `after` (a captured sid) or `path` (the newest page at that path started after `before`; default: `before`'s path), not both | `Report.compare/3` (a connected mount reads as its request; `warning` when the sides differ in kind, session count or path), each side with its `panel_url` (`before.panel_url`, `after.panel_url`); no page after `before` is a tool error asking to reload the page, and an `after` older than `before` is a tool error |
 
 `panel_url` is absolute, built from the request's scheme, host and port (the
 port left out for 80 and 443): `http://localhost:4000/__pdt/panel?sid=...`, so the agent can hand it to the
 developer. `path` and `path_prefix` are at most 2048 bytes.
 
+Every tool takes `max_bytes` (non-negative integer; `0` means no cap), this call's
+cap instead of `max_result_bytes:`: it can raise or lower it, the configured
+value is a default, not a ceiling. `page_summary` and `page_report` take
+`max_bytes` but no `offset`. A cut result carries `truncated: true`, `hint` and,
+on the row tools, `next_offset` (see Results).
+
 Results come as `structuredContent` and as the same JSON in a text block, except
 `page_report`, whose text block is its Markdown (ending in a footer with the sid and
 the `panel_url`, also in `markdown`, so a 2025-03-26 client, which has no
 `structuredContent`, and a pasted report keep the link). The footer is
 `Report.markdown/2` with `panel_url:` (ADR 13): the panel's "Copy as Markdown"
-passes an absolute link built from the panel request's base URL. Keys
+passes an absolute link built from the panel request's base URL. The text block
+is capped (`max_result_bytes:`, 60_000 bytes by default, or the call's
+`max_bytes`) because an agent's tool result limit is smaller than a verbose
+`page_queries`. Over the cap, the row list (`pages`, `queries`, `groups`,
+`callbacks`, `errors`, `assigns`) is cut from the end in the order the tool chose,
+`returned` is updated, and the result gets `truncated: true`, `next_offset`
+(`offset` plus the rows kept: call again with it to page on) and a `hint` naming
+the options (`offset`, `max_bytes`, filters, `group_by`, a lower `limit`, no
+`verbose`); a single row over the cap leaves an empty list and a hint without
+`next_offset`. `total` stays the full count. `page_summary`, `compare_pages` and
+`page_n_plus_one` have no rows: their longest list is shortened first, with the
+hint but no `next_offset` (the hint points to `page_queries`, `page_callbacks`
+and `page_errors`). `page_report` is cut on a UTF-8 boundary with a closing line
+saying so, before the footer, which always stays. Row sizes are measured once and
+subtracted, never re-encoding the whole result per row; `max_bytes: 0` and
+`:infinity` give back the uncapped size, still bounded by the row `limit`s and
+the Store (ADR 03). Keys
 and values follow `Report` (ADR 13) through one JSON normalizer: string keys,
 modules and pids as `inspect/1` strings, timestamps in ISO 8601. Invalid
 arguments and a missing page are tool errors (`isError: true`) whose text says

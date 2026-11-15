@@ -151,7 +151,12 @@ defmodule PhoenixDevToolbar.Mcp.Endpoint do
   defp respond({{:ok, message}, conn}, base_path) do
     headers = Map.new(@headers, &{&1, conn |> Conn.get_req_header(&1) |> List.first()})
     headers = Map.reject(headers, fn {_name, value} -> is_nil(value) end)
-    opts = [base_url: base_url(conn, base_path), server_version: server_version()]
+
+    opts = [
+      base_url: base_url(conn, base_path),
+      server_version: server_version(),
+      max_result_bytes: Config.mcp_max_result_bytes()
+    ]
 
     {status, body} = run(message, headers, opts)
     send_protocol(conn, status, body)

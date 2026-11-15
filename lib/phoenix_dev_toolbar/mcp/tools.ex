@@ -5,6 +5,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
 
   alias PhoenixDevToolbar.AssignsShape
   alias PhoenixDevToolbar.Label
+  alias PhoenixDevToolbar.Mcp.Cap
   alias PhoenixDevToolbar.Mcp.Json
   alias PhoenixDevToolbar.PageLookup
   alias PhoenixDevToolbar.Report
@@ -12,9 +13,14 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   alias PhoenixDevToolbar.Truncate
 
   @type definition :: %{String.t() => term()}
-  @type opts :: [base_url: String.t(), assigns_timeout: pos_integer()]
+  @type opts :: [
+          base_url: String.t(),
+          assigns_timeout: pos_integer(),
+          max_result_bytes: pos_integer() | :infinity
+        ]
 
   @max_path 2048
+  @default_max_bytes 60_000
   @group_by %{"caller" => :caller, "origin" => :origin, "callback" => :callback, "sql" => :sql}
   # What `Session.new_sid/0` makes (12 random bytes, URL-safe Base64).
   @captured_sid_shape ~r/\A[A-Za-z0-9_-]{16}\z/
@@ -54,7 +60,8 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
             "description" =>
               "Only pages of this actor label (exact match), such as a persona or user id."
           },
-          "limit" => int_prop("Maximum pages to return.", 1, 50, 10)
+          "limit" => int_prop("Maximum pages to return.", 1, 50, 10),
+          "offset" => offset_prop()
         }
       ),
       tool(
@@ -77,6 +84,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
         "The Ecto queries run for a page, with SQL, timings, origin (the Repo call site), caller (the LiveView, controller or on_mount frame that led to it; needs the repo's stacktrace: true), and the callback and event they ran in (span is the callback's seq group, as in page_callbacks; callback is request for a query outside any LiveView callback). noise tags framework queries (check_repo_status: Phoenix.Ecto.CheckRepoStatus), which page_summary leaves out of its counts. Rows are compact by default (no params, times, stacktrace or timestamp; sql cut to 160 bytes, sql_truncated says when): pass verbose: true for full rows. Filter with callback (e.g. handle_event, request), event, span, seq_from and seq_to (inclusive); total counts the filtered rows. group_by (caller, origin, callback or sql) returns groups instead of rows: each with key, count, total_us, n_plus_one and the first query's sql, most queries first (noise left out); limit applies to groups, total counts groups and queries_total the queries grouped. verbose does not apply to groups, and sort is checked then ignored. Use it to see where the queries of one click go: group_by caller with event, then read the rows of one group with verbose.",
         Map.merge(page_props(), %{
           "limit" => int_prop("Maximum queries to return.", 1, 200, 50),
+          "offset" => offset_prop(),
           "sort" => sort_prop(),
           "callback" => %{
             "type" => "string",
@@ -109,6 +117,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
         "The LiveView and LiveComponent callbacks of a page (mount, handle_event, ...) with timings and assigns changes. Filter with callback (e.g. handle_event) and event. inferred: true entries stand for handle_info (or async task) queries no callback owns: their duration_us is null, never 0, so sum with a default; sort: \"slowest\" puts them last.",
         Map.merge(page_props(), %{
           "limit" => int_prop("Maximum callbacks to return.", 1, 200, 50),
+          "offset" => offset_prop(),
           "sort" => sort_prop(),
           "callback" => %{
             "type" => "string",
@@ -127,7 +136,10 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
         "page_errors",
         "List a page's errors",
         "Failures of a page: request exceptions, failed callbacks and renders, failed queries.",
-        Map.merge(page_props(), %{"limit" => int_prop("Maximum errors to return.", 1, 100, 20)})
+        Map.merge(page_props(), %{
+          "limit" => int_prop("Maximum errors to return.", 1, 100, 20),
+          "offset" => offset_prop()
+        })
       ),
       tool(
         "recent_errors",
@@ -139,7 +151,8 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
             "description" =>
               "Only errors after this: a sid from an earlier list_pages or page_summary (errors after that page started, never that page's own, so a fixed page shows none of its old crashes) or an ISO 8601 timestamp."
           },
-          "limit" => int_prop("Maximum errors to return.", 1, 100, 20)
+          "limit" => int_prop("Maximum errors to return.", 1, 100, 20),
+          "offset" => offset_prop()
         }
       ),
       tool(
@@ -174,12 +187,29 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
         "page_assigns_shape",
         "Weigh a LiveView's assigns",
         "The size of each assign of the page's LiveView, largest first, with no values: type, length, words (memory) and stream?. Look for big lists that should be streams. A stream's words are what the server holds; its items live in the client. Read live: the page must be open in a browser. live_view_sid and live_view_path name the LiveView read, which may be a later one than the page's path after live navigation. note says the newest capture had no live LiveView and an open tab of the same path was read instead; warning says the tab navigated away from the page's path.",
-        page_props()
+        Map.put(page_props(), "offset", offset_prop())
       )
     ]
   end
 
   defp page_props, do: %{"sid" => @sid_prop, "path" => @path_prop}
+
+  defp offset_prop do
+    nonneg_prop(
+      "Rows to skip, after filters, sort and group_by and before limit (default 0). " <>
+        "To read a long result in pieces, repeat the call with the next_offset of the " <>
+        "previous one while it says truncated: true. total stays the full count."
+    )
+  end
+
+  defp max_bytes_prop do
+    nonneg_prop(
+      "Cap on this result's size in bytes (its JSON text, or the Markdown of page_report), " <>
+        "instead of the server's default of #{@default_max_bytes} bytes. 0 means no cap: the full result, " <>
+        "which can be larger than your tool result limit. A cut result says truncated: true with a " <>
+        "hint (and next_offset where offset applies)."
+    )
+  end
 
   defp sort_prop do
     %{
@@ -210,7 +240,7 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
       "description" => description,
       "inputSchema" => %{
         "type" => "object",
-        "properties" => properties,
+        "properties" => Map.put(properties, "max_bytes", max_bytes_prop()),
         "additionalProperties" => false
       },
       "annotations" => %{"readOnlyHint" => true}
@@ -234,8 +264,9 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
 
   defp run(name, definition, arguments, opts) do
     with {:ok, args} <- check_args(arguments, definition),
+         {:ok, cap} <- cap_arg(args, opts),
          {:ok, result} <- execute(name, args, opts) do
-      {:ok, Json.safe(result)}
+      {:ok, Cap.apply(name, Json.safe(result), cap, Map.get(args, "offset"))}
     end
   end
 
@@ -245,9 +276,10 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
          :ok <- exclusive(path, prefix),
          {:ok, label} <- string_arg(args, "label"),
          {:ok, since} <- since_arg(args),
-         {:ok, limit} <- int_arg(args, "limit", 10, 1, 50) do
+         {:ok, limit} <- int_arg(args, "limit", 10, 1, 50),
+         {:ok, offset} <- offset_arg(args) do
       filter = PageLookup.filter(path: path, path_prefix: prefix) ++ since ++ label_filter(label)
-      pages = pages(filter, limit)
+      pages = pages(filter, limit, offset)
 
       {:ok, %{"pages" => Enum.map(pages, &Map.put(&1, :panel_url, panel_url(opts, &1.sid)))}}
     end
@@ -276,11 +308,13 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
 
   # A live read of the host LiveView, in a task with a timeout (AssignsShape).
   defp execute("page_assigns_shape", args, opts) do
-    with {:ok, requested} <- resolve(args) do
+    with {:ok, requested} <- resolve(args),
+         {:ok, offset} <- offset_arg(args) do
       {sid, note} = live_page(requested, args)
 
       case AssignsShape.read(sid, Keyword.get(opts, :assigns_timeout, 2_000)) do
         {:ok, shape} ->
+          shape = Map.update!(shape, :assigns, &Enum.drop(&1, offset))
           result = Map.merge(shape, %{sid: sid, panel_url: panel_url(opts, sid)})
           {:ok, result |> put_note(note) |> navigation_warning(session_path(sid))}
 
@@ -343,27 +377,31 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
 
   defp execute("page_errors", args, opts) do
     with {:ok, limit} <- int_arg(args, "limit", 20, 1, 100),
+         {:ok, offset} <- offset_arg(args),
          {:ok, sid} <- resolve(args) do
       errors = Report.errors(sid)
+      shown = errors |> Enum.drop(offset) |> Enum.take(limit)
 
       {:ok,
        %{
          "sid" => sid,
          "panel_url" => panel_url(opts, sid),
          "total" => length(errors),
-         "returned" => min(limit, length(errors)),
-         "errors" => Enum.take(errors, limit)
+         "returned" => length(shown),
+         "errors" => shown
        }}
     end
   end
 
   defp execute("recent_errors", args, opts) do
     with {:ok, since} <- since_arg(args),
-         {:ok, limit} <- int_arg(args, "limit", 20, 1, 100) do
+         {:ok, limit} <- int_arg(args, "limit", 20, 1, 100),
+         {:ok, offset} <- offset_arg(args) do
       all = Report.recent_errors(Keyword.put(since, :limit, nil))
 
       errors =
         all
+        |> Enum.drop(offset)
         |> Enum.take(limit)
         |> Enum.map(&Map.put(&1, :panel_url, panel_url(opts, &1.page_sid)))
 
@@ -562,12 +600,13 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   defp exclusive(_path, _prefix), do: :ok
 
   # A Store that is restarting (its tables missing) holds no pages.
-  defp pages(filter, limit) do
+  defp pages(filter, limit, offset \\ 0) do
     all = Label.inherit(Store.sessions())
 
     all
     |> Report.sessions_in(filter)
     |> reject_mounts(all)
+    |> Enum.drop(offset)
     |> Enum.take(limit)
     |> with_live_views(all)
   rescue
@@ -580,9 +619,11 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   defp queries(by, filters, _verbose, args, opts) do
     # `sort` does not apply to groups, but a bad value is still an error.
     with {:ok, limit} <- int_arg(args, "limit", 50, 1, 200),
+         {:ok, offset} <- offset_arg(args),
          {:ok, _sort} <- sort_arg(args),
          {:ok, sid} <- resolve(args) do
       groups = Report.query_groups(sid, by, filters)
+      shown = groups |> Enum.drop(offset) |> Enum.take(limit)
 
       {:ok,
        %{
@@ -590,25 +631,27 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
          "panel_url" => panel_url(opts, sid),
          "total" => length(groups),
          "queries_total" => groups |> Enum.map(& &1.count) |> Enum.sum(),
-         "returned" => min(limit, length(groups)),
-         "groups" => Enum.take(groups, limit)
+         "returned" => length(shown),
+         "groups" => shown
        }}
     end
   end
 
   defp rows(key, reader, args, opts, shape) do
     with {:ok, limit} <- int_arg(args, "limit", 50, 1, 200),
+         {:ok, offset} <- offset_arg(args),
          {:ok, sort} <- sort_arg(args),
          {:ok, sid} <- resolve(args) do
       all = sid |> reader.() |> sort_rows(sort)
+      shown = all |> Enum.drop(offset) |> Enum.take(limit)
 
       {:ok,
        %{
          "sid" => sid,
          "panel_url" => panel_url(opts, sid),
          "total" => length(all),
-         "returned" => min(limit, length(all)),
-         key => all |> Enum.take(limit) |> Enum.map(shape)
+         "returned" => length(shown),
+         key => Enum.map(shown, shape)
        }}
     end
   end
@@ -767,6 +810,27 @@ defmodule PhoenixDevToolbar.Mcp.Tools do
   end
 
   defp check_size(result, _key), do: result
+
+  defp offset_arg(args) do
+    with {:ok, offset} <- filter_int(args, "offset"), do: {:ok, offset || 0}
+  end
+
+  # The per-call max_bytes, else the configured cap (0 and :infinity: no cap).
+  defp cap_arg(args, opts) do
+    case Map.get(args, "max_bytes") do
+      nil ->
+        {:ok, Keyword.get(opts, :max_result_bytes, @default_max_bytes)}
+
+      0 ->
+        {:ok, :infinity}
+
+      bytes when is_integer(bytes) and bytes > 0 ->
+        {:ok, bytes}
+
+      other ->
+        {:error, "max_bytes: a non-negative integer (0 for no cap), got #{int_got(other)}."}
+    end
+  end
 
   defp bool_arg(args, key) do
     case Map.get(args, key, false) do

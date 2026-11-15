@@ -27,7 +27,11 @@ defmodule PhoenixDevToolbar.Mcp.Protocol do
                   "Accept: text/html): only pages captured in the last 10 minutes are available."
 
   @type headers :: %{String.t() => String.t()}
-  @type opts :: [base_url: String.t(), server_version: String.t()]
+  @type opts :: [
+          base_url: String.t(),
+          server_version: String.t(),
+          max_result_bytes: pos_integer() | :infinity
+        ]
   @type response :: {pos_integer(), %{String.t() => term()} | nil}
 
   @doc "Handles one decoded message (or `{:error, :parse}`)."

@@ -213,6 +213,9 @@ defmodule PhoenixDevToolbar.Config do
 
   @type mcp_mode :: :off | :local | {:list, [ClientMatch.entry()]} | :any
 
+  @mcp_keys [:clients, :max_result_bytes]
+  @default_max_result_bytes 60_000
+
   @doc """
   Whether the MCP endpoint is served: `mcp:`, on unless set to `false`.
   """
@@ -222,52 +225,122 @@ defmodule PhoenixDevToolbar.Config do
   @doc """
   Who may reach MCP (ADR 15): `false` is `:off`; `true`, unset, `[clients: :local]`
   and anything invalid are `:local`; `[clients: :any]` is `:any`; `[clients: list]`
-  is `{:list, entries}` with the valid entries parsed. Never logs (`warn_mcp/0` does).
+  is `{:list, entries}` with the valid entries parsed. `clients:` unset in a
+  keyword (`[max_result_bytes: 1000]`) is `:local`. Never logs (`warn_mcp/0` does).
   """
   @spec mcp() :: mcp_mode()
   def mcp, do: :phoenix_dev_toolbar |> Application.get_env(:mcp, true) |> mcp_mode()
 
   defp mcp_mode(false), do: :off
-  defp mcp_mode(clients: :any), do: :any
 
-  defp mcp_mode(clients: list) when is_list(list) do
+  defp mcp_mode(value) do
+    case mcp_options(value) do
+      {:ok, options} -> clients_mode(Keyword.get(options, :clients, :local))
+      :error -> :local
+    end
+  end
+
+  defp clients_mode(:any), do: :any
+
+  defp clients_mode(list) when is_list(list) do
     case proper_list?(list) do
       true -> {:list, parsed_clients(list)}
       false -> :local
     end
   end
 
-  defp mcp_mode(_local_or_invalid), do: :local
+  defp clients_mode(_local_or_invalid), do: :local
+
+  # A non-empty keyword list of known `mcp:` options.
+  defp mcp_options([_ | _] = value) do
+    case proper_list?(value) and Enum.all?(value, &known_option?/1) do
+      true -> {:ok, value}
+      false -> :error
+    end
+  end
+
+  defp mcp_options(_other), do: :error
+
+  defp known_option?({key, _value}), do: key in @mcp_keys
+  defp known_option?(_other), do: false
 
   defp parsed_clients(list),
     do: for(entry <- list, {:ok, parsed} <- [ClientMatch.parse(entry)], do: parsed)
 
-  @doc "Logs, at boot, an invalid `mcp:` shape, invalid `clients:` entries and `clients: :any`."
+  @doc """
+  The cap on an MCP tool result in bytes (ADR 15), `mcp: [max_result_bytes: n]`:
+  a positive integer, or `:infinity` for no cap. Default 60_000; an invalid
+  value counts as the default (`warn_mcp/0` logs it).
+  """
+  @spec mcp_max_result_bytes() :: pos_integer() | :infinity
+  def mcp_max_result_bytes do
+    case mcp_max_value() do
+      :infinity -> :infinity
+      bytes when is_integer(bytes) and bytes > 0 -> bytes
+      _unset_or_invalid -> @default_max_result_bytes
+    end
+  end
+
+  defp mcp_max_value do
+    case :phoenix_dev_toolbar |> Application.get_env(:mcp, true) |> mcp_options() do
+      {:ok, options} -> Keyword.get(options, :max_result_bytes, @default_max_result_bytes)
+      :error -> @default_max_result_bytes
+    end
+  end
+
+  @doc """
+  Logs, at boot, an invalid `mcp:` shape, invalid `clients:` entries, an invalid
+  `max_result_bytes:` and `clients: :any`.
+  """
   @spec warn_mcp() :: :ok
-  def warn_mcp, do: :phoenix_dev_toolbar |> Application.get_env(:mcp, true) |> warn_mcp_value()
+  def warn_mcp do
+    value = Application.get_env(:phoenix_dev_toolbar, :mcp, true)
+
+    case mcp_options(value) do
+      {:ok, options} ->
+        warn_clients(Keyword.get(options, :clients, :local), value)
+        warn_max_result_bytes(Keyword.get(options, :max_result_bytes, @default_max_result_bytes))
+
+      :error ->
+        warn_mcp_value(value)
+    end
+  end
 
   defp warn_mcp_value(value) when is_boolean(value), do: :ok
-  defp warn_mcp_value(clients: :local), do: :ok
 
-  defp warn_mcp_value(clients: :any) do
+  defp warn_mcp_value(invalid) do
+    Logger.warning(
+      "[phoenix_dev_toolbar] invalid mcp: #{inspect(invalid, limit: 5)}, " <>
+        "expected true, false, [clients: :local], [clients: :any], [clients: [\"10.0.0.0/8\"]] " <>
+        "or [max_result_bytes: 60_000] (also next to clients:). Using true."
+    )
+  end
+
+  defp warn_clients(:local, _value), do: :ok
+
+  defp warn_clients(:any, _value) do
     Logger.warning(
       "[phoenix_dev_toolbar] mcp: [clients: :any]: anyone who reaches this dev server " <>
         "can read the captured data over MCP"
     )
   end
 
-  defp warn_mcp_value(clients: list) when is_list(list) do
+  defp warn_clients(list, value) when is_list(list) do
     case proper_list?(list) do
       true -> warn_invalid_clients(list)
-      false -> warn_mcp_value(:improper_list)
+      false -> warn_mcp_value(value)
     end
   end
 
-  defp warn_mcp_value(invalid) do
+  defp warn_clients(_invalid, value), do: warn_mcp_value(value)
+
+  defp warn_max_result_bytes(:infinity), do: :ok
+  defp warn_max_result_bytes(bytes) when is_integer(bytes) and bytes > 0, do: :ok
+
+  defp warn_max_result_bytes(invalid) do
     Logger.warning(
-      "[phoenix_dev_toolbar] invalid mcp: #{inspect(invalid, limit: 5)}, " <>
-        "expected true, false, [clients: :local], [clients: :any] or [clients: [\"10.0.0.0/8\"]]. " <>
-        "Using true."
+      "[phoenix_dev_toolbar] invalid mcp max_result_bytes: #{inspect(invalid, limit: 5)}, " <>
+        "expected a positive integer or :infinity. Using #{@default_max_result_bytes}."
     )
   end
 
